@@ -2,7 +2,7 @@
 
 Real-time video synchronization platform that lets you watch YouTube videos together with friends, no matter where they are.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-green.svg)
 ![TypeScript](https://img.shields.io/badge/typescript-%5E5.0.0-blue.svg)
 
