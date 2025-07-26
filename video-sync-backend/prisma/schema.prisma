@@ -1,0 +1,120 @@
+// This is your Prisma schema file
+// It defines your database structure and relationships
+
+// The generator block tells Prisma what client code to generate
+generator client {
+  provider = "prisma-client-js"
+}
+
+// The datasource block tells Prisma how to connect to your database
+datasource db {
+  provider = "postgresql"  // We're using PostgreSQL
+  url      = env("DATABASE_URL")  // Connection string from environment variable
+}
+
+// User model - represents people using your application
+model User {
+  id            String         @id @default(uuid())  // Unique identifier
+  username      String         @unique               // Must be unique across all users
+  email         String         @unique               // Email must also be unique
+  password      String                              // Hashed password (never store plain text!)
+  createdAt     DateTime       @default(now())      // Automatically set when created
+  updatedAt     DateTime       @updatedAt           // Automatically updated on changes
+  chatMessages  ChatMessage[]
+  
+  // Relations - these define how Users connect to other data
+  roomsCreated  Room[]         @relation("RoomCreator")    // Rooms this user created
+  participants  Participant[]                              // Room participations
+  
+  // Indexes improve query performance
+  @@index([email])      // Fast lookups by email
+  @@index([username])   // Fast lookups by username
+}
+
+// Room model - represents a video watching session
+model Room {
+  id            String         @id @default(uuid())
+  name          String                              // Human-readable room name
+  code          String         @unique @default(cuid())  // Unique code for joining
+  videoUrl      String?                            // Optional video URL
+  isActive      Boolean        @default(true)       // Is room currently active?
+  maxUsers      Int            @default(20)         // Maximum concurrent users
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  chatMessages  ChatMessage[]
+  isPublic      Boolean        @default(false)
+  description   String?
+  tags          String[]       @default([])
+  
+  // Video synchronization state
+  currentTime   Float          @default(0)          // Current video position in seconds
+  isPlaying     Boolean        @default(false)      // Is video playing or paused?
+  lastSyncAt    DateTime       @default(now())      // Last time sync occurred
+  
+  // Relations
+  creatorId     String                              // Who created this room
+  creator       User           @relation("RoomCreator", fields: [creatorId], references: [id])
+  participants  Participant[]                       // Who's in this room
+  syncEvents    SyncEvent[]                         // History of sync events
+  
+  @@index([code])        // Fast room lookups by code
+  @@index([isActive])    // Fast queries for active rooms
+}
+
+// Participant model - represents a user in a room
+model Participant {
+  id            String         @id @default(uuid())
+  joinedAt      DateTime       @default(now())      // When they joined
+  leftAt        DateTime?                           // When they left (null if still in)
+  isActive      Boolean        @default(true)       // Currently in room?
+  lastPingAt    DateTime       @default(now())      // For connection monitoring
+  
+  // Relations
+  userId        String
+  user          User           @relation(fields: [userId], references: [id])
+  roomId        String
+  room          Room           @relation(fields: [roomId], references: [id])
+  
+  // Ensure a user can only be in a room once
+  @@unique([userId, roomId])
+  // Fast queries for active participants in a room
+  @@index([roomId, isActive])
+}
+
+// SyncEvent model - tracks synchronization history
+model SyncEvent {
+  id            String         @id @default(uuid())
+  type          EventType                           // What kind of event
+  timestamp     DateTime       @default(now())      // When it happened
+  videoTime     Float                              // Video position at event time
+  
+  // Relations
+  roomId        String
+  room          Room           @relation(fields: [roomId], references: [id])
+  
+  // Fast queries for room event history
+  @@index([roomId, timestamp])
+}
+
+model ChatMessage {
+  id            String         @id @default(uuid())
+  content       String
+  createdAt     DateTime       @default(now())
+  
+  // Relations
+  userId        String
+  user          User           @relation(fields: [userId], references: [id])
+  roomId        String
+  room          Room           @relation(fields: [roomId], references: [id])
+  
+  @@index([roomId, createdAt])
+}
+
+// EventType enum - possible synchronization events
+enum EventType {
+  PLAY      // User pressed play
+  PAUSE     // User pressed pause
+  SEEK      // User jumped to different time
+  JOIN      // User joined room
+  LEAVE     // User left room
+}

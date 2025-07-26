@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: video-sync-db
+    environment:
+      # Database credentials - in production, use secrets!
+      POSTGRES_USER: videouser
+      POSTGRES_PASSWORD: videopass
+      POSTGRES_DB: videosync
+    volumes:
+      # This persists database data even if container stops
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"  # Host:Container port mapping
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U videouser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - video-sync-network
+
+  # Redis for session management (optional but recommended)
+  redis:
+    image: redis:7-alpine
+    container_name: video-sync-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - video-sync-network
+
+  # NestJS Backend
+  backend:
+    build:
+      context: ./video-sync-backend
+      dockerfile: Dockerfile
+    container_name: video-sync-backend
+    environment:
+      # Database connection string
+      DATABASE_URL: postgresql://videouser:videopass@postgres:5432/videosync
+      # Redis connection
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # JWT secret - change this in production!
+      JWT_SECRET: your-super-secret-jwt-key
+      # Port configuration
+      PORT: 3000
+      # Frontend URL for CORS
+      FRONTEND_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      # Wait for these services to be healthy before starting
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount source code for development (hot reloading)
+      - ./video-sync-backend:/app
+      # Prevent node_modules from being overwritten
+      - /app/node_modules
+    networks:
+      - video-sync-network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./video-sync-frontend
+      dockerfile: Dockerfile
+    container_name: video-sync-frontend
+    environment:
+      # Backend API URL
+      REACT_APP_API_URL: http://localhost:3000
+      # WebSocket URL
+      REACT_APP_WS_URL: ws://localhost:3000
+    ports:
+      - "3001:80"  # Map port 80 in container to 3001 on host
+    depends_on:
+      - backend
+    networks:
+      - video-sync-network
+
+# Define named volumes for data persistence
+volumes:
+  postgres_data:
+
+# Define custom network for inter-container communication
+networks:
+  video-sync-network:
+    driver: bridge
