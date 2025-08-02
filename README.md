@@ -31,8 +31,167 @@ Real-time video synchronization platform that lets you watch YouTube videos toge
 - **Emotion** - CSS-in-JS styling
 - **React Query** - Data fetching and caching
 
-## 🚀 Quick Start
+## 🚀 Complete Setup Guide
 
+### Prerequisites
+Make sure you have these installed:
+- **Node.js** (v18 or higher)
+- **PostgreSQL** (v14 or higher)
+- **npm** or **yarn**
+
+### Step 1: Clone and Navigate to Project
+```bash
+cd Mustard-Watch-Party
+```
+
+### Step 2: Set Up Database
+
+1. **Start PostgreSQL service:**
+   ```bash
+   brew services start postgresql@14
+   ```
+
+2. **Create database and user:**
+   ```bash
+   psql postgres -c "CREATE USER videouser WITH PASSWORD 'videopass';"
+   psql postgres -c "CREATE DATABASE videosync OWNER videouser;"
+   psql postgres -c "GRANT ALL PRIVILEGES ON DATABASE videosync TO videouser;"
+   ```
+
+### Step 3: Set Up Backend
+
+1. **Navigate to backend directory:**
+   ```bash
+   cd video-sync-backend
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Create environment file (.env):**
+   ```bash
+   echo 'DATABASE_URL="postgresql://videouser:videopass@localhost:5432/videosync"' > .env
+   echo 'JWT_SECRET="your-super-secret-jwt-key-change-this-in-production"' >> .env
+   echo 'PORT=3000' >> .env
+   echo 'FRONTEND_URL="http://localhost:3001"' >> .env
+   ```
+
+4. **Run database migrations:**
+   ```bash
+   npx prisma migrate deploy
+   ```
+
+5. **Start the backend server:**
+   ```bash
+   npm run start:dev
+   ```
+
+   **Expected output:** You should see:
+   ```
+   ✅ Database connected successfully
+   🚀 Server is running on http://localhost:3000
+   🔌 WebSocket server is ready for connections
+   ```
+
+### Step 4: Set Up Frontend
+
+1. **Open a new terminal and navigate to frontend directory:**
+   ```bash
+   cd video-sync-frontend
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Create environment file (.env):**
+   ```bash
+   echo 'REACT_APP_API_URL=http://localhost:3000/api' > .env
+   echo 'REACT_APP_WS_URL=ws://localhost:3000' >> .env
+   ```
+
+4. **Start the frontend server:**
+   ```bash
+   PORT=3001 npm start
+   ```
+
+   **Expected output:** You should see:
+   ```
+   Compiled successfully!
+   You can now view video-sync-frontend in the browser.
+   Local:            http://localhost:3001
+   ```
+
+### Step 5: Access the Application
+
+1. **Backend API:** http://localhost:3000/api
+2. **Frontend App:** http://localhost:3001
+
+### Step 6: Test the Setup
+
+1. **Test backend API:**
+   ```bash
+   curl http://localhost:3000/api/rooms/public
+   ```
+   Should return: `[]`
+
+2. **Test frontend:**
+   Open http://localhost:3001 in your browser
+
+### Troubleshooting
+
+**If backend fails to start:**
+- Check if PostgreSQL is running: `brew services list | grep postgres`
+- Verify database connection: `psql -U videouser -d videosync -h localhost`
+
+**If frontend fails to start:**
+- Make sure port 3001 is available
+- Check if backend is running on port 3000
+
+**If you get database errors:**
+- Drop and recreate the database:
+  ```bash
+  psql postgres -c "DROP DATABASE IF EXISTS videosync;"
+  psql postgres -c "CREATE DATABASE videosync OWNER videouser;"
+  npx prisma migrate deploy
+  ```
+
+### Quick Start Script
+
+You can create a quick start script. Create a file called `start.sh` in the root directory:
+
+```bash
+#!/bin/bash
+
+# Start PostgreSQL
+brew services start postgresql@14
+
+# Start Backend
+cd video-sync-backend
+npm run start:dev &
+
+# Start Frontend
+cd ../video-sync-frontend
+PORT=3001 npm start
+```
+
+Make it executable: `chmod +x start.sh`
+
+### Port Configuration Summary
+
+- **Backend API:** http://localhost:3000
+- **Frontend App:** http://localhost:3001
+- **WebSocket:** ws://localhost:3000
+- **Database:** localhost:5432
+
+---
+
+## 🚀 Quick Start (Legacy - Commented Out)
+
+<!-- 
 ### Prerequisites
 - Node.js 18+
 - PostgreSQL 15+
@@ -74,6 +233,23 @@ PORT=3001" > .env
 
 # Start frontend (port 3001)
 npm start
+```
+-->
+
+## 🚀 Commands to Run Your Project Locally
+
+### Option 1: Manual Start (Recommended for Development)
+
+**Terminal 1 - Start Backend:**
+```bash
+cd Mustard-Watch-Party/video-sync-backend
+npm run start:dev
+```
+
+**Terminal 2 - Start Frontend:**
+```bash
+cd Mustard-Watch-Party/video-sync-frontend
+PORT=3001 npm start
 ```
 
 ## 📖 Usage
@@ -119,7 +295,7 @@ docker-compose up --build
 
 ### Backend (.env)
 ```env
-DATABASE_URL=postgresql://user:pass@localhost:5432/videosync
+DATABASE_URL=postgresql://videouser:videopass@localhost:5432/videosync
 PORT=3000
 FRONTEND_URL=http://localhost:3001
 JWT_SECRET=your-secret-key
@@ -128,7 +304,7 @@ JWT_SECRET=your-secret-key
 ### Frontend (.env)
 ```env
 REACT_APP_API_URL=http://localhost:3000/api
-REACT_APP_WS_URL=http://localhost:3000
+REACT_APP_WS_URL=ws://localhost:3000
 PORT=3001
 ```
 

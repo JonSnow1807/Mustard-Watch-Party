@@ -2,11 +2,6 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
 
-interface VideoState {
-  currentTime: number;
-  isPlaying: boolean;
-}
-
 interface SocketContextType {
   socket: Socket | null;
   connected: boolean;
