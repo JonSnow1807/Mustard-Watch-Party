@@ -7,6 +7,8 @@ import { AuthProvider } from './contexts/AuthContext';
 import { HomePage } from './pages/HomePage';
 import { RoomPage } from './pages/RoomPage';
 import { LoginPage } from './pages/LoginPage';
+import { CreateRoomPage } from './pages/CreateRoomPage';
+import { JoinRoomPage } from './pages/JoinRoomPage';
 import './App.css';
 
 // Create a client for React Query
@@ -31,6 +33,8 @@ function App() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/create-room" element={<CreateRoomPage />} />
+                <Route path="/join-room/:roomCode" element={<JoinRoomPage />} />
                 <Route path="/room/:roomCode" element={<RoomPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

@@ -116,6 +116,12 @@ export class RoomsService {
         ],
       },
       include: {
+        creator: {
+          select: {
+            id: true,
+            username: true,
+          },
+        },
         _count: {
           select: {
             participants: {
