@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import styled from '@emotion/styled';
 import { apiService } from '../services/api';
+import { toast } from 'react-hot-toast';
 
 const Container = styled.div`
   max-width: 1400px;
@@ -354,13 +355,118 @@ const LoadingSpinner = styled.div`
   font-size: 1.1rem;
 `;
 
+const DeleteButton = styled.button`
+  padding: 0.5rem;
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.5);
+    transform: scale(1.05);
+  }
+`;
+
+const RoomActions = styled.div`
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+`;
+
+const Modal = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+`;
+
+const ModalContent = styled.div`
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 400px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+`;
+
+const ModalTitle = styled.h3`
+  color: #ffffff;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+`;
+
+const ModalText = styled.p`
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 2rem;
+  line-height: 1.5;
+`;
+
+const ModalButtons = styled.div`
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+`;
+
+const ConfirmButton = styled.button`
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+  }
+`;
+
+const CancelButton = styled.button`
+  padding: 0.75rem 1.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+`;
+
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [publicFilter, setPublicFilter] = useState('all');
+  const [deleteModal, setDeleteModal] = useState<{ show: boolean; room: any | null }>({ show: false, room: null });
 
   // Fetch user's rooms
-  const { data: userRooms, isLoading: userRoomsLoading } = useQuery({
+  const { data: userRooms, isLoading: userRoomsLoading, refetch: refetchUserRooms } = useQuery({
     queryKey: ['user-rooms', user?.id],
     queryFn: async () => {
       if (!user) return [];
@@ -391,6 +497,26 @@ export const HomePage: React.FC = () => {
     } else {
       navigate(`/room/${roomCode}`);
     }
+  };
+
+  const handleDeleteRoom = async (room: any) => {
+    try {
+      await apiService.deleteRoom(room.code, user!.id);
+      toast.success('Watch party deleted successfully');
+      setDeleteModal({ show: false, room: null });
+      refetchUserRooms();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to delete watch party');
+    }
+  };
+
+  const showDeleteModal = (room: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteModal({ show: true, room });
+  };
+
+  const hideDeleteModal = () => {
+    setDeleteModal({ show: false, room: null });
   };
 
   const getTimeSince = (date: string) => {
@@ -451,6 +577,17 @@ export const HomePage: React.FC = () => {
           <RoomsGrid>
             {userRooms.map((room: any) => (
               <RoomCard key={room.id} onClick={() => handleJoinRoom(room.code)}>
+                <RoomActions>
+                  {room.creatorId === user.id && (
+                    <DeleteButton 
+                      onClick={(e) => showDeleteModal(room, e)}
+                      title="Delete this watch party"
+                    >
+                      🗑️
+                    </DeleteButton>
+                  )}
+                </RoomActions>
+                
                 <RoomHeader>
                   <RoomTitle>{room.name}</RoomTitle>
                   <LiveBadge isPlaying={room.isPlaying}>
@@ -595,6 +732,27 @@ export const HomePage: React.FC = () => {
           </EmptyState>
         )}
       </Section>
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal.show && deleteModal.room && (
+        <Modal onClick={hideDeleteModal}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>🗑️ Delete Watch Party</ModalTitle>
+            <ModalText>
+              Are you sure you want to delete "{deleteModal.room.name}"? 
+              This action cannot be undone and will remove all participants, chat messages, and sync data.
+            </ModalText>
+            <ModalButtons>
+              <CancelButton onClick={hideDeleteModal}>
+                Cancel
+              </CancelButton>
+              <ConfirmButton onClick={() => handleDeleteRoom(deleteModal.room)}>
+                Delete Party
+              </ConfirmButton>
+            </ModalButtons>
+          </ModalContent>
+        </Modal>
+      )}
     </Container>
   );
 };

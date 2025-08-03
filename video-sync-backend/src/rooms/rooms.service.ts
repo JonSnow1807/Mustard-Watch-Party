@@ -1,13 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { SyncGateway } from '../sync/sync.gateway';
 
 @Injectable()
 export class RoomsService {
-  constructor(
-    private database: DatabaseService,
-    private syncGateway: SyncGateway
-  ) {}
+  constructor(private database: DatabaseService) {}
 
   async createRoom(
     userId: string, 
@@ -58,154 +54,84 @@ export class RoomsService {
     return room;
   }
 
-  async updateRoom(roomId: string, data: { name?: string; videoUrl?: string; isPublic?: boolean; maxUsers?: number; isActive?: boolean; isPaused?: boolean }) {
+  async updateRoom(roomId: string, data: { name?: string; videoUrl?: string }) {
     return await this.database.room.update({
       where: { id: roomId },
       data,
     });
   }
 
-  async pauseRoom(roomId: string, creatorId: string) {
-    // Verify the user is the creator of the room
+  async deleteRoom(code: string, userId: string) {
+    // First, get the room to check if it exists and verify ownership
     const room = await this.database.room.findUnique({
-      where: { id: roomId },
-      select: { creatorId: true, isActive: true, code: true }
-    });
-
-    if (!room) {
-      throw new NotFoundException('Room not found');
-    }
-
-    if (room.creatorId !== creatorId) {
-      throw new Error('Only the room creator can pause the room');
-    }
-
-    if (!room.isActive) {
-      throw new Error('Room is already inactive');
-    }
-
-    // Pause the room and kick all participants
-    await this.database.$transaction(async (tx) => {
-      // Set room as paused
-      await tx.room.update({
-        where: { id: roomId },
-        data: { 
-          isPaused: true,
-          isPlaying: false // Pause the video
-        }
-      });
-
-      // Kick all participants by setting them as inactive
-      await tx.participant.updateMany({
-        where: { 
-          roomId: roomId,
-          isActive: true 
+      where: { code },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            username: true,
+          },
         },
-        data: { 
-          isActive: false,
-          leftAt: new Date()
-        }
-      });
-    });
-
-    // Notify WebSocket gateway to kick participants
-    await this.syncGateway.handleRoomStateChange(room.code, 'pause');
-
-    return { success: true, message: 'Room paused successfully' };
-  }
-
-  async endRoom(roomId: string, creatorId: string) {
-    // Verify the user is the creator of the room
-    const room = await this.database.room.findUnique({
-      where: { id: roomId },
-      select: { creatorId: true, isActive: true, code: true }
-    });
-
-    if (!room) {
-      throw new NotFoundException('Room not found');
-    }
-
-    if (room.creatorId !== creatorId) {
-      throw new Error('Only the room creator can end the room');
-    }
-
-    if (!room.isActive) {
-      throw new Error('Room is already inactive');
-    }
-
-    // End the room completely
-    await this.database.$transaction(async (tx) => {
-      // Set room as inactive
-      await tx.room.update({
-        where: { id: roomId },
-        data: { 
-          isActive: false,
-          isPaused: false,
-          isPlaying: false
-        }
-      });
-
-      // Kick all participants
-      await tx.participant.updateMany({
-        where: { 
-          roomId: roomId,
-          isActive: true 
+        participants: {
+          where: { isActive: true },
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+              },
+            },
+          },
         },
-        data: { 
-          isActive: false,
-          leftAt: new Date()
-        }
-      });
-    });
-
-    // Notify WebSocket gateway to kick participants and clean up
-    await this.syncGateway.handleRoomStateChange(room.code, 'end');
-
-    return { success: true, message: 'Room ended successfully' };
-  }
-
-  async resumeRoom(roomId: string, creatorId: string) {
-    // Verify the user is the creator of the room
-    const room = await this.database.room.findUnique({
-      where: { id: roomId },
-      select: { creatorId: true, isActive: true, isPaused: true, code: true }
+      },
     });
 
     if (!room) {
       throw new NotFoundException('Room not found');
     }
 
-    if (room.creatorId !== creatorId) {
-      throw new Error('Only the room creator can resume the room');
+    // Check if the user is the creator of the room
+    if (room.creatorId !== userId) {
+      throw new ForbiddenException('Only the room creator can delete this room');
     }
 
-    if (!room.isActive) {
-      throw new Error('Room is inactive and cannot be resumed');
-    }
+    // Delete all related data first (due to foreign key constraints)
+    await this.database.$transaction(async (prisma) => {
+      // Delete chat messages
+      await prisma.chatMessage.deleteMany({
+        where: { roomId: room.id },
+      });
 
-    if (!room.isPaused) {
-      throw new Error('Room is not paused');
-    }
+      // Delete sync events
+      await prisma.syncEvent.deleteMany({
+        where: { roomId: room.id },
+      });
 
-    // Resume the room
-    await this.database.room.update({
-      where: { id: roomId },
-      data: { 
-        isPaused: false
-      }
+      // Delete participants
+      await prisma.participant.deleteMany({
+        where: { roomId: room.id },
+      });
+
+      // Finally, delete the room
+      await prisma.room.delete({
+        where: { id: room.id },
+      });
     });
 
-    // Notify WebSocket gateway that room is resumed
-    await this.syncGateway.handleRoomStateChange(room.code, 'resume');
-
-    return { success: true, message: 'Room resumed successfully' };
+    return {
+      message: 'Room deleted successfully',
+      deletedRoom: {
+        id: room.id,
+        name: room.name,
+        code: room.code,
+      },
+    };
   }
 
   async getPublicRooms(filter?: string) {
     const where: any = {
       isPublic: true,
       isActive: true,
-      isPaused: false, // Don't show paused rooms in public list
     };
     
     if (filter && filter !== 'all') {

@@ -36,6 +36,12 @@ const RoomInfo = styled.div`
   }
 `;
 
+const HeaderActions = styled.div`
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+`;
+
 const MainContent = styled.div`
   display: grid;
   grid-template-columns: 1fr 350px;
@@ -120,6 +126,19 @@ const Button = styled.button`
   }
 `;
 
+const DeleteButton = styled.button`
+  padding: 0.5rem 1rem;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  
+  &:hover {
+    background: #c82333;
+  }
+`;
+
 const CopyButton = styled.button`
   padding: 0.5rem 1rem;
   background: #28a745;
@@ -144,6 +163,80 @@ const NoVideoMessage = styled.div`
   align-items: center;
   justify-content: center;
   border-radius: 8px;
+`;
+
+const Modal = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+`;
+
+const ModalContent = styled.div`
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 2rem;
+  max-width: 400px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+`;
+
+const ModalTitle = styled.h3`
+  color: #333;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+`;
+
+const ModalText = styled.p`
+  color: #666;
+  margin-bottom: 2rem;
+  line-height: 1.5;
+`;
+
+const ModalButtons = styled.div`
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+`;
+
+const ConfirmButton = styled.button`
+  padding: 0.75rem 1.5rem;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background: #c82333;
+    transform: translateY(-1px);
+  }
+`;
+
+const CancelButton = styled.button`
+  padding: 0.75rem 1.5rem;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background: #5a6268;
+  }
 `;
 
 interface Participant {
@@ -172,6 +265,7 @@ export const RoomPage: React.FC = () => {
   const { user } = useAuth();
   const { socket, joinRoom, leaveRoom, connected } = useSocket();
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Fetch room data
   const { data: room, isLoading, error } = useQuery<Room>({
@@ -244,21 +338,13 @@ export const RoomPage: React.FC = () => {
       setParticipants(data.participants || []);
     });
 
-    // Handle room paused event
-    socket.on('room-paused', (data: any) => {
-      console.log('Room paused:', data);
-      toast.error('Room has been paused by the host. You have been disconnected.');
-      navigate('/');
-    });
-
     return () => {
       socket.off('room-joined');
       socket.off('user-joined');
       socket.off('user-left');
       socket.off('participants-update');
-      socket.off('room-paused');
     };
-  }, [socket, participants, navigate]);
+  }, [socket, participants]);
 
   // Periodic participants refresh to handle any sync issues
   useEffect(() => {
@@ -289,6 +375,18 @@ export const RoomPage: React.FC = () => {
     }
   };
 
+  const handleDeleteRoom = async () => {
+    if (!room || !user) return;
+    
+    try {
+      await apiService.deleteRoom(room.code, user.id);
+      toast.success('Watch party deleted successfully');
+      navigate('/');
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to delete watch party');
+    }
+  };
+
   if (!user) {
     navigate('/login');
     return null;
@@ -297,6 +395,8 @@ export const RoomPage: React.FC = () => {
   if (isLoading) return <Container>Loading room...</Container>;
   if (error) return <Container>Error loading room</Container>;
   if (!room) return <Container>Room not found</Container>;
+
+  const isHost = room.creatorId === user.id;
 
   return (
     <Container>
@@ -308,7 +408,14 @@ export const RoomPage: React.FC = () => {
             <CopyButton onClick={handleCopyRoomCode}>Copy Code</CopyButton>
           </p>
         </RoomInfo>
-        <Button onClick={handleLeaveRoom}>Leave Room</Button>
+        <HeaderActions>
+          {isHost && (
+            <DeleteButton onClick={() => setShowDeleteModal(true)}>
+              🗑️ Delete Party
+            </DeleteButton>
+          )}
+          <Button onClick={handleLeaveRoom}>Leave Room</Button>
+        </HeaderActions>
       </Header>
 
       <MainContent>
@@ -348,7 +455,7 @@ export const RoomPage: React.FC = () => {
           
           <ChatPanel roomCode={roomCode!} />
           
-          {room.creatorId === user.id && (
+          {isHost && (
             <RoomSettings 
               room={room} 
               isHost={true} 
@@ -357,6 +464,27 @@ export const RoomPage: React.FC = () => {
           )}
         </Sidebar>
       </MainContent>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <Modal onClick={() => setShowDeleteModal(false)}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>🗑️ Delete Watch Party</ModalTitle>
+            <ModalText>
+              Are you sure you want to delete "{room.name}"? 
+              This action cannot be undone and will remove all participants, chat messages, and sync data.
+            </ModalText>
+            <ModalButtons>
+              <CancelButton onClick={() => setShowDeleteModal(false)}>
+                Cancel
+              </CancelButton>
+              <ConfirmButton onClick={handleDeleteRoom}>
+                Delete Party
+              </ConfirmButton>
+            </ModalButtons>
+          </ModalContent>
+        </Modal>
+      )}
     </Container>
   );
 };

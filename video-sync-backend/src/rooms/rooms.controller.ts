@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Query, Delete, HttpException, HttpStatus } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 
 @Controller('rooms')
@@ -45,39 +45,16 @@ export class RoomsController {
   @Patch(':id')
   async updateRoom(
     @Param('id') id: string,
-    @Body() updateRoomDto: { 
-      name?: string; 
-      videoUrl?: string; 
-      isPublic?: boolean; 
-      maxUsers?: number;
-      isActive?: boolean;
-      isPaused?: boolean;
-    },
+    @Body() updateRoomDto: { name?: string; videoUrl?: string },
   ) {
     return await this.roomsService.updateRoom(id, updateRoomDto);
   }
 
-  @Post(':id/pause')
-  async pauseRoom(
-    @Param('id') id: string,
-    @Body() pauseRoomDto: { creatorId: string },
+  @Delete(':code')
+  async deleteRoom(
+    @Param('code') code: string,
+    @Body() deleteRoomDto: { userId: string },
   ) {
-    return await this.roomsService.pauseRoom(id, pauseRoomDto.creatorId);
-  }
-
-  @Post(':id/end')
-  async endRoom(
-    @Param('id') id: string,
-    @Body() endRoomDto: { creatorId: string },
-  ) {
-    return await this.roomsService.endRoom(id, endRoomDto.creatorId);
-  }
-
-  @Post(':id/resume')
-  async resumeRoom(
-    @Param('id') id: string,
-    @Body() resumeRoomDto: { creatorId: string },
-  ) {
-    return await this.roomsService.resumeRoom(id, resumeRoomDto.creatorId);
+    return await this.roomsService.deleteRoom(code, deleteRoomDto.userId);
   }
 }

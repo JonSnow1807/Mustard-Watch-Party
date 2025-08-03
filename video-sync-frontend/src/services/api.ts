@@ -28,21 +28,14 @@ export const apiService = {
   updateRoom: (id: string, data: any) =>
     api.patch(`/rooms/${id}`, data),
   
+  deleteRoom: (code: string, userId: string) =>
+    api.delete(`/rooms/${code}`, { data: { userId } }),
+  
   getUserRooms: (userId: string) =>
     api.get(`/rooms/user/${userId}`),
     
   getPublicRooms: (filter?: string) =>
     api.get('/rooms/public', { params: { filter } }),
-
-  // Room management
-  pauseRoom: (roomId: string, creatorId: string) =>
-    api.post(`/rooms/${roomId}/pause`, { creatorId }),
-  
-  endRoom: (roomId: string, creatorId: string) =>
-    api.post(`/rooms/${roomId}/end`, { creatorId }),
-  
-  resumeRoom: (roomId: string, creatorId: string) =>
-    api.post(`/rooms/${roomId}/resume`, { creatorId }),
 };
 
 export { api };

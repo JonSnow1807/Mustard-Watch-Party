@@ -38,7 +38,6 @@ model Room {
   code          String         @unique @default(cuid())  // Unique code for joining
   videoUrl      String?                            // Optional video URL
   isActive      Boolean        @default(true)       // Is room currently active?
-  isPaused      Boolean        @default(false)      // Is room paused (participants kicked but room preserved)?
   maxUsers      Int            @default(20)         // Maximum concurrent users
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -60,7 +59,6 @@ model Room {
   
   @@index([code])        // Fast room lookups by code
   @@index([isActive])    // Fast queries for active rooms
-  @@index([isPaused])    // Fast queries for paused rooms
 }
 
 // Participant model - represents a user in a room
