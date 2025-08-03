@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
 @Injectable()
@@ -59,6 +59,73 @@ export class RoomsService {
       where: { id: roomId },
       data,
     });
+  }
+
+  async deleteRoom(code: string, userId: string) {
+    // First, get the room to check if it exists and verify ownership
+    const room = await this.database.room.findUnique({
+      where: { code },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            username: true,
+          },
+        },
+        participants: {
+          where: { isActive: true },
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!room) {
+      throw new NotFoundException('Room not found');
+    }
+
+    // Check if the user is the creator of the room
+    if (room.creatorId !== userId) {
+      throw new ForbiddenException('Only the room creator can delete this room');
+    }
+
+    // Delete all related data first (due to foreign key constraints)
+    await this.database.$transaction(async (prisma) => {
+      // Delete chat messages
+      await prisma.chatMessage.deleteMany({
+        where: { roomId: room.id },
+      });
+
+      // Delete sync events
+      await prisma.syncEvent.deleteMany({
+        where: { roomId: room.id },
+      });
+
+      // Delete participants
+      await prisma.participant.deleteMany({
+        where: { roomId: room.id },
+      });
+
+      // Finally, delete the room
+      await prisma.room.delete({
+        where: { id: room.id },
+      });
+    });
+
+    return {
+      message: 'Room deleted successfully',
+      deletedRoom: {
+        id: room.id,
+        name: room.name,
+        code: room.code,
+      },
+    };
   }
 
   async getPublicRooms(filter?: string) {

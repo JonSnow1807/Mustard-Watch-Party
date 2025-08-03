@@ -28,6 +28,9 @@ export const apiService = {
   updateRoom: (id: string, data: any) =>
     api.patch(`/rooms/${id}`, data),
   
+  deleteRoom: (code: string, userId: string) =>
+    api.delete(`/rooms/${code}`, { data: { userId } }),
+  
   getUserRooms: (userId: string) =>
     api.get(`/rooms/user/${userId}`),
     

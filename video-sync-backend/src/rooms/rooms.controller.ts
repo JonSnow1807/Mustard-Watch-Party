@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Query, Delete, HttpException, HttpStatus } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 
 @Controller('rooms')
@@ -48,5 +48,13 @@ export class RoomsController {
     @Body() updateRoomDto: { name?: string; videoUrl?: string },
   ) {
     return await this.roomsService.updateRoom(id, updateRoomDto);
+  }
+
+  @Delete(':code')
+  async deleteRoom(
+    @Param('code') code: string,
+    @Body() deleteRoomDto: { userId: string },
+  ) {
+    return await this.roomsService.deleteRoom(code, deleteRoomDto.userId);
   }
 }
