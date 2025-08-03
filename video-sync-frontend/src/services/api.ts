@@ -33,6 +33,16 @@ export const apiService = {
     
   getPublicRooms: (filter?: string) =>
     api.get('/rooms/public', { params: { filter } }),
+
+  // Room management
+  pauseRoom: (roomId: string, creatorId: string) =>
+    api.post(`/rooms/${roomId}/pause`, { creatorId }),
+  
+  endRoom: (roomId: string, creatorId: string) =>
+    api.post(`/rooms/${roomId}/end`, { creatorId }),
+  
+  resumeRoom: (roomId: string, creatorId: string) =>
+    api.post(`/rooms/${roomId}/resume`, { creatorId }),
 };
 
 export { api };

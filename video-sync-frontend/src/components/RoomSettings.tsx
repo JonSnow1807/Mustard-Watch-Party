@@ -4,8 +4,10 @@ import { apiService } from '../services/api';
 import { toast } from 'react-hot-toast';
 
 const SettingsContainer = styled.div`
-  background: #f5f5f5;
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
   padding: 1.5rem;
   margin-top: 1rem;
 `;
@@ -14,13 +16,15 @@ const SettingsHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
   
   h3 {
     margin: 0;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    color: #ffffff;
+    font-weight: 600;
   }
 `;
 
@@ -28,8 +32,8 @@ const SettingRow = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid #e0e0e0;
+  padding: 1rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   
   &:last-child {
     border-bottom: none;
@@ -38,7 +42,7 @@ const SettingRow = styled.div`
 
 const Label = styled.label`
   font-weight: 500;
-  color: #333;
+  color: rgba(255, 255, 255, 0.9);
 `;
 
 const Toggle = styled.label`
@@ -60,7 +64,7 @@ const Toggle = styled.label`
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #ccc;
+    background-color: rgba(255, 255, 255, 0.2);
     transition: .4s;
     border-radius: 24px;
     
@@ -78,7 +82,7 @@ const Toggle = styled.label`
   }
   
   input:checked + span {
-    background-color: #007bff;
+    background-color: #667eea;
   }
   
   input:checked + span:before {
@@ -87,32 +91,98 @@ const Toggle = styled.label`
 `;
 
 const Input = styled.input`
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
   font-size: 0.9rem;
   width: 200px;
-`;
-
-const Button = styled.button`
-  padding: 0.5rem 1rem;
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
+  color: #ffffff;
   
-  &:hover {
-    background: #0056b3;
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+  }
+  
+  &:focus {
+    outline: none;
+    border-color: rgba(102, 126, 234, 0.5);
   }
 `;
 
-const DangerButton = styled(Button)`
-  background: #dc3545;
+const Button = styled.button`
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
   
   &:hover {
-    background: #c82333;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  }
+  
+  &:disabled {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+`;
+
+const PauseButton = styled(Button)`
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  
+  &:hover {
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+  }
+`;
+
+const ResumeButton = styled(Button)`
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  
+  &:hover {
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+  }
+`;
+
+const EndButton = styled(Button)`
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  
+  &:hover {
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+  }
+`;
+
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+`;
+
+const RoomStatus = styled.div`
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: center;
+  
+  &.paused {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+  
+  &.active {
+    background: rgba(16, 185, 129, 0.2);
+    color: #86efac;
+    border: 1px solid rgba(16, 185, 129, 0.3);
   }
 `;
 
@@ -127,6 +197,7 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, isHost, onUpda
   const [maxUsers, setMaxUsers] = useState(room.maxUsers || 20);
   const [videoUrl, setVideoUrl] = useState(room.videoUrl || '');
   const [loading, setLoading] = useState(false);
+  const [roomStatus, setRoomStatus] = useState(room.isPaused ? 'paused' : 'active');
 
   if (!isHost) {
     return null;
@@ -149,19 +220,52 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, isHost, onUpda
     }
   };
 
-  const handleEndRoom = async () => {
-    if (!window.confirm('Are you sure you want to end this room? All participants will be disconnected.')) {
+  const handlePauseRoom = async () => {
+    if (!window.confirm('Are you sure you want to pause this room? All participants will be kicked out, but the room will be preserved for you to resume later.')) {
       return;
     }
     
+    setLoading(true);
     try {
-      await apiService.updateRoom(room.id, {
-        isActive: false,
-      });
-      toast.success('Room ended');
+      await apiService.pauseRoom(room.id, room.creatorId);
+      toast.success('Room paused successfully! Participants have been kicked out.');
+      setRoomStatus('paused');
+      if (onUpdate) onUpdate();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to pause room');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResumeRoom = async () => {
+    setLoading(true);
+    try {
+      await apiService.resumeRoom(room.id, room.creatorId);
+      toast.success('Room resumed successfully! Participants can now rejoin.');
+      setRoomStatus('active');
+      if (onUpdate) onUpdate();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to resume room');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEndRoom = async () => {
+    if (!window.confirm('Are you sure you want to END this room? This will permanently delete the room and kick all participants out. This action cannot be undone.')) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      await apiService.endRoom(room.id, room.creatorId);
+      toast.success('Room ended successfully!');
       window.location.href = '/';
-    } catch (error) {
-      toast.error('Failed to end room');
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to end room');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -170,6 +274,10 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, isHost, onUpda
       <SettingsHeader>
         <h3>⚙️ Room Settings</h3>
       </SettingsHeader>
+      
+      <RoomStatus className={roomStatus}>
+        {roomStatus === 'paused' ? '⏸️ Room Paused' : '▶️ Room Active'}
+      </RoomStatus>
       
       <SettingRow>
         <Label>Public Room</Label>
@@ -204,14 +312,25 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, isHost, onUpda
         />
       </SettingRow>
       
-      <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+      <ButtonGroup>
         <Button onClick={handleUpdateSettings} disabled={loading}>
           {loading ? 'Saving...' : 'Save Changes'}
         </Button>
-        <DangerButton onClick={handleEndRoom}>
-          End Room
-        </DangerButton>
-      </div>
+        
+        {roomStatus === 'active' ? (
+          <PauseButton onClick={handlePauseRoom} disabled={loading}>
+            ⏸️ Pause Room
+          </PauseButton>
+        ) : (
+          <ResumeButton onClick={handleResumeRoom} disabled={loading}>
+            ▶️ Resume Room
+          </ResumeButton>
+        )}
+        
+        <EndButton onClick={handleEndRoom} disabled={loading}>
+          🗑️ End Room
+        </EndButton>
+      </ButtonGroup>
     </SettingsContainer>
   );
 };

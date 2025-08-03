@@ -88,6 +88,12 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
+      // Check if room is paused
+      if (room.isPaused) {
+        client.emit('error', { message: 'Room is currently paused by the host' });
+        return;
+      }
+
       await client.join(data.roomCode);
       this.userRooms.set(client.id, data.roomCode);
       this.socketToUser.set(client.id, data.userId);
@@ -154,31 +160,22 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
           name: room.name,
           code: room.code,
           videoUrl: room.videoUrl,
-          creatorId: room.creatorId,
+          isPublic: room.isPublic,
+          isPaused: room.isPaused,
         },
-        state: currentState,
-        participants: updatedParticipants.map(p => ({
-          id: p.user.id,
-          username: p.user.username,
-        })),
+        participants: updatedParticipants,
+        currentState,
       });
 
-      // Notify others with updated participant info
+      // Notify other users in the room
       client.to(data.roomCode).emit('user-joined', {
-        userId: participant.user.id,
+        userId: data.userId,
         username: participant.user.username,
+        participants: updatedParticipants,
       });
-      
-      // Send updated participants list to all users in room (except the joining user)
-      client.to(data.roomCode).emit('participants-update', {
-        participants: updatedParticipants.map(p => ({
-          id: p.user.id,
-          username: p.user.username,
-        })),
-      });
-      
-      // Send chat history to the joining user
-      this.handleGetMessageHistory(client, { roomCode: data.roomCode });
+
+      // Update room state in memory
+      this.roomStates.set(data.roomCode, currentState);
 
     } catch (error) {
       console.error('Error joining room:', error);
@@ -551,15 +548,114 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     },
   ) {
     try {
-      // Broadcast activity to other users in the room
-      client.to(data.roomCode).emit('user-activity', {
-        userId: data.userId,
-        activity: data.activity,
+      // Update participant's last ping
+      await this.database.participant.updateMany({
+        where: {
+          userId: data.userId,
+          room: { code: data.roomCode },
+        },
+        data: {
+          lastPingAt: new Date(),
+        },
       });
-      
-      console.log(`User ${data.userId} is ${data.activity} in room ${data.roomCode}`);
+
+      console.log(`User activity: ${data.userId} - ${data.activity}`);
     } catch (error) {
-      console.error('Error handling user activity:', error);
+      console.error('Error updating user activity:', error);
+    }
+  }
+
+  // Method to kick all participants from a room (called when room is paused)
+  async kickAllParticipants(roomCode: string, reason: string = 'Room paused by host') {
+    try {
+      const room = await this.database.room.findUnique({
+        where: { code: roomCode },
+        include: {
+          participants: {
+            where: { isActive: true },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!room) {
+        console.log(`Room ${roomCode} not found for kicking participants`);
+        return;
+      }
+
+      // Get all active participants
+      const activeParticipants = room.participants;
+      
+      // Kick all participants by setting them as inactive
+      await this.database.participant.updateMany({
+        where: {
+          roomId: room.id,
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+          leftAt: new Date(),
+        },
+      });
+
+      // Notify all participants that they've been kicked
+      this.server.to(roomCode).emit('room-paused', {
+        message: reason,
+        roomCode: roomCode,
+      });
+
+      // Disconnect all participants from the room
+      const sockets = await this.server.in(roomCode).fetchSockets();
+      for (const socket of sockets) {
+        socket.leave(roomCode);
+        this.userRooms.delete(socket.id);
+        this.socketToUser.delete(socket.id);
+      }
+
+      console.log(`Kicked ${activeParticipants.length} participants from room ${roomCode}`);
+    } catch (error) {
+      console.error('Error kicking participants:', error);
+    }
+  }
+
+  // Method to handle room state changes (pause/resume/end)
+  async handleRoomStateChange(roomCode: string, action: 'pause' | 'resume' | 'end') {
+    try {
+      const room = await this.database.room.findUnique({
+        where: { code: roomCode },
+      });
+
+      if (!room) {
+        console.log(`Room ${roomCode} not found for state change`);
+        return;
+      }
+
+      switch (action) {
+        case 'pause':
+          // Kick all participants when room is paused
+          await this.kickAllParticipants(roomCode, 'Room paused by host');
+          break;
+        case 'resume':
+          // Room is now available for participants to rejoin
+          console.log(`Room ${roomCode} resumed`);
+          break;
+        case 'end':
+          // Kick all participants and mark room as inactive
+          await this.kickAllParticipants(roomCode, 'Room ended by host');
+          // Remove room from memory
+          this.roomStates.delete(roomCode);
+          this.roomHosts.delete(roomCode);
+          break;
+      }
+    } catch (error) {
+      console.error('Error handling room state change:', error);
     }
   }
 

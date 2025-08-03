@@ -45,8 +45,39 @@ export class RoomsController {
   @Patch(':id')
   async updateRoom(
     @Param('id') id: string,
-    @Body() updateRoomDto: { name?: string; videoUrl?: string },
+    @Body() updateRoomDto: { 
+      name?: string; 
+      videoUrl?: string; 
+      isPublic?: boolean; 
+      maxUsers?: number;
+      isActive?: boolean;
+      isPaused?: boolean;
+    },
   ) {
     return await this.roomsService.updateRoom(id, updateRoomDto);
+  }
+
+  @Post(':id/pause')
+  async pauseRoom(
+    @Param('id') id: string,
+    @Body() pauseRoomDto: { creatorId: string },
+  ) {
+    return await this.roomsService.pauseRoom(id, pauseRoomDto.creatorId);
+  }
+
+  @Post(':id/end')
+  async endRoom(
+    @Param('id') id: string,
+    @Body() endRoomDto: { creatorId: string },
+  ) {
+    return await this.roomsService.endRoom(id, endRoomDto.creatorId);
+  }
+
+  @Post(':id/resume')
+  async resumeRoom(
+    @Param('id') id: string,
+    @Body() resumeRoomDto: { creatorId: string },
+  ) {
+    return await this.roomsService.resumeRoom(id, resumeRoomDto.creatorId);
   }
 }

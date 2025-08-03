@@ -244,13 +244,21 @@ export const RoomPage: React.FC = () => {
       setParticipants(data.participants || []);
     });
 
+    // Handle room paused event
+    socket.on('room-paused', (data: any) => {
+      console.log('Room paused:', data);
+      toast.error('Room has been paused by the host. You have been disconnected.');
+      navigate('/');
+    });
+
     return () => {
       socket.off('room-joined');
       socket.off('user-joined');
       socket.off('user-left');
       socket.off('participants-update');
+      socket.off('room-paused');
     };
-  }, [socket, participants]);
+  }, [socket, participants, navigate]);
 
   // Periodic participants refresh to handle any sync issues
   useEffect(() => {
