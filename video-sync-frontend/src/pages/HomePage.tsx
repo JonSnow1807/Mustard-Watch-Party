@@ -6,96 +6,192 @@ import styled from '@emotion/styled';
 import { apiService } from '../services/api';
 
 const Container = styled.div`
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 2rem;
+  min-height: 100vh;
+  position: relative;
+  
+  &::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.2) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: -1;
+  }
 `;
 
 const Header = styled.header`
   text-align: center;
-  margin-bottom: 3rem;
+  margin-bottom: 4rem;
+  position: relative;
 `;
 
 const Title = styled.h1`
-  color: #333;
-  font-size: 3rem;
+  font-size: 4rem;
+  font-weight: 700;
   margin-bottom: 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: fadeIn 1s ease-out;
+  
+  @media (max-width: 768px) {
+    font-size: 2.5rem;
+  }
+`;
+
+const Subtitle = styled.p`
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 2rem;
+  animation: fadeIn 1s ease-out 0.2s both;
 `;
 
 const UserInfo = styled.div`
-  background: #e8f4f8;
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 2rem;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 1.5rem 2rem;
+  margin-bottom: 3rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  animation: fadeIn 1s ease-out 0.4s both;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  
+  @media (max-width: 768px) {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+`;
+
+const WelcomeText = styled.span`
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
 `;
 
 const CreateButton = styled.button`
   padding: 1rem 2rem;
-  background: #28a745;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   font-size: 1.1rem;
-  font-weight: bold;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
   
   &:hover {
-    background: #218838;
     transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(102, 126, 234, 0.6);
+  }
+  
+  &:active {
+    transform: translateY(0);
   }
 `;
 
 const LogoutButton = styled.button`
-  padding: 0.5rem 1rem;
-  background: #dc3545;
-  color: white;
-  border: none;
-  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  background: rgba(220, 38, 38, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 8px;
   cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
   
   &:hover {
-    background: #c82333;
+    background: rgba(220, 38, 38, 0.3);
+    border-color: rgba(220, 38, 38, 0.5);
   }
 `;
 
 const Section = styled.section`
-  margin-bottom: 3rem;
+  margin-bottom: 4rem;
+  animation: fadeIn 1s ease-out 0.6s both;
 `;
 
 const SectionTitle = styled.h2`
-  color: #333;
-  font-size: 1.8rem;
-  margin-bottom: 1.5rem;
+  font-size: 2.2rem;
+  font-weight: 600;
+  margin-bottom: 2rem;
+  color: #ffffff;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 1rem;
+  
+  @media (max-width: 768px) {
+    font-size: 1.8rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
 `;
 
 const RoomsGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 2rem;
+  margin-top: 2rem;
+  
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
 `;
 
 const RoomCard = styled.div`
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 2rem;
   cursor: pointer;
-  border: 2px solid transparent;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
   
   &:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.2);
+    
+    &::before {
+      opacity: 1;
+    }
+  }
+  
+  &:active {
     transform: translateY(-4px);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   }
 `;
 
@@ -103,26 +199,30 @@ const RoomHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: start;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
 `;
 
 const RoomTitle = styled.h3`
   margin: 0;
-  font-size: 1.2rem;
-  color: #333;
+  font-size: 1.4rem;
+  color: #ffffff;
   font-weight: 600;
+  line-height: 1.3;
 `;
 
 const LiveBadge = styled.span<{ isPlaying: boolean }>`
-  padding: 0.25rem 0.75rem;
+  padding: 0.5rem 1rem;
   border-radius: 20px;
   font-size: 0.8rem;
-  font-weight: bold;
-  background: ${props => props.isPlaying ? '#ff4444' : '#666'};
+  font-weight: 600;
+  background: ${props => props.isPlaying 
+    ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
+    : 'rgba(255, 255, 255, 0.1)'};
   color: white;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.5rem;
+  border: 1px solid ${props => props.isPlaying ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.1)'};
   
   &::before {
     content: '';
@@ -132,17 +232,13 @@ const LiveBadge = styled.span<{ isPlaying: boolean }>`
     background: white;
     animation: ${props => props.isPlaying ? 'pulse 2s infinite' : 'none'};
   }
-  
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
 `;
 
 const RoomDescription = styled.p`
-  color: #666;
-  font-size: 0.9rem;
-  margin: 0.5rem 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.95rem;
+  margin: 1rem 0;
+  line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -151,66 +247,111 @@ const RoomDescription = styled.p`
 
 const RoomStats = styled.div`
   display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
-  font-size: 0.85rem;
-  color: #666;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+  flex-wrap: wrap;
+`;
+
+const StatItem = styled.span`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 `;
 
 const Tag = styled.span`
   display: inline-block;
-  padding: 0.25rem 0.5rem;
-  background: #e8f4f8;
-  color: #007bff;
-  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  border-radius: 8px;
   font-size: 0.8rem;
   margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: rgba(59, 130, 246, 0.3);
+    transform: translateY(-1px);
+  }
 `;
 
 const PrivateBadge = styled.span`
-  padding: 0.25rem 0.5rem;
-  background: #ffc107;
-  color: #333;
-  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-radius: 8px;
   font-size: 0.8rem;
-  font-weight: bold;
+  font-weight: 600;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  display: inline-block;
+  margin-bottom: 0.5rem;
 `;
 
 const EmptyState = styled.div`
   text-align: center;
-  padding: 3rem;
-  color: #666;
+  padding: 4rem 2rem;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   
   h3 {
     margin-bottom: 1rem;
-    color: #333;
+    color: #ffffff;
+    font-size: 1.5rem;
+    font-weight: 600;
   }
   
   p {
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
+    font-size: 1.1rem;
+    line-height: 1.6;
   }
 `;
 
 const FilterBar = styled.div`
   display: flex;
   gap: 1rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
   flex-wrap: wrap;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 `;
 
 const FilterButton = styled.button<{ active: boolean }>`
-  padding: 0.5rem 1rem;
-  border: 1px solid ${props => props.active ? '#007bff' : '#ddd'};
-  background: ${props => props.active ? '#007bff' : 'white'};
-  color: ${props => props.active ? 'white' : '#333'};
-  border-radius: 20px;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid ${props => props.active ? 'rgba(102, 126, 234, 0.5)' : 'rgba(255, 255, 255, 0.1)'};
+  background: ${props => props.active 
+    ? 'linear-gradient(135deg, #667eea, #764ba2)' 
+    : 'rgba(255, 255, 255, 0.05)'};
+  color: ${props => props.active ? 'white' : 'rgba(255, 255, 255, 0.8)'};
+  border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
   
   &:hover {
-    border-color: #007bff;
-    background: ${props => props.active ? '#0056b3' : '#f0f8ff'};
+    border-color: rgba(102, 126, 234, 0.5);
+    background: ${props => props.active 
+      ? 'linear-gradient(135deg, #5a67d8, #6b46c1)' 
+      : 'rgba(255, 255, 255, 0.1)'};
+    transform: translateY(-1px);
   }
+`;
+
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 3rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
 `;
 
 export const HomePage: React.FC = () => {
@@ -246,10 +387,8 @@ export const HomePage: React.FC = () => {
 
   const handleJoinRoom = (roomCode: string, isPrivate: boolean = false) => {
     if (isPrivate) {
-      // For private rooms, navigate to join page with room code
       navigate(`/join-room/${roomCode}`);
     } else {
-      // For public rooms, join directly
       navigate(`/room/${roomCode}`);
     }
   };
@@ -266,15 +405,18 @@ export const HomePage: React.FC = () => {
     return (
       <Container>
         <Header>
-          <Title>🎬 Video Sync Platform</Title>
-          <p>Watch videos together in perfect sync!</p>
+          <Title>🎬 Mustard Watch Party</Title>
+          <Subtitle>Experience synchronized video watching like never before</Subtitle>
         </Header>
         
         <Section>
-          <h2>Welcome! Please login to continue</h2>
-          <CreateButton onClick={() => navigate('/login')}>
-            🔐 Go to Login
-          </CreateButton>
+          <EmptyState>
+            <h3>Welcome to the Future of Watch Parties</h3>
+            <p>Join thousands of users enjoying synchronized video experiences together.</p>
+            <CreateButton onClick={() => navigate('/login')}>
+              🔐 Get Started
+            </CreateButton>
+          </EmptyState>
         </Section>
       </Container>
     );
@@ -283,24 +425,28 @@ export const HomePage: React.FC = () => {
   return (
     <Container>
       <Header>
-        <Title>🎬 Video Sync Platform</Title>
+        <Title>🎬 Mustard Watch Party</Title>
+        <Subtitle>Your synchronized video experience awaits</Subtitle>
         <UserInfo>
-          <span>Welcome, {user.username}!</span>
-          <LogoutButton onClick={logout}>Logout</LogoutButton>
+          <WelcomeText>Welcome back, {user.username}! 👋</WelcomeText>
+          <LogoutButton onClick={logout}>Sign Out</LogoutButton>
         </UserInfo>
       </Header>
 
       {/* Your Rooms Section */}
       <Section>
         <SectionTitle>
-          🏠 Your Rooms
+          🏠 Your Watch Parties
           <CreateButton onClick={handleCreateRoom}>
-            ➕ Create New Room
+            ➕ Create New Party
           </CreateButton>
         </SectionTitle>
         
         {userRoomsLoading ? (
-          <p>Loading your rooms...</p>
+          <LoadingSpinner>
+            <div className="spinner"></div>
+            <span style={{ marginLeft: '1rem' }}>Loading your parties...</span>
+          </LoadingSpinner>
         ) : userRooms?.length > 0 ? (
           <RoomsGrid>
             {userRooms.map((room: any) => (
@@ -317,32 +463,43 @@ export const HomePage: React.FC = () => {
                 )}
                 
                 {room.videoUrl && (
-                  <p style={{ fontSize: '0.9rem', color: '#666', margin: '0.5rem 0' }}>
+                  <p style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.6)', margin: '1rem 0' }}>
                     🎥 {room.videoUrl}
                   </p>
                 )}
                 
-                <div style={{ marginTop: '0.5rem' }}>
-                  {!room.isPublic && <PrivateBadge>🔒 Private</PrivateBadge>}
+                <div style={{ marginTop: '1rem' }}>
+                  {!room.isPublic && <PrivateBadge>🔒 Private Party</PrivateBadge>}
                   {room.tags?.map((tag: string) => (
                     <Tag key={tag}>#{tag}</Tag>
                   ))}
                 </div>
                 
                 <RoomStats>
-                  <span>👥 {room._count.participants} watching</span>
-                  <span>🎥 {getTimeSince(room.createdAt)}</span>
-                  {room.creator && <span>by {room.creator.username}</span>}
+                  <StatItem>
+                    <span>👥</span>
+                    <span>{room._count.participants} watching</span>
+                  </StatItem>
+                  <StatItem>
+                    <span>🎥</span>
+                    <span>{getTimeSince(room.createdAt)}</span>
+                  </StatItem>
+                  {room.creator && (
+                    <StatItem>
+                      <span>👤</span>
+                      <span>by {room.creator.username}</span>
+                    </StatItem>
+                  )}
                 </RoomStats>
               </RoomCard>
             ))}
           </RoomsGrid>
         ) : (
           <EmptyState>
-            <h3>No rooms yet!</h3>
-            <p>Create your first room to start watching videos with friends.</p>
+            <h3>No watch parties yet!</h3>
+            <p>Create your first synchronized video experience and invite friends to join the fun.</p>
             <CreateButton onClick={handleCreateRoom}>
-              ➕ Create Your First Room
+              ➕ Create Your First Party
             </CreateButton>
           </EmptyState>
         )}
@@ -350,14 +507,14 @@ export const HomePage: React.FC = () => {
 
       {/* Public Rooms Section */}
       <Section>
-        <SectionTitle>🌍 Public Rooms</SectionTitle>
+        <SectionTitle>🌍 Discover Public Parties</SectionTitle>
         
         <FilterBar>
           <FilterButton 
             active={publicFilter === 'all'} 
             onClick={() => setPublicFilter('all')}
           >
-            All Rooms
+            All Parties
           </FilterButton>
           <FilterButton 
             active={publicFilter === 'movies'} 
@@ -386,7 +543,10 @@ export const HomePage: React.FC = () => {
         </FilterBar>
         
         {publicRoomsLoading ? (
-          <p>Loading public rooms...</p>
+          <LoadingSpinner>
+            <div className="spinner"></div>
+            <span style={{ marginLeft: '1rem' }}>Discovering parties...</span>
+          </LoadingSpinner>
         ) : publicRooms?.length > 0 ? (
           <RoomsGrid>
             {publicRooms.map((room: any) => (
@@ -402,26 +562,35 @@ export const HomePage: React.FC = () => {
                   <RoomDescription>{room.description}</RoomDescription>
                 )}
                 
-                <div style={{ marginTop: '0.5rem' }}>
+                <div style={{ marginTop: '1rem' }}>
                   {room.tags?.map((tag: string) => (
                     <Tag key={tag}>#{tag}</Tag>
                   ))}
                 </div>
                 
                 <RoomStats>
-                  <span>👥 {room._count.participants} watching</span>
-                  <span>🎥 {getTimeSince(room.createdAt)}</span>
-                  <span>by {room.creator.username}</span>
+                  <StatItem>
+                    <span>👥</span>
+                    <span>{room._count.participants} watching</span>
+                  </StatItem>
+                  <StatItem>
+                    <span>🎥</span>
+                    <span>{getTimeSince(room.createdAt)}</span>
+                  </StatItem>
+                  <StatItem>
+                    <span>👤</span>
+                    <span>by {room.creator.username}</span>
+                  </StatItem>
                 </RoomStats>
               </RoomCard>
             ))}
           </RoomsGrid>
         ) : (
           <EmptyState>
-            <h3>No public rooms found</h3>
-            <p>Be the first to create a public room!</p>
+            <h3>No public parties found</h3>
+            <p>Be the first to create a public watch party and start the trend!</p>
             <CreateButton onClick={handleCreateRoom}>
-              ➕ Create Public Room
+              ➕ Create Public Party
             </CreateButton>
           </EmptyState>
         )}

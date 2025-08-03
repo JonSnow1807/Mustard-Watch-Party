@@ -6,118 +6,230 @@ import { toast } from 'react-hot-toast';
 import styled from '@emotion/styled';
 
 const Container = styled.div`
-  max-width: 500px;
+  max-width: 600px;
   margin: 0 auto;
   padding: 2rem;
+  min-height: 100vh;
+  position: relative;
+  
+  &::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: -1;
+  }
 `;
 
 const Header = styled.header`
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 3rem;
+  animation: fadeIn 1s ease-out;
 `;
 
 const Title = styled.h1`
-  color: #333;
-  font-size: 2.5rem;
-  margin-bottom: 0.5rem;
+  font-size: 3.5rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  
+  @media (max-width: 768px) {
+    font-size: 2.5rem;
+  }
 `;
 
 const Subtitle = styled.p`
-  color: #666;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 2rem;
+  animation: fadeIn 1s ease-out 0.2s both;
 `;
 
 const Form = styled.form`
-  background: white;
-  border-radius: 12px;
-  padding: 2rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 3rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  animation: fadeIn 1s ease-out 0.4s both;
+  
+  @media (max-width: 768px) {
+    padding: 2rem;
+  }
 `;
 
 const FormGroup = styled.div`
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 `;
 
 const Label = styled.label`
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
   font-weight: 600;
-  color: #333;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
 `;
 
 const Input = styled.input`
   width: 100%;
-  padding: 0.75rem;
-  border: 2px solid #e1e5e9;
-  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
   font-size: 1rem;
-  transition: border-color 0.2s;
+  color: #ffffff;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+  }
   
   &:focus {
     outline: none;
-    border-color: #007bff;
+    border-color: rgba(102, 126, 234, 0.5);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+  }
+  
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.2);
   }
 `;
 
 const Button = styled.button`
   width: 100%;
-  padding: 1rem;
-  background: #007bff;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
   
   &:hover {
-    background: #0056b3;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(102, 126, 234, 0.6);
   }
   
   &:disabled {
-    background: #ccc;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+  
+  &:active {
+    transform: translateY(0);
   }
 `;
 
 const BackButton = styled.button`
-  padding: 0.5rem 1rem;
-  background: #6c757d;
-  color: white;
-  border: none;
-  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
   cursor: pointer;
-  margin-bottom: 1rem;
+  margin-bottom: 2rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
   
   &:hover {
-    background: #5a6268;
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
   }
 `;
 
 const RoomInfo = styled.div`
-  background: #f8f9fa;
-  padding: 1.5rem;
-  border-radius: 8px;
-  margin-bottom: 1.5rem;
-  border-left: 4px solid #007bff;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  border-left: 4px solid rgba(102, 126, 234, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  animation: slideIn 0.6s ease-out;
 `;
 
 const RoomName = styled.h3`
-  margin: 0 0 0.5rem 0;
-  color: #333;
+  margin: 0 0 1rem 0;
+  color: #ffffff;
+  font-size: 1.5rem;
+  font-weight: 600;
 `;
 
 const RoomDescription = styled.p`
   margin: 0;
-  color: #666;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  line-height: 1.5;
+`;
+
+const RoomMeta = styled.div`
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
   font-size: 0.9rem;
 `;
 
 const LoadingSpinner = styled.div`
   text-align: center;
-  padding: 2rem;
-  color: #666;
+  padding: 4rem 2rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  
+  .spinner {
+    margin-bottom: 1rem;
+  }
+`;
+
+const PublicBadge = styled.span`
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  margin-bottom: 1rem;
+`;
+
+const PrivateBadge = styled.span`
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  margin-bottom: 1rem;
+`;
+
+const HelpText = styled.p`
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 0.5rem;
+  line-height: 1.4;
 `;
 
 export const JoinRoomPage: React.FC = () => {
@@ -141,7 +253,7 @@ export const JoinRoomPage: React.FC = () => {
         setRoomInfo(response.data);
         setError(null);
       } catch (error: any) {
-        setError('Room not found or you do not have permission to join');
+        setError('Watch party not found or you do not have permission to join');
       }
     };
 
@@ -158,7 +270,7 @@ export const JoinRoomPage: React.FC = () => {
     }
 
     if (!roomInfo) {
-      toast.error('Room information not available');
+      toast.error('Watch party information not available');
       return;
     }
 
@@ -168,7 +280,7 @@ export const JoinRoomPage: React.FC = () => {
       // In the future, you might want to add password verification here
       navigate(`/room/${roomCode}`);
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to join room');
+      toast.error(error.response?.data?.message || 'Failed to join watch party');
     } finally {
       setLoading(false);
     }
@@ -184,8 +296,8 @@ export const JoinRoomPage: React.FC = () => {
     return (
       <Container>
         <Header>
-          <Title>Join Room</Title>
-          <Subtitle>Please login to join a room</Subtitle>
+          <Title>Join Watch Party</Title>
+          <Subtitle>Please login to join a synchronized video experience</Subtitle>
         </Header>
         <Button onClick={() => navigate('/login')}>Go to Login</Button>
       </Container>
@@ -200,7 +312,7 @@ export const JoinRoomPage: React.FC = () => {
         </BackButton>
         
         <Header>
-          <Title>❌ Room Not Found</Title>
+          <Title>❌ Party Not Found</Title>
           <Subtitle>{error}</Subtitle>
         </Header>
         
@@ -214,7 +326,10 @@ export const JoinRoomPage: React.FC = () => {
   if (!roomInfo) {
     return (
       <Container>
-        <LoadingSpinner>Loading room information...</LoadingSpinner>
+        <LoadingSpinner>
+          <div className="spinner"></div>
+          <span>Loading party information...</span>
+        </LoadingSpinner>
       </Container>
     );
   }
@@ -226,8 +341,8 @@ export const JoinRoomPage: React.FC = () => {
       </BackButton>
       
       <Header>
-        <Title>🎬 Join Room</Title>
-        <Subtitle>Enter the room to start watching together</Subtitle>
+        <Title>🎬 Join Watch Party</Title>
+        <Subtitle>Enter the party to start watching together</Subtitle>
       </Header>
 
       <RoomInfo>
@@ -235,39 +350,45 @@ export const JoinRoomPage: React.FC = () => {
         {roomInfo.description && (
           <RoomDescription>{roomInfo.description}</RoomDescription>
         )}
-        <RoomDescription>
+        <RoomMeta>
           Created by {roomInfo.creator?.username || 'Unknown'}
-        </RoomDescription>
+        </RoomMeta>
+        
+        {roomInfo.isPublic ? (
+          <PublicBadge>🌍 Public Party</PublicBadge>
+        ) : (
+          <PrivateBadge>🔒 Private Party</PrivateBadge>
+        )}
       </RoomInfo>
 
       <Form onSubmit={handleJoinRoom}>
         {roomInfo.isPublic ? (
           <>
-            <p style={{ textAlign: 'center', color: '#666', marginBottom: '1.5rem' }}>
-              This is a public room. Anyone can join!
+            <p style={{ textAlign: 'center', color: 'rgba(255, 255, 255, 0.7)', marginBottom: '2rem', fontSize: '1.1rem' }}>
+              This is a public watch party. Anyone can join!
             </p>
             <Button type="button" onClick={handleJoinPublicRoom}>
-              Join Public Room
+              🎉 Join Public Party
             </Button>
           </>
         ) : (
           <>
             <FormGroup>
-              <Label htmlFor="password">Room Password</Label>
+              <Label htmlFor="password">Party Password</Label>
               <Input
                 id="password"
                 type="password"
-                placeholder="Enter room password (if required)"
+                placeholder="Enter party password (if required)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              <p style={{ fontSize: '0.9rem', color: '#666', marginTop: '0.25rem' }}>
-                This is a private room. You may need a password to join.
-              </p>
+              <HelpText>
+                This is a private watch party. You may need a password to join.
+              </HelpText>
             </FormGroup>
             
             <Button type="submit" disabled={loading}>
-              {loading ? 'Joining...' : 'Join Private Room'}
+              {loading ? 'Joining...' : 'Join Private Party'}
             </Button>
           </>
         )}
