@@ -157,9 +157,34 @@ const Message = styled.div`
   }
 `;
 
+const ErrorMessage = styled.div`
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #f44336;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease-in;
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+`;
+
 interface VideoPlayerProps {
   videoUrl: string;
   roomCode: string;
+  isHost?: boolean;
 }
 
 interface VideoSyncState {
@@ -177,7 +202,7 @@ declare global {
   }
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) => {
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode, isHost = false }) => {
   const { socket, connected } = useSocket();
   const { user } = useAuth();
   const [isPlaying, setIsPlaying] = useState(false);
@@ -187,6 +212,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
   const [videoId, setVideoId] = useState<string | null>(null);
   const [syncEnabled, setSyncEnabled] = useState(true);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'buffering' | 'off'>('synced');
+  const [controlError, setControlError] = useState<string | null>(null);
   
   const playerRef = useRef<any>(null);
   const isProcessingRemoteUpdate = useRef(false);
@@ -295,13 +321,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
               if (pendingAction.current?.type === 'pause') {
                 pendingAction.current = null;
               }
-              broadcastStateRef.current?.('play', time);
+              // Only broadcast if user is host
+              if (isHost) {
+                broadcastStateRef.current?.('play', time);
+              }
               break;
               
             case window.YT.PlayerState.PAUSED:
               setIsPlaying(false);
-              // Only broadcast if this isn't from a seek operation
-              if (pendingAction.current?.type !== 'seek') {
+              // Only broadcast if this isn't from a seek operation and user is host
+              if (pendingAction.current?.type !== 'seek' && isHost) {
                 broadcastStateRef.current?.('pause', time);
               }
               break;
@@ -318,7 +347,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
               break;
               
             case window.YT.PlayerState.ENDED:
-              broadcastStateRef.current?.('ended', time);
+              if (isHost) {
+                broadcastStateRef.current?.('ended', time);
+              }
               break;
           }
         }
@@ -329,6 +360,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
   // Debounced broadcast to prevent spam
   const broadcastState = useCallback((action: string, time?: number) => {
     if (!socket || !connected || !syncEnabled || !playerRef.current) return;
+    
+    // Only allow host to broadcast video state changes
+    if (!isHost && (action === 'play' || action === 'pause' || action === 'seek')) {
+      return;
+    }
     
     // Prevent duplicate broadcasts
     const now = Date.now();
@@ -361,7 +397,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
     });
     
     console.log(`Broadcasting ${action} at ${currentTime.toFixed(1)}s`);
-  }, [socket, connected, syncEnabled, roomCode, user]);
+  }, [socket, connected, syncEnabled, roomCode, user, isHost]);
 
   // Store broadcast function in ref to avoid stale closures
   const broadcastStateRef = useRef<typeof broadcastState | null>(null);
@@ -478,14 +514,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
       applySync(data, data.action);
     };
 
+    // Handle control permission errors
+    const handleError = (data: { message: string }) => {
+      if (data.message.includes('Only the host can control')) {
+        setControlError(data.message);
+        setTimeout(() => setControlError(null), 3000);
+      }
+    };
+
     socket.on('room-joined', handleRoomJoined);
     socket.on('video-state-update', handleVideoStateUpdate);
+    socket.on('error', handleError);
 
     return () => {
       socket.off('room-joined', handleRoomJoined);
       socket.off('video-state-update', handleVideoStateUpdate);
+      socket.off('error', handleError);
     };
-  }, [socket, syncEnabled, applySync]);
+  }, [socket, syncEnabled, applySync, isHost]);
 
   // Update current time and periodic sync
   useEffect(() => {
@@ -496,8 +542,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
         const time = playerRef.current.getCurrentTime();
         setCurrentTime(time);
         
-        // Light periodic sync every 8 seconds when playing
-        if (isPlaying && syncEnabled && !isProcessingRemoteUpdate.current) {
+        // Light periodic sync every 8 seconds when playing (host only)
+        if (isPlaying && syncEnabled && !isProcessingRemoteUpdate.current && isHost) {
           const now = Date.now();
           if (now - lastActionTime.current > 8000) {
             broadcastState('sync', time);
@@ -512,6 +558,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
   const handlePlayPause = () => {
     if (!playerRef.current || isProcessingRemoteUpdate.current) return;
     
+    // Only allow host to control video
+    if (!isHost) {
+      setControlError('Only the host can control video playback');
+      setTimeout(() => setControlError(null), 3000);
+      return;
+    }
+    
     if (isPlaying) {
       playerRef.current.pauseVideo();
     } else {
@@ -521,6 +574,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!playerRef.current || !duration || isProcessingRemoteUpdate.current) return;
+
+    // Only allow host to seek video
+    if (!isHost) {
+      setControlError('Only the host can control video playback');
+      setTimeout(() => setControlError(null), 3000);
+      return;
+    }
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -536,7 +596,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
   };
 
   const handleForceSync = () => {
-    if (!playerRef.current) return;
+    if (!playerRef.current || !isHost) return;
     const currentTime = playerRef.current.getCurrentTime();
     broadcastState('force-sync', currentTime);
   };
@@ -584,9 +644,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
           <SyncIndicator status={syncEnabled ? syncStatus : 'off'}>
             {getSyncStatusText()}
           </SyncIndicator>
+          {!isHost && (
+            <span style={{ color: '#ffc107', fontSize: '12px', marginLeft: '10px' }}>
+              👑 Host Only Controls
+            </span>
+          )}
         </StatusBar>
         
-        <PlayButton onClick={handlePlayPause} disabled={!isReady || isProcessingRemoteUpdate.current}>
+        <PlayButton 
+          onClick={handlePlayPause} 
+          disabled={!isReady || isProcessingRemoteUpdate.current || !isHost}
+          title={!isHost ? 'Only the host can control video playback' : undefined}
+        >
           {isPlaying ? '⏸ Pause' : '▶ Play'}
         </PlayButton>
         
@@ -594,11 +663,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
           {syncEnabled ? '🔗 Sync ON' : '🔗 Sync OFF'}
         </SyncButton>
         
-        <SyncButton onClick={handleForceSync} title="Resync with room">
+        <SyncButton 
+          onClick={handleForceSync} 
+          title="Resync with room"
+          disabled={!isHost}
+        >
           ⚡ Resync
         </SyncButton>
         
-        <ProgressBar onClick={handleProgressClick}>
+        <ProgressBar 
+          onClick={handleProgressClick}
+          style={{ cursor: isHost ? 'pointer' : 'not-allowed' }}
+          title={!isHost ? 'Only the host can control video playback' : 'Click to seek'}
+        >
           <ProgressFill progress={duration > 0 ? (currentTime / duration) * 100 : 0} />
         </ProgressBar>
         
@@ -606,6 +683,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, roomCode }) 
           {formatTime(currentTime)} / {formatTime(duration)}
         </TimeDisplay>
       </Controls>
+      
+      {controlError && (
+        <ErrorMessage>
+          {controlError}
+        </ErrorMessage>
+      )}
     </PlayerContainer>
   );
 };

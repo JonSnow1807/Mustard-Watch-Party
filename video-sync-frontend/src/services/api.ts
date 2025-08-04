@@ -1,6 +1,14 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+// Get API URL from environment or fallback to localhost
+const getApiUrl = () => {
+  if (typeof window !== 'undefined' && window.ENV) {
+    return window.ENV.API_URL + '/api';
+  }
+  return process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+};
+
+const API_URL = getApiUrl();
 
 const api = axios.create({
   baseURL: API_URL,
