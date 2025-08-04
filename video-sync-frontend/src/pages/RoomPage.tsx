@@ -421,7 +421,7 @@ export const RoomPage: React.FC = () => {
       <MainContent>
         <VideoSection>
           {room.videoUrl ? (
-            <VideoPlayer videoUrl={room.videoUrl} roomCode={roomCode!} />
+            <VideoPlayer videoUrl={room.videoUrl} roomCode={roomCode!} isHost={isHost} />
           ) : (
             <NoVideoMessage>
               No video selected for this room

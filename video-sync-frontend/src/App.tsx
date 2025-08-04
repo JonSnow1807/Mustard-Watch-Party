@@ -22,12 +22,10 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  const wsUrl = process.env.REACT_APP_WS_URL || 'http://localhost:3000';
-
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <SocketProvider serverUrl={wsUrl}>
+        <SocketProvider>
           <Router>
             <div className="App">
               <Routes>
