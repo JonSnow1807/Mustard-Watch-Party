@@ -2,14 +2,26 @@ services:
   - type: web
     name: mustard-watch-party-backend
     env: node
-    buildCommand: npm install && npm run build
+    plan: starter
+    buildCommand: npm ci && npm run build
     startCommand: npm run start:prod
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 10000
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: mustard-watch-party-db
+          property: connectionString
       - key: JWT_SECRET
-        sync: false
+        generateValue: true
       - key: FRONTEND_URL
-        value: https://your-frontend-domain.vercel.app 
+        value: https://your-frontend-domain.vercel.app
+    healthCheckPath: /api/health
+
+databases:
+  - name: mustard-watch-party-db
+    databaseName: mustardwatchparty
+    user: mustardwatchparty
+    plan: starter

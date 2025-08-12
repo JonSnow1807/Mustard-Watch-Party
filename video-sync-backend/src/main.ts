@@ -15,7 +15,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe());
   
   // Set global prefix
-  app.setGlobalPrefix('api', { exclude: [''] });
+  app.setGlobalPrefix('api', { exclude: ['', 'health'] });
   
   // Performance monitoring middleware
   app.use((req, res, next) => {
@@ -32,8 +32,9 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   await app.listen(port);
   
-  console.log(`🚀 Server is running on http://localhost:${port}`);
+  console.log(`🚀 Server is running on port ${port}`);
   console.log(`🔌 WebSocket server is ready for connections`);
-  console.log(`📊 Expecting <500ms sync latency`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌐 CORS origin: ${process.env.FRONTEND_URL || 'http://localhost:3001'}`);
 }
 bootstrap();

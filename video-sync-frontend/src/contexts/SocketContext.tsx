@@ -23,23 +23,15 @@ export const useSocket = () => {
 
 interface SocketProviderProps {
   children: React.ReactNode;
+  serverUrl: string;
 }
 
-export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
+export const SocketProvider: React.FC<SocketProviderProps> = ({ children, serverUrl }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [currentRoom, setCurrentRoom] = useState<string | null>(null);
 
-  // Get WebSocket URL from environment
-  const getWsUrl = () => {
-    if (typeof window !== 'undefined' && window.ENV) {
-      return window.ENV.WS_URL;
-    }
-    return process.env.REACT_APP_WS_URL || 'ws://localhost:3000';
-  };
-
   useEffect(() => {
-    const serverUrl = getWsUrl();
     console.log('Connecting to WebSocket server:', serverUrl);
     
     const socketInstance = io(serverUrl, {
@@ -71,7 +63,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     return () => {
       socketInstance.disconnect();
     };
-  }, []);
+  }, [serverUrl]);
 
   const joinRoom = useCallback((roomCode: string, userId: string) => {
     if (socket && connected) {
