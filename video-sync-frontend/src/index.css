@@ -82,7 +82,7 @@ input:focus, textarea:focus {
 
 /* Gradient text */
 .gradient-text {
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -170,7 +170,7 @@ a {
 }
 
 a:hover {
-  color: #93c5fd;
+  color: #93bbfd;
 }
 
 /* Loading spinner */

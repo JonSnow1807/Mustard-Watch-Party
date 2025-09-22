@@ -12,7 +12,7 @@ import { toast } from 'react-hot-toast';
 
 const Container = styled.div`
   min-height: 100vh;
-  background: linear-gradient(135deg, #0a0e1a 0%, #0f2027 50%, #203a43 100%);
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
   position: relative;
   overflow-x: hidden;
 
@@ -24,9 +24,9 @@ const Container = styled.div`
     right: 0;
     bottom: 0;
     background:
-      radial-gradient(circle at 20% 80%, rgba(16, 185, 129, 0.15) 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, rgba(20, 184, 166, 0.15) 0%, transparent 50%),
-      radial-gradient(circle at 40% 40%, rgba(14, 165, 233, 0.1) 0%, transparent 50%);
+      radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(37, 99, 235, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 40% 40%, rgba(30, 64, 175, 0.1) 0%, transparent 50%);
     pointer-events: none;
     z-index: 0;
   }
@@ -63,7 +63,7 @@ const RoomTitle = styled.h1`
   margin: 0;
   font-size: 1.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -117,7 +117,7 @@ const ActionButton = styled.button<{ variant?: 'primary' | 'danger' | 'ghost' }>
     switch(props.variant) {
       case 'danger': return 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
       case 'ghost': return 'transparent';
-      default: return 'linear-gradient(135deg, #10b981 0%, #14b8a6 100%)';
+      default: return 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
     }
   }};
 
@@ -134,7 +134,7 @@ const ActionButton = styled.button<{ variant?: 'primary' | 'danger' | 'ghost' }>
       switch(props.variant) {
         case 'danger': return 'linear-gradient(135deg, #e53e4d 0%, #d32f3f 100%)';
         case 'ghost': return 'rgba(255, 255, 255, 0.05)';
-        default: return 'linear-gradient(135deg, #14b8a6 0%, #10b981 100%)';
+        default: return 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)';
       }
     }};
   }
@@ -206,7 +206,7 @@ const ParticipantsTitle = styled.h3`
 `;
 
 const ParticipantCount = styled.span`
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: white;
   padding: 2px 8px;
   border-radius: 12px;
@@ -221,12 +221,12 @@ const ParticipantItem = styled.div<{ isHost?: boolean }>`
   padding: 12px;
   background: ${props =>
     props.isHost
-      ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)'
+      ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%)'
       : 'rgba(255, 255, 255, 0.02)'
   };
   border: 1px solid ${props =>
     props.isHost
-      ? 'rgba(102, 126, 234, 0.3)'
+      ? 'rgba(59, 130, 246, 0.3)'
       : 'rgba(255, 255, 255, 0.05)'
   };
   border-radius: 12px;
@@ -236,7 +236,7 @@ const ParticipantItem = styled.div<{ isHost?: boolean }>`
   &:hover {
     background: ${props =>
       props.isHost
-        ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%)'
+        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.15) 100%)'
         : 'rgba(255, 255, 255, 0.05)'
     };
     transform: translateX(4px);
@@ -285,7 +285,7 @@ const LoadingSpinner = styled.div`
   width: 60px;
   height: 60px;
   border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top: 3px solid #10b981;
+  border-top: 3px solid #3b82f6;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
@@ -428,7 +428,7 @@ export const EnhancedRoomPage: React.FC = () => {
   };
 
   const getAvatarColor = (username: string) => {
-    const colors = ['#10b981', '#14b8a6', '#06b6d4', '#0891b2', '#0e7490', '#155e75'];
+    const colors = ['#3b82f6', '#2563eb', '#1e40af', '#1d4ed8', '#1e3a8a', '#475569'];
     const index = username.charCodeAt(0) % colors.length;
     return colors[index];
   };

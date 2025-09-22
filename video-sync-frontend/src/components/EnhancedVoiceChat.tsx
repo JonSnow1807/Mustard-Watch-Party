@@ -6,7 +6,7 @@ import SimplePeer from 'simple-peer';
 import { toast } from 'react-hot-toast';
 
 const VoiceContainer = styled.div`
-  background: linear-gradient(135deg, rgba(15, 32, 39, 0.95) 0%, rgba(32, 58, 67, 0.95) 100%);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
   backdrop-filter: blur(20px);
   border-radius: 16px;
   padding: 24px;
@@ -57,8 +57,8 @@ const ControlButton = styled.button<{ active?: boolean; danger?: boolean; disabl
 
   background: ${props =>
     props.danger ? 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)' :
-    props.active ? 'linear-gradient(135deg, #10b981 0%, #14b8a6 100%)' :
-    'rgba(108, 117, 125, 0.3)'
+    props.active ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' :
+    'rgba(100, 116, 139, 0.3)'
   };
 
   color: white;
@@ -70,8 +70,8 @@ const ControlButton = styled.button<{ active?: boolean; danger?: boolean; disabl
     background: ${props =>
       props.disabled ? '' :
       props.danger ? 'linear-gradient(135deg, #e53e4d 0%, #d32f3f 100%)' :
-      props.active ? 'linear-gradient(135deg, #14b8a6 0%, #10b981 100%)' :
-      'rgba(108, 117, 125, 0.4)'
+      props.active ? 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)' :
+      'rgba(100, 116, 139, 0.4)'
     };
   }
 
@@ -101,12 +101,12 @@ const ParticipantsGrid = styled.div`
 const ParticipantCard = styled.div<{ isSpeaking: boolean; isMuted: boolean; isDeafened: boolean }>`
   background: ${props =>
     props.isSpeaking
-      ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(20, 184, 166, 0.05) 100%)'
+      ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.05) 100%)'
       : 'rgba(255, 255, 255, 0.03)'
   };
   border: 2px solid ${props =>
     props.isSpeaking
-      ? 'rgba(16, 185, 129, 0.5)'
+      ? 'rgba(59, 130, 246, 0.5)'
       : 'rgba(255, 255, 255, 0.1)'
   };
   border-radius: 16px;
@@ -120,7 +120,7 @@ const ParticipantCard = styled.div<{ isSpeaking: boolean; isMuted: boolean; isDe
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
     background: ${props =>
       props.isSpeaking
-        ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(20, 184, 166, 0.1) 100%)'
+        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.1) 100%)'
         : 'rgba(255, 255, 255, 0.05)'
     };
   }
@@ -145,7 +145,7 @@ const Avatar = styled.div<{ color: string; size?: number }>`
 const SpeakingRing = styled.div`
   position: absolute;
   inset: -4px;
-  border: 3px solid #10b981;
+  border: 3px solid #3b82f6;
   border-radius: 50%;
   animation: pulse 1.5s ease-in-out infinite;
 
@@ -185,8 +185,8 @@ const StatusIcon = styled.span<{ active: boolean; type: 'mic' | 'headphone' }>`
   font-size: 18px;
   color: ${props =>
     props.type === 'mic'
-      ? (props.active ? '#10b981' : '#dc3545')
-      : (props.active ? '#14b8a6' : '#dc3545')
+      ? (props.active ? '#3b82f6' : '#dc3545')
+      : (props.active ? '#2563eb' : '#dc3545')
   };
   transition: all 0.2s;
 `;
@@ -498,7 +498,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
   };
 
   const getAvatarColor = (username: string) => {
-    const colors = ['#10b981', '#14b8a6', '#06b6d4', '#0891b2', '#0e7490', '#155e75'];
+    const colors = ['#3b82f6', '#2563eb', '#1e40af', '#1d4ed8', '#1e3a8a', '#1e40af'];
     const index = username.charCodeAt(0) % colors.length;
     return colors[index];
   };
@@ -616,7 +616,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
           <ConnectionInfo>
             <InfoRow>
               <span>Connection Quality</span>
-              <span style={{ color: '#10b981' }}>● Excellent</span>
+              <span style={{ color: '#60a5fa' }}>● Excellent</span>
             </InfoRow>
             <InfoRow>
               <span>Audio Codec</span>
@@ -624,7 +624,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
             </InfoRow>
             <InfoRow>
               <span>Noise Suppression</span>
-              <span style={{ color: '#10b981' }}>Enabled</span>
+              <span style={{ color: '#60a5fa' }}>Enabled</span>
             </InfoRow>
           </ConnectionInfo>
         </>

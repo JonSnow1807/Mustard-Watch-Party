@@ -9,7 +9,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #0a0e1a 0%, #0f2027 50%, #203a43 100%);
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
   color: #ffffff;
   min-height: 100vh;
 }
@@ -35,12 +35,12 @@ code {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #34d399 0%, #2dd4bf 100%);
+  background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
 }
 
 /* Reset default styles */
@@ -56,13 +56,13 @@ p {
 }
 
 a {
-  color: #10b981;
+  color: #60a5fa;
   text-decoration: none;
   transition: color 0.2s;
 }
 
 a:hover {
-  color: #14b8a6;
+  color: #93bbfd;
 }
 
 /* Animations */
@@ -120,7 +120,7 @@ a:hover {
 
 /* Gradient buttons */
 .btn-gradient {
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: white;
   border: none;
   padding: 12px 24px;
@@ -128,12 +128,12 @@ a:hover {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
 }
 
 .btn-gradient:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
 }
 
 /* Loading spinner */
@@ -141,7 +141,7 @@ a:hover {
   width: 40px;
   height: 40px;
   border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top: 3px solid #10b981;
+  border-top: 3px solid #3b82f6;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -160,5 +160,5 @@ a:hover {
 }
 
 .Toastify__progress-bar {
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
 }

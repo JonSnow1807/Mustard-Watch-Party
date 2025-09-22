@@ -19,8 +19,8 @@ const Container = styled.div`
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(16, 185, 129, 0.3) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(20, 184, 166, 0.3) 0%, transparent 50%);
+    background: radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(37, 99, 235, 0.3) 0%, transparent 50%);
     pointer-events: none;
     z-index: -1;
   }
@@ -36,7 +36,7 @@ const Title = styled.h1`
   font-size: 3.5rem;
   font-weight: 700;
   margin-bottom: 1rem;
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 50%, #06b6d4 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1e40af 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -96,8 +96,8 @@ const Input = styled.input`
   
   &:focus {
     outline: none;
-    border-color: rgba(16, 185, 129, 0.5);
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+    border-color: rgba(59, 130, 246, 0.5);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
     background: rgba(255, 255, 255, 0.08);
   }
   
@@ -126,8 +126,8 @@ const TextArea = styled.textarea`
   
   &:focus {
     outline: none;
-    border-color: rgba(16, 185, 129, 0.5);
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+    border-color: rgba(59, 130, 246, 0.5);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
     background: rgba(255, 255, 255, 0.08);
   }
   
@@ -150,14 +150,14 @@ const CheckboxGroup = styled.div`
 const Checkbox = styled.input`
   width: 20px;
   height: 20px;
-  accent-color: #10b981;
+  accent-color: #3b82f6;
   cursor: pointer;
 `;
 
 const Button = styled.button`
   width: 100%;
   padding: 1.25rem;
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: white;
   border: none;
   border-radius: 12px;
@@ -165,11 +165,11 @@ const Button = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
   
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(102, 126, 234, 0.6);
+    box-shadow: 0 8px 30px rgba(59, 130, 246, 0.6);
   }
   
   &:disabled {
@@ -226,13 +226,13 @@ const ExampleText = styled.div`
   }
   
   code {
-    background: rgba(102, 126, 234, 0.2);
+    background: rgba(59, 130, 246, 0.2);
     padding: 0.25rem 0.5rem;
     border-radius: 6px;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 0.85rem;
-    color: #93c5fd;
-    border: 1px solid rgba(102, 126, 234, 0.3);
+    color: #93bbfd;
+    border: 1px solid rgba(59, 130, 246, 0.3);
   }
 `;
 

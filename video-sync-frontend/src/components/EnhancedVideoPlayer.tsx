@@ -11,7 +11,7 @@ const PlayerContainer = styled.div`
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-  background: linear-gradient(135deg, #0f2027 0%, #203a43 100%);
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
 `;
 
 const VideoWrapper = styled.div`
@@ -35,7 +35,7 @@ const LatencyBadge = styled.div<{ latency: number }>`
   top: 20px;
   right: 20px;
   background: ${props =>
-    props.latency < 100 ? 'rgba(76, 175, 80, 0.9)' :
+    props.latency < 100 ? 'rgba(34, 197, 94, 0.9)' :
     props.latency < 300 ? 'rgba(255, 193, 7, 0.9)' :
     props.latency < 500 ? 'rgba(255, 152, 0, 0.9)' :
     'rgba(244, 67, 54, 0.9)'
@@ -75,8 +75,8 @@ const ControlRow = styled.div`
 
 const PlayButton = styled.button<{ canControl: boolean }>`
   background: ${props => props.canControl
-    ? 'linear-gradient(135deg, #10b981 0%, #14b8a6 100%)'
-    : 'rgba(108, 117, 125, 0.5)'};
+    ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
+    : 'rgba(100, 116, 139, 0.5)'};
   border: none;
   color: white;
   padding: 12px 24px;
@@ -89,13 +89,13 @@ const PlayButton = styled.button<{ canControl: boolean }>`
   gap: 8px;
   transition: all 0.3s ease;
   box-shadow: ${props => props.canControl
-    ? '0 4px 15px rgba(16, 185, 129, 0.4)'
+    ? '0 4px 15px rgba(59, 130, 246, 0.4)'
     : 'none'};
 
   &:hover {
     transform: ${props => props.canControl ? 'translateY(-2px)' : 'none'};
     box-shadow: ${props => props.canControl
-      ? '0 6px 20px rgba(16, 185, 129, 0.6)'
+      ? '0 6px 20px rgba(59, 130, 246, 0.6)'
       : 'none'};
   }
 
@@ -129,7 +129,7 @@ const ProgressBar = styled.div<{ canControl: boolean }>`
 
 const ProgressFill = styled.div<{ progress: number }>`
   height: 100%;
-  background: linear-gradient(90deg, #10b981 0%, #14b8a6 100%);
+  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
   border-radius: 3px;
   width: ${props => props.progress}%;
   position: relative;
@@ -185,10 +185,10 @@ const StatusItem = styled.div<{ type?: 'success' | 'warning' | 'error' | 'info' 
   font-size: 13px;
   color: ${props => {
     switch(props.type) {
-      case 'success': return '#4CAF50';
+      case 'success': return '#60a5fa';
       case 'warning': return '#FFC107';
       case 'error': return '#F44336';
-      case 'info': return '#2196F3';
+      case 'info': return '#93bbfd';
       default: return 'rgba(255, 255, 255, 0.7)';
     }
   }};
@@ -210,13 +210,13 @@ const StatusDot = styled.div<{ color: string }>`
 const ControlButton = styled.button<{ active?: boolean; variant?: 'primary' | 'secondary' }>`
   background: ${props =>
     props.variant === 'primary'
-      ? 'linear-gradient(135deg, #10b981 0%, #14b8a6 100%)'
+      ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
       : props.active
-        ? 'rgba(16, 185, 129, 0.2)'
+        ? 'rgba(59, 130, 246, 0.2)'
         : 'rgba(255, 255, 255, 0.05)'
   };
   border: 1px solid ${props =>
-    props.active ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'
+    props.active ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255, 255, 255, 0.1)'
   };
   color: white;
   padding: 8px 16px;
@@ -232,9 +232,9 @@ const ControlButton = styled.button<{ active?: boolean; variant?: 'primary' | 's
   &:hover {
     background: ${props =>
       props.variant === 'primary'
-        ? 'linear-gradient(135deg, #7788ee 0%, #8659b2 100%)'
+        ? 'linear-gradient(135deg, #1e40af 0%, #1d4ed8 100%)'
         : props.active
-          ? 'rgba(102, 126, 234, 0.3)'
+          ? 'rgba(59, 130, 246, 0.3)'
           : 'rgba(255, 255, 255, 0.1)'
     };
     transform: translateY(-1px);
@@ -247,16 +247,16 @@ const CollaborativeIndicator = styled.div<{ enabled: boolean }>`
   gap: 8px;
   padding: 6px 12px;
   background: ${props => props.enabled
-    ? 'rgba(76, 175, 80, 0.1)'
+    ? 'rgba(34, 197, 94, 0.1)'
     : 'rgba(255, 255, 255, 0.05)'
   };
   border: 1px solid ${props => props.enabled
-    ? 'rgba(76, 175, 80, 0.3)'
+    ? 'rgba(34, 197, 94, 0.3)'
     : 'rgba(255, 255, 255, 0.1)'
   };
   border-radius: 8px;
   font-size: 12px;
-  color: ${props => props.enabled ? '#4CAF50' : 'rgba(255, 255, 255, 0.5)'};
+  color: ${props => props.enabled ? '#60a5fa' : 'rgba(255, 255, 255, 0.5)'};
   font-weight: 500;
 `;
 
@@ -559,7 +559,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
         <StatusRow>
           <StatusGroup>
             <StatusItem type={connected ? 'success' : 'error'}>
-              <StatusDot color={connected ? '#4CAF50' : '#F44336'} />
+              <StatusDot color={connected ? '#60a5fa' : '#F44336'} />
               {connected ? 'Connected' : 'Disconnected'}
             </StatusItem>
 
