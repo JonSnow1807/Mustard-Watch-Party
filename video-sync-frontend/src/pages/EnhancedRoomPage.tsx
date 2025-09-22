@@ -12,7 +12,7 @@ import { toast } from 'react-hot-toast';
 
 const Container = styled.div`
   min-height: 100vh;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 50%, #f1f5f9 100%);
   position: relative;
   overflow-x: hidden;
 
@@ -24,18 +24,18 @@ const Container = styled.div`
     right: 0;
     bottom: 0;
     background:
-      radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, rgba(37, 99, 235, 0.15) 0%, transparent 50%),
-      radial-gradient(circle at 40% 40%, rgba(30, 64, 175, 0.1) 0%, transparent 50%);
+      radial-gradient(circle at 20% 80%, rgba(37, 99, 235, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(30, 64, 175, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 40% 40%, rgba(25, 57, 155, 0.05) 0%, transparent 50%);
     pointer-events: none;
     z-index: 0;
   }
 `;
 
 const Header = styled.header`
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   padding: 16px 24px;
   position: sticky;
   top: 0;
@@ -63,7 +63,7 @@ const RoomTitle = styled.h1`
   margin: 0;
   font-size: 1.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -74,18 +74,18 @@ const RoomCode = styled.div`
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.9);
+  color: #334155;
   font-family: monospace;
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.08);
+    border-color: rgba(0, 0, 0, 0.2);
   }
 
   span.icon {
@@ -110,31 +110,31 @@ const ActionButton = styled.button<{ variant?: 'primary' | 'danger' | 'ghost' }>
   align-items: center;
   gap: 8px;
   border: ${props =>
-    props.variant === 'ghost' ? '1px solid rgba(255, 255, 255, 0.2)' : 'none'
+    props.variant === 'ghost' ? '1px solid rgba(0, 0, 0, 0.2)' : 'none'
   };
 
   background: ${props => {
     switch(props.variant) {
-      case 'danger': return 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
+      case 'danger': return 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)';
       case 'ghost': return 'transparent';
-      default: return 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
+      default: return 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)';
     }
   }};
 
-  color: white;
+  color: ${props => props.variant === 'ghost' ? '#1e293b' : 'white'};
 
   &:hover {
     transform: translateY(-2px);
     box-shadow: ${props =>
       props.variant === 'ghost'
         ? 'none'
-        : '0 4px 12px rgba(0, 0, 0, 0.2)'
+        : '0 4px 12px rgba(0, 0, 0, 0.1)'
     };
     background: ${props => {
       switch(props.variant) {
-        case 'danger': return 'linear-gradient(135deg, #e53e4d 0%, #d32f3f 100%)';
-        case 'ghost': return 'rgba(255, 255, 255, 0.05)';
-        default: return 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)';
+        case 'danger': return 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+        case 'ghost': return 'rgba(0, 0, 0, 0.05)';
+        default: return 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)';
       }
     }};
   }
@@ -179,9 +179,9 @@ const SidePanel = styled.div`
 `;
 
 const ParticipantsList = styled.div`
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.03);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 16px;
   padding: 20px;
 `;
@@ -192,12 +192,12 @@ const ParticipantsHeader = styled.div`
   align-items: center;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 `;
 
 const ParticipantsTitle = styled.h3`
   margin: 0;
-  color: white;
+  color: #1e293b;
   font-size: 1rem;
   font-weight: 600;
   display: flex;
@@ -206,7 +206,7 @@ const ParticipantsTitle = styled.h3`
 `;
 
 const ParticipantCount = styled.span`
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
   padding: 2px 8px;
   border-radius: 12px;
@@ -221,13 +221,13 @@ const ParticipantItem = styled.div<{ isHost?: boolean }>`
   padding: 12px;
   background: ${props =>
     props.isHost
-      ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%)'
-      : 'rgba(255, 255, 255, 0.02)'
+      ? 'linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(30, 64, 175, 0.1) 100%)'
+      : 'rgba(0, 0, 0, 0.02)'
   };
   border: 1px solid ${props =>
     props.isHost
-      ? 'rgba(59, 130, 246, 0.3)'
-      : 'rgba(255, 255, 255, 0.05)'
+      ? 'rgba(37, 99, 235, 0.3)'
+      : 'rgba(0, 0, 0, 0.05)'
   };
   border-radius: 12px;
   margin-bottom: 8px;
@@ -236,8 +236,8 @@ const ParticipantItem = styled.div<{ isHost?: boolean }>`
   &:hover {
     background: ${props =>
       props.isHost
-        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.15) 100%)'
-        : 'rgba(255, 255, 255, 0.05)'
+        ? 'linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(30, 64, 175, 0.15) 100%)'
+        : 'rgba(0, 0, 0, 0.05)'
     };
     transform: translateX(4px);
   }
@@ -258,7 +258,7 @@ const ParticipantAvatar = styled.div<{ color: string }>`
 
 const ParticipantName = styled.div`
   flex: 1;
-  color: white;
+  color: #1e293b;
   font-size: 14px;
   font-weight: 500;
 `;
@@ -278,14 +278,14 @@ const LoadingContainer = styled.div`
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  color: white;
+  color: #1e293b;
 `;
 
 const LoadingSpinner = styled.div`
   width: 60px;
   height: 60px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top: 3px solid #3b82f6;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top: 3px solid #2563eb;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
@@ -428,7 +428,7 @@ export const EnhancedRoomPage: React.FC = () => {
   };
 
   const getAvatarColor = (username: string) => {
-    const colors = ['#3b82f6', '#2563eb', '#1e40af', '#1d4ed8', '#1e3a8a', '#475569'];
+    const colors = ['#2563eb', '#1e40af', '#1d4ed8', '#1e3a8a', '#3730a3', '#475569'];
     const index = username.charCodeAt(0) % colors.length;
     return colors[index];
   };

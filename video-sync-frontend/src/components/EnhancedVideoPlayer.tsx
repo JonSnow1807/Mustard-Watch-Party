@@ -10,8 +10,8 @@ const PlayerContainer = styled.div`
   flex-direction: column;
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
 `;
 
 const VideoWrapper = styled.div`
@@ -59,12 +59,12 @@ const LatencyBadge = styled.div<{ latency: number }>`
 `;
 
 const Controls = styled.div`
-  background: linear-gradient(180deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.95) 100%);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.95) 100%);
   padding: 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
 `;
 
 const ControlRow = styled.div`
@@ -75,8 +75,8 @@ const ControlRow = styled.div`
 
 const PlayButton = styled.button<{ canControl: boolean }>`
   background: ${props => props.canControl
-    ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
-    : 'rgba(100, 116, 139, 0.5)'};
+    ? 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)'
+    : 'rgba(100, 116, 139, 0.3)'};
   border: none;
   color: white;
   padding: 12px 24px;
@@ -89,13 +89,13 @@ const PlayButton = styled.button<{ canControl: boolean }>`
   gap: 8px;
   transition: all 0.3s ease;
   box-shadow: ${props => props.canControl
-    ? '0 4px 15px rgba(59, 130, 246, 0.4)'
+    ? '0 4px 15px rgba(37, 99, 235, 0.3)'
     : 'none'};
 
   &:hover {
     transform: ${props => props.canControl ? 'translateY(-2px)' : 'none'};
     box-shadow: ${props => props.canControl
-      ? '0 6px 20px rgba(59, 130, 246, 0.6)'
+      ? '0 6px 20px rgba(37, 99, 235, 0.4)'
       : 'none'};
   }
 
@@ -115,7 +115,7 @@ const ProgressContainer = styled.div`
 const ProgressBar = styled.div<{ canControl: boolean }>`
   width: 100%;
   height: 6px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.1);
   border-radius: 3px;
   cursor: ${props => props.canControl ? 'pointer' : 'default'};
   position: relative;
@@ -129,7 +129,7 @@ const ProgressBar = styled.div<{ canControl: boolean }>`
 
 const ProgressFill = styled.div<{ progress: number }>`
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(90deg, #2563eb 0%, #1e40af 100%);
   border-radius: 3px;
   width: ${props => props.progress}%;
   position: relative;
@@ -145,7 +145,7 @@ const ProgressFill = styled.div<{ progress: number }>`
     height: 14px;
     background: white;
     border-radius: 50%;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     opacity: 0;
     transition: opacity 0.2s;
   }
@@ -156,7 +156,7 @@ const ProgressFill = styled.div<{ progress: number }>`
 `;
 
 const TimeDisplay = styled.div`
-  color: rgba(255, 255, 255, 0.9);
+  color: #334155;
   font-size: 14px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -169,7 +169,7 @@ const StatusRow = styled.div`
   align-items: center;
   justify-content: space-between;
   padding: 12px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
 `;
 
 const StatusGroup = styled.div`
@@ -185,11 +185,11 @@ const StatusItem = styled.div<{ type?: 'success' | 'warning' | 'error' | 'info' 
   font-size: 13px;
   color: ${props => {
     switch(props.type) {
-      case 'success': return '#60a5fa';
-      case 'warning': return '#FFC107';
-      case 'error': return '#F44336';
-      case 'info': return '#93bbfd';
-      default: return 'rgba(255, 255, 255, 0.7)';
+      case 'success': return '#2563eb';
+      case 'warning': return '#d97706';
+      case 'error': return '#dc2626';
+      case 'info': return '#1e40af';
+      default: return '#64748b';
     }
   }};
 `;
@@ -210,15 +210,15 @@ const StatusDot = styled.div<{ color: string }>`
 const ControlButton = styled.button<{ active?: boolean; variant?: 'primary' | 'secondary' }>`
   background: ${props =>
     props.variant === 'primary'
-      ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
+      ? 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)'
       : props.active
-        ? 'rgba(59, 130, 246, 0.2)'
-        : 'rgba(255, 255, 255, 0.05)'
+        ? 'rgba(37, 99, 235, 0.2)'
+        : 'rgba(0, 0, 0, 0.05)'
   };
   border: 1px solid ${props =>
-    props.active ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255, 255, 255, 0.1)'
+    props.active ? 'rgba(37, 99, 235, 0.5)' : 'rgba(0, 0, 0, 0.1)'
   };
-  color: white;
+  color: ${props => props.variant === 'primary' ? 'white' : '#1e293b'};
   padding: 8px 16px;
   border-radius: 8px;
   cursor: pointer;
@@ -234,8 +234,8 @@ const ControlButton = styled.button<{ active?: boolean; variant?: 'primary' | 's
       props.variant === 'primary'
         ? 'linear-gradient(135deg, #1e40af 0%, #1d4ed8 100%)'
         : props.active
-          ? 'rgba(59, 130, 246, 0.3)'
-          : 'rgba(255, 255, 255, 0.1)'
+          ? 'rgba(37, 99, 235, 0.3)'
+          : 'rgba(0, 0, 0, 0.1)'
     };
     transform: translateY(-1px);
   }
@@ -248,15 +248,15 @@ const CollaborativeIndicator = styled.div<{ enabled: boolean }>`
   padding: 6px 12px;
   background: ${props => props.enabled
     ? 'rgba(34, 197, 94, 0.1)'
-    : 'rgba(255, 255, 255, 0.05)'
+    : 'rgba(0, 0, 0, 0.05)'
   };
   border: 1px solid ${props => props.enabled
     ? 'rgba(34, 197, 94, 0.3)'
-    : 'rgba(255, 255, 255, 0.1)'
+    : 'rgba(0, 0, 0, 0.1)'
   };
   border-radius: 8px;
   font-size: 12px;
-  color: ${props => props.enabled ? '#60a5fa' : 'rgba(255, 255, 255, 0.5)'};
+  color: ${props => props.enabled ? '#2563eb' : '#94a3b8'};
   font-weight: 500;
 `;
 
@@ -509,9 +509,9 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   if (!videoId) {
     return (
       <PlayerContainer>
-        <div style={{ padding: '60px', textAlign: 'center', color: 'white' }}>
+        <div style={{ padding: '60px', textAlign: 'center', color: '#1e293b' }}>
           <h3>No Video Selected</h3>
-          <p style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+          <p style={{ color: '#64748b' }}>
             Please provide a valid YouTube URL
           </p>
         </div>

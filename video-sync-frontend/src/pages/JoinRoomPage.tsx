@@ -19,8 +19,8 @@ const Container = styled.div`
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.3) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(37, 99, 235, 0.3) 0%, transparent 50%);
+    background: radial-gradient(circle at 20% 80%, rgba(37, 99, 235, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(30, 64, 175, 0.08) 0%, transparent 50%);
     pointer-events: none;
     z-index: -1;
   }
@@ -36,11 +36,11 @@ const Title = styled.h1`
   font-size: 3.5rem;
   font-weight: 700;
   margin-bottom: 1rem;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1e40af 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 50%, #1d4ed8 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  
+
   @media (max-width: 768px) {
     font-size: 2.5rem;
   }
@@ -48,20 +48,20 @@ const Title = styled.h1`
 
 const Subtitle = styled.p`
   font-size: 1.2rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: #64748b;
   margin-bottom: 2rem;
   animation: fadeIn 1s ease-out 0.2s both;
 `;
 
 const Form = styled.form`
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 20px;
   padding: 3rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   animation: fadeIn 1s ease-out 0.4s both;
-  
+
   @media (max-width: 768px) {
     padding: 2rem;
   }
@@ -75,41 +75,41 @@ const Label = styled.label`
   display: block;
   margin-bottom: 0.75rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: #334155;
   font-size: 1rem;
 `;
 
 const Input = styled.input`
   width: 100%;
   padding: 1rem 1.25rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.03);
+  border: 2px solid rgba(0, 0, 0, 0.1);
   border-radius: 12px;
   font-size: 1rem;
-  color: #ffffff;
+  color: #1e293b;
   transition: all 0.3s ease;
   backdrop-filter: blur(10px);
-  
+
   &::placeholder {
-    color: rgba(255, 255, 255, 0.5);
+    color: #94a3b8;
   }
-  
+
   &:focus {
     outline: none;
-    border-color: rgba(59, 130, 246, 0.5);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(37, 99, 235, 0.5);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    background: rgba(0, 0, 0, 0.05);
   }
-  
+
   &:hover {
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: rgba(0, 0, 0, 0.2);
   }
 `;
 
 const Button = styled.button`
   width: 100%;
   padding: 1.25rem;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
   border: none;
   border-radius: 12px;
@@ -117,21 +117,21 @@ const Button = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
-  
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
+
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 8px 30px rgba(37, 99, 235, 0.4);
   }
-  
+
   &:disabled {
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.5);
+    background: rgba(0, 0, 0, 0.1);
+    color: #94a3b8;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
   }
-  
+
   &:active {
     transform: translateY(0);
   }
@@ -139,45 +139,45 @@ const Button = styled.button`
 
 const BackButton = styled.button`
   padding: 0.75rem 1.5rem;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.05);
+  color: #64748b;
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 10px;
   cursor: pointer;
   margin-bottom: 2rem;
   font-weight: 500;
   transition: all 0.3s ease;
   backdrop-filter: blur(10px);
-  
+
   &:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(0, 0, 0, 0.1);
+    border-color: rgba(0, 0, 0, 0.2);
     transform: translateY(-1px);
   }
 `;
 
 const RoomInfo = styled.div`
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.03);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 16px;
   padding: 2rem;
   margin-bottom: 2rem;
-  border-left: 4px solid rgba(59, 130, 246, 0.5);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border-left: 4px solid rgba(37, 99, 235, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   animation: slideIn 0.6s ease-out;
 `;
 
 const RoomName = styled.h3`
   margin: 0 0 1rem 0;
-  color: #ffffff;
+  color: #1e293b;
   font-size: 1.5rem;
   font-weight: 600;
 `;
 
 const RoomDescription = styled.p`
   margin: 0;
-  color: rgba(255, 255, 255, 0.7);
+  color: #64748b;
   font-size: 1rem;
   line-height: 1.5;
 `;
@@ -185,17 +185,17 @@ const RoomDescription = styled.p`
 const RoomMeta = styled.div`
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  color: #94a3b8;
   font-size: 0.9rem;
 `;
 
 const LoadingSpinner = styled.div`
   text-align: center;
   padding: 4rem 2rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: #64748b;
   font-size: 1.1rem;
-  
+
   .spinner {
     margin-bottom: 1rem;
   }
@@ -227,7 +227,7 @@ const PrivateBadge = styled.span`
 
 const HelpText = styled.p`
   font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: #94a3b8;
   margin-top: 0.5rem;
   line-height: 1.4;
 `;
@@ -364,7 +364,7 @@ export const JoinRoomPage: React.FC = () => {
       <Form onSubmit={handleJoinRoom}>
         {roomInfo.isPublic ? (
           <>
-            <p style={{ textAlign: 'center', color: 'rgba(255, 255, 255, 0.7)', marginBottom: '2rem', fontSize: '1.1rem' }}>
+            <p style={{ textAlign: 'center', color: '#64748b', marginBottom: '2rem', fontSize: '1.1rem' }}>
               This is a public watch party. Anyone can join!
             </p>
             <Button type="button" onClick={handleJoinPublicRoom}>

@@ -6,13 +6,13 @@ import SimplePeer from 'simple-peer';
 import { toast } from 'react-hot-toast';
 
 const VoiceContainer = styled.div`
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.95) 0%, rgba(241, 245, 249, 0.95) 100%);
   backdrop-filter: blur(20px);
   border-radius: 16px;
   padding: 24px;
   margin-top: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 `;
 
 const Header = styled.div`
@@ -21,12 +21,12 @@ const Header = styled.div`
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 `;
 
 const Title = styled.h3`
   margin: 0;
-  color: white;
+  color: #1e293b;
   font-size: 1.2rem;
   font-weight: 600;
   display: flex;
@@ -56,9 +56,9 @@ const ControlButton = styled.button<{ active?: boolean; danger?: boolean; disabl
   gap: 8px;
 
   background: ${props =>
-    props.danger ? 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)' :
-    props.active ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' :
-    'rgba(100, 116, 139, 0.3)'
+    props.danger ? 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)' :
+    props.active ? 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)' :
+    'rgba(100, 116, 139, 0.2)'
   };
 
   color: white;
@@ -66,12 +66,12 @@ const ControlButton = styled.button<{ active?: boolean; danger?: boolean; disabl
 
   &:hover {
     transform: ${props => !props.disabled ? 'translateY(-2px)' : 'none'};
-    box-shadow: ${props => !props.disabled ? '0 4px 12px rgba(0, 0, 0, 0.2)' : 'none'};
+    box-shadow: ${props => !props.disabled ? '0 4px 12px rgba(0, 0, 0, 0.1)' : 'none'};
     background: ${props =>
       props.disabled ? '' :
-      props.danger ? 'linear-gradient(135deg, #e53e4d 0%, #d32f3f 100%)' :
-      props.active ? 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)' :
-      'rgba(100, 116, 139, 0.4)'
+      props.danger ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' :
+      props.active ? 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)' :
+      'rgba(100, 116, 139, 0.3)'
     };
   }
 
@@ -85,10 +85,10 @@ const StatusIndicator = styled.div`
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.05);
   border-radius: 8px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
+  color: #64748b;
 `;
 
 const ParticipantsGrid = styled.div`
@@ -101,13 +101,13 @@ const ParticipantsGrid = styled.div`
 const ParticipantCard = styled.div<{ isSpeaking: boolean; isMuted: boolean; isDeafened: boolean }>`
   background: ${props =>
     props.isSpeaking
-      ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.05) 100%)'
-      : 'rgba(255, 255, 255, 0.03)'
+      ? 'linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(30, 64, 175, 0.05) 100%)'
+      : 'rgba(0, 0, 0, 0.03)'
   };
   border: 2px solid ${props =>
     props.isSpeaking
-      ? 'rgba(59, 130, 246, 0.5)'
-      : 'rgba(255, 255, 255, 0.1)'
+      ? 'rgba(37, 99, 235, 0.5)'
+      : 'rgba(0, 0, 0, 0.1)'
   };
   border-radius: 16px;
   padding: 16px;
@@ -117,11 +117,11 @@ const ParticipantCard = styled.div<{ isSpeaking: boolean; isMuted: boolean; isDe
 
   &:hover {
     transform: translateY(-4px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
     background: ${props =>
       props.isSpeaking
-        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.1) 100%)'
-        : 'rgba(255, 255, 255, 0.05)'
+        ? 'linear-gradient(135deg, rgba(37, 99, 235, 0.2) 0%, rgba(30, 64, 175, 0.1) 100%)'
+        : 'rgba(0, 0, 0, 0.05)'
     };
   }
 `;
@@ -145,7 +145,7 @@ const Avatar = styled.div<{ color: string; size?: number }>`
 const SpeakingRing = styled.div`
   position: absolute;
   inset: -4px;
-  border: 3px solid #3b82f6;
+  border: 3px solid #2563eb;
   border-radius: 50%;
   animation: pulse 1.5s ease-in-out infinite;
 
@@ -168,7 +168,7 @@ const SpeakingRing = styled.div`
 const Username = styled.div`
   font-size: 14px;
   font-weight: 600;
-  color: white;
+  color: #1e293b;
   margin-bottom: 8px;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -185,8 +185,8 @@ const StatusIcon = styled.span<{ active: boolean; type: 'mic' | 'headphone' }>`
   font-size: 18px;
   color: ${props =>
     props.type === 'mic'
-      ? (props.active ? '#3b82f6' : '#dc3545')
-      : (props.active ? '#2563eb' : '#dc3545')
+      ? (props.active ? '#2563eb' : '#dc2626')
+      : (props.active ? '#1e40af' : '#dc2626')
   };
   transition: all 0.2s;
 `;
@@ -194,29 +194,29 @@ const StatusIcon = styled.span<{ active: boolean; type: 'mic' | 'headphone' }>`
 const ConnectionInfo = styled.div`
   margin-top: 20px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.03);
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
 `;
 
 const InfoRow = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: rgba(255, 255, 255, 0.7);
+  color: #64748b;
   font-size: 13px;
 
   & + & {
     margin-top: 8px;
     padding-top: 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
   }
 `;
 
 const EmptyState = styled.div`
   text-align: center;
   padding: 40px;
-  color: rgba(255, 255, 255, 0.5);
+  color: #94a3b8;
 
   .icon {
     font-size: 48px;
@@ -616,7 +616,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
           <ConnectionInfo>
             <InfoRow>
               <span>Connection Quality</span>
-              <span style={{ color: '#60a5fa' }}>● Excellent</span>
+              <span style={{ color: '#2563eb' }}>● Excellent</span>
             </InfoRow>
             <InfoRow>
               <span>Audio Codec</span>
@@ -624,7 +624,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
             </InfoRow>
             <InfoRow>
               <span>Noise Suppression</span>
-              <span style={{ color: '#60a5fa' }}>Enabled</span>
+              <span style={{ color: '#2563eb' }}>Enabled</span>
             </InfoRow>
           </ConnectionInfo>
         </>

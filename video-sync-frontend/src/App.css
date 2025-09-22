@@ -9,8 +9,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 50%, #f1f5f9 100%);
+  color: #1e293b;
   min-height: 100vh;
 }
 
@@ -30,7 +30,7 @@ code {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.02);
   border-radius: 10px;
 }
 
@@ -47,12 +47,12 @@ code {
 h1, h2, h3, h4, h5, h6 {
   margin: 0;
   font-weight: 600;
-  color: #ffffff;
+  color: #1e293b;
 }
 
 p {
   margin: 0;
-  color: rgba(255, 255, 255, 0.9);
+  color: #334155;
 }
 
 a {
@@ -112,15 +112,15 @@ a:hover {
 
 /* Glass morphism effect */
 .glass {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.02);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 16px;
 }
 
 /* Gradient buttons */
 .btn-gradient {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
   border: none;
   padding: 12px 24px;
@@ -128,20 +128,20 @@ a:hover {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.2);
 }
 
 .btn-gradient:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.3);
 }
 
 /* Loading spinner */
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top: 3px solid #3b82f6;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top: 3px solid #2563eb;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -153,12 +153,12 @@ a:hover {
 
 /* Toaster custom styles */
 .Toastify__toast {
-  background: linear-gradient(135deg, rgba(15, 32, 39, 0.95) 0%, rgba(32, 58, 67, 0.95) 100%);
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.95) 0%, rgba(241, 245, 249, 0.95) 100%);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: white;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #1e293b;
 }
 
 .Toastify__progress-bar {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
 }

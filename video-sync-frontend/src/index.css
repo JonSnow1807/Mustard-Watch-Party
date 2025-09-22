@@ -12,8 +12,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 50%, #f1f5f9 100%);
+  color: #1e293b;
   min-height: 100vh;
   overflow-x: hidden;
 }
@@ -29,41 +29,41 @@ code {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.02);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.2);
   border-radius: 4px;
   transition: background 0.2s;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 /* Selection */
 ::selection {
-  background: rgba(59, 130, 246, 0.5);
-  color: #ffffff;
+  background: rgba(37, 99, 235, 0.3);
+  color: #1e293b;
 }
 
 /* Focus styles */
 *:focus {
-  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline: 2px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }
 
 /* Button focus */
 button:focus {
-  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline: 2px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }
 
 /* Input focus */
 input:focus, textarea:focus {
-  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline: 2px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }
 
@@ -74,15 +74,15 @@ input:focus, textarea:focus {
 
 /* Glass morphism effect */
 .glass {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.02);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 12px;
 }
 
 /* Gradient text */
 .gradient-text {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -90,11 +90,11 @@ input:focus, textarea:focus {
 
 /* Glow effects */
 .glow {
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.2);
 }
 
 .glow:hover {
-  box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 30px rgba(37, 99, 235, 0.3);
 }
 
 /* Animation keyframes */
@@ -177,8 +177,8 @@ a:hover {
 .spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid rgba(255, 255, 255, 0.1);
-  border-left: 4px solid #60a5fa;
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #2563eb;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

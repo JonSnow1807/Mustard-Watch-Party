@@ -17,25 +17,25 @@ const Container = styled.div`
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.3) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(37, 99, 235, 0.3) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(30, 64, 175, 0.2) 0%, transparent 50%);
+    background: radial-gradient(circle at 20% 80%, rgba(37, 99, 235, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(30, 64, 175, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(25, 57, 155, 0.05) 0%, transparent 50%);
     pointer-events: none;
     z-index: -1;
   }
 `;
 
 const LoginCard = styled.div`
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 20px;
   padding: 3rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   width: 100%;
   max-width: 450px;
   animation: fadeIn 1s ease-out;
-  
+
   @media (max-width: 768px) {
     padding: 2rem;
     margin: 1rem;
@@ -47,7 +47,7 @@ const Title = styled.h2`
   margin-bottom: 0.5rem;
   font-size: 2.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1e40af 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 50%, #1d4ed8 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -56,7 +56,7 @@ const Title = styled.h2`
 const Subtitle = styled.p`
   text-align: center;
   margin-bottom: 2.5rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: #64748b;
   font-size: 1.1rem;
 `;
 
@@ -68,33 +68,33 @@ const Form = styled.form`
 
 const Input = styled.input`
   padding: 1rem 1.25rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.03);
+  border: 2px solid rgba(0, 0, 0, 0.1);
   border-radius: 12px;
   font-size: 1rem;
-  color: #ffffff;
+  color: #1e293b;
   transition: all 0.3s ease;
   backdrop-filter: blur(10px);
-  
+
   &::placeholder {
-    color: rgba(255, 255, 255, 0.5);
+    color: #94a3b8;
   }
-  
+
   &:focus {
     outline: none;
-    border-color: rgba(59, 130, 246, 0.5);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(37, 99, 235, 0.5);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    background: rgba(0, 0, 0, 0.05);
   }
-  
+
   &:hover {
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: rgba(0, 0, 0, 0.2);
   }
 `;
 
 const Button = styled.button`
   padding: 1.25rem;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
   border: none;
   border-radius: 12px;
@@ -102,21 +102,21 @@ const Button = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
-  
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
+
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 8px 30px rgba(37, 99, 235, 0.4);
   }
-  
+
   &:disabled {
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.5);
+    background: rgba(0, 0, 0, 0.1);
+    color: #94a3b8;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
   }
-  
+
   &:active {
     transform: translateY(0);
   }
@@ -125,19 +125,19 @@ const Button = styled.button`
 const ToggleText = styled.p`
   text-align: center;
   margin-top: 2rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: #64748b;
   font-size: 1rem;
-  
+
   button {
     background: none;
     border: none;
-    color: #93c5fd;
+    color: #2563eb;
     cursor: pointer;
     font-weight: 600;
     transition: color 0.3s ease;
-    
+
     &:hover {
-      color: #60a5fa;
+      color: #1e40af;
       text-decoration: underline;
     }
   }
@@ -146,30 +146,30 @@ const ToggleText = styled.p`
 const FeatureList = styled.div`
   margin-top: 2rem;
   padding: 1.5rem;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.03);
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  
+  border: 1px solid rgba(0, 0, 0, 0.1);
+
   h4 {
-    color: #ffffff;
+    color: #1e293b;
     margin-bottom: 1rem;
     font-weight: 600;
     text-align: center;
   }
-  
+
   ul {
     list-style: none;
     padding: 0;
     margin: 0;
   }
-  
+
   li {
-    color: rgba(255, 255, 255, 0.7);
+    color: #64748b;
     margin-bottom: 0.5rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    
+
     &::before {
       content: '✨';
       font-size: 0.9rem;
