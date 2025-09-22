@@ -296,6 +296,18 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('ping')
+  async handlePing(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { timestamp: number },
+  ) {
+    // Immediately respond with pong for latency measurement
+    client.emit('pong', {
+      clientTimestamp: data.timestamp,
+      serverTimestamp: Date.now(),
+    });
+  }
+
   @SubscribeMessage('sync-check')
   async handleSyncCheck(
     @ConnectedSocket() client: Socket,

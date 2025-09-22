@@ -936,3 +936,423 @@ src/pages/EnhancedRoomPage.tsx
 
 webpack compiled with 1 warning
 No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 277:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 330:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 333:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 277:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 330:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 333:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 277:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 330:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 333:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 277:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 330:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 333:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 277:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 330:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 333:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 277:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 330:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 333:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 333:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 333:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 333:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint] 
+src/components/EnhancedVideoPlayer.tsx
+  Line 282:11:  'user' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 335:6:   React Hook useEffect has missing dependencies: 'getYouTubeId' and 'initializePlayer'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/EnhancedVoiceChat.tsx
+  Line 336:6:  React Hook useEffect has a missing dependency: 'createPeerConnection'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/EnhancedRoomPage.tsx
+  Line 335:6:  React Hook useEffect has missing dependencies: 'fetchRoomDetails' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+webpack compiled with 1 warning
+No issues found.

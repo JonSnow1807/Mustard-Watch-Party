@@ -468,6 +468,42 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => clearInterval(interval);
   }, [isReady]);
 
+  // Periodic latency measurement
+  useEffect(() => {
+    if (!socket || !roomCode) return;
+
+    const measureLatency = () => {
+      const timestamp = Date.now();
+      socket.emit('ping', { timestamp });
+    };
+
+    // Measure latency every 5 seconds
+    const latencyInterval = setInterval(measureLatency, 5000);
+
+    // Initial measurement
+    measureLatency();
+
+    // Handle pong response
+    const handlePong = (data: { clientTimestamp: number; serverTimestamp: number }) => {
+      const roundTripTime = Date.now() - data.clientTimestamp;
+      const estimatedLatency = Math.round(roundTripTime / 2);
+      setLatency(estimatedLatency);
+      setShowLatency(true);
+
+      // Always show latency badge, but auto-hide if very good
+      if (estimatedLatency < 50) {
+        setTimeout(() => setShowLatency(false), 3000);
+      }
+    };
+
+    socket.on('pong', handlePong);
+
+    return () => {
+      clearInterval(latencyInterval);
+      socket.off('pong', handlePong);
+    };
+  }, [socket, roomCode]);
+
   const handlePlayPause = () => {
     if (!playerRef.current || !canControl) {
       if (!canControl) {
