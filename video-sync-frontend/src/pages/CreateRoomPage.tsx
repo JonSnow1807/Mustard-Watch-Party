@@ -19,8 +19,8 @@ const Container = styled.div`
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%);
+    background: radial-gradient(circle at 20% 80%, rgba(16, 185, 129, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(20, 184, 166, 0.3) 0%, transparent 50%);
     pointer-events: none;
     z-index: -1;
   }
@@ -36,7 +36,7 @@ const Title = styled.h1`
   font-size: 3.5rem;
   font-weight: 700;
   margin-bottom: 1rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  background: linear-gradient(135deg, #10b981 0%, #14b8a6 50%, #06b6d4 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -96,8 +96,8 @@ const Input = styled.input`
   
   &:focus {
     outline: none;
-    border-color: rgba(102, 126, 234, 0.5);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: rgba(16, 185, 129, 0.5);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
     background: rgba(255, 255, 255, 0.08);
   }
   
@@ -126,8 +126,8 @@ const TextArea = styled.textarea`
   
   &:focus {
     outline: none;
-    border-color: rgba(102, 126, 234, 0.5);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: rgba(16, 185, 129, 0.5);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
     background: rgba(255, 255, 255, 0.08);
   }
   
@@ -150,14 +150,14 @@ const CheckboxGroup = styled.div`
 const Checkbox = styled.input`
   width: 20px;
   height: 20px;
-  accent-color: #667eea;
+  accent-color: #10b981;
   cursor: pointer;
 `;
 
 const Button = styled.button`
   width: 100%;
   padding: 1.25rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
   color: white;
   border: none;
   border-radius: 12px;

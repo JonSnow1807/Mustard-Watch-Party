@@ -11,7 +11,7 @@ const PlayerContainer = styled.div`
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-  background: linear-gradient(135deg, #1e1e2e 0%, #2d1b69 100%);
+  background: linear-gradient(135deg, #0f2027 0%, #203a43 100%);
 `;
 
 const VideoWrapper = styled.div`
@@ -75,7 +75,7 @@ const ControlRow = styled.div`
 
 const PlayButton = styled.button<{ canControl: boolean }>`
   background: ${props => props.canControl
-    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+    ? 'linear-gradient(135deg, #10b981 0%, #14b8a6 100%)'
     : 'rgba(108, 117, 125, 0.5)'};
   border: none;
   color: white;
@@ -89,13 +89,13 @@ const PlayButton = styled.button<{ canControl: boolean }>`
   gap: 8px;
   transition: all 0.3s ease;
   box-shadow: ${props => props.canControl
-    ? '0 4px 15px rgba(102, 126, 234, 0.4)'
+    ? '0 4px 15px rgba(16, 185, 129, 0.4)'
     : 'none'};
 
   &:hover {
     transform: ${props => props.canControl ? 'translateY(-2px)' : 'none'};
     box-shadow: ${props => props.canControl
-      ? '0 6px 20px rgba(102, 126, 234, 0.6)'
+      ? '0 6px 20px rgba(16, 185, 129, 0.6)'
       : 'none'};
   }
 
@@ -129,7 +129,7 @@ const ProgressBar = styled.div<{ canControl: boolean }>`
 
 const ProgressFill = styled.div<{ progress: number }>`
   height: 100%;
-  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(90deg, #10b981 0%, #14b8a6 100%);
   border-radius: 3px;
   width: ${props => props.progress}%;
   position: relative;
@@ -210,13 +210,13 @@ const StatusDot = styled.div<{ color: string }>`
 const ControlButton = styled.button<{ active?: boolean; variant?: 'primary' | 'secondary' }>`
   background: ${props =>
     props.variant === 'primary'
-      ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+      ? 'linear-gradient(135deg, #10b981 0%, #14b8a6 100%)'
       : props.active
-        ? 'rgba(102, 126, 234, 0.2)'
+        ? 'rgba(16, 185, 129, 0.2)'
         : 'rgba(255, 255, 255, 0.05)'
   };
   border: 1px solid ${props =>
-    props.active ? 'rgba(102, 126, 234, 0.5)' : 'rgba(255, 255, 255, 0.1)'
+    props.active ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'
   };
   color: white;
   padding: 8px 16px;
