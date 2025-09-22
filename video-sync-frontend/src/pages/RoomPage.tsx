@@ -271,7 +271,7 @@ export const RoomPage: React.FC = () => {
   const { data: room, isLoading, error } = useQuery<Room>({
     queryKey: ['room', roomCode],
     queryFn: async () => {
-      const response = await apiService.getRoom(roomCode!);
+      const response = await apiService.getRoomByCode(roomCode!);
       return response.data;
     },
     enabled: !!roomCode,
@@ -456,10 +456,10 @@ export const RoomPage: React.FC = () => {
           <ChatPanel roomCode={roomCode!} />
           
           {isHost && (
-            <RoomSettings 
-              room={room} 
-              isHost={true} 
-              onUpdate={() => window.location.reload()} 
+            <RoomSettings
+              room={room}
+              onClose={() => {}}
+              onUpdate={() => window.location.reload()}
             />
           )}
         </Sidebar>

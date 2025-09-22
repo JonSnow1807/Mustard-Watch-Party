@@ -14,6 +14,7 @@ interface VideoState {
   currentTime: number;
   isPlaying: boolean;
   timestamp?: number;
+  latency?: number; // Track sync latency
 }
 
 interface RoomData {
@@ -64,6 +65,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: RoomData,
   ) {
     try {
+      const joinStartTime = Date.now();
       console.log(`User ${data.userId} joining room ${data.roomCode}`);
       
       const room = await this.database.room.findUnique({
@@ -147,7 +149,10 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       console.log(`Sending room state to ${data.userId}:`, currentState);
 
-      // Send to joining user
+      // Calculate join latency
+      const joinLatency = Date.now() - joinStartTime;
+
+      // Send to joining user with latency info
       client.emit('room-joined', {
         room: {
           id: room.id,
@@ -161,7 +166,13 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
           id: p.user.id,
           username: p.user.username,
         })),
+        latency: joinLatency,
       });
+
+      // Log latency for monitoring
+      if (joinLatency > 500) {
+        console.warn(`⚠️ High join latency: ${joinLatency}ms for user ${data.userId}`);
+      }
 
       // Notify others with updated participant info
       client.to(data.roomCode).emit('user-joined', {
@@ -232,25 +243,27 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       roomCode: string;
       state: VideoState;
       action?: string;
+      clientTimestamp?: number;
     },
   ) {
     try {
-      const { roomCode, state, action } = data;
+      const syncStartTime = Date.now();
+      const { roomCode, state, action, clientTimestamp } = data;
       const userId = this.socketToUser.get(client.id);
       
-      // Check if user is the host (creator) of the room
+      // Check if user is the host (creator) of the room or if guest control is allowed
       const room = await this.database.room.findUnique({
         where: { code: roomCode },
-        select: { creatorId: true },
+        select: { creatorId: true, allowGuestControl: true },
       });
-      
+
       if (!room) {
         client.emit('error', { message: 'Room not found' });
         return;
       }
-      
-      // Only allow host to control video state
-      if (room.creatorId !== userId) {
+
+      // Check permissions
+      if (!room.allowGuestControl && room.creatorId !== userId) {
         client.emit('error', { message: 'Only the host can control video playback' });
         return;
       }
@@ -260,11 +273,21 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Update stored state
       this.roomStates.set(roomCode, state);
       
-      // Broadcast to other users with action type
+      // Calculate sync latency if client timestamp provided
+      const syncLatency = clientTimestamp ? Date.now() - clientTimestamp : undefined;
+
+      // Broadcast to other users with action type and latency
       client.to(roomCode).emit('video-state-update', {
         ...state,
-        action
+        action,
+        latency: syncLatency,
+        serverTimestamp: Date.now()
       });
+
+      // Log high latency
+      if (syncLatency && syncLatency > 500) {
+        console.warn(`⚠️ High sync latency: ${syncLatency}ms for room ${roomCode}`);
+      }
       
       // Schedule database update (debounced)
       this.scheduleDatabaseUpdate(roomCode, state);
@@ -280,6 +303,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       roomCode: string;
       currentTime: number;
       isPlaying: boolean;
+      clientTimestamp?: number;
     },
   ) {
     try {
@@ -290,9 +314,12 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const timeDiff = Math.abs(roomState.currentTime - data.currentTime);
         if (timeDiff > 3) {
           // Only sync if difference is more than 3 seconds
+          const latency = data.clientTimestamp ? Date.now() - data.clientTimestamp : undefined;
           client.emit('video-state-update', {
             ...roomState,
-            action: 'sync-check'
+            action: 'sync-check',
+            latency,
+            serverTimestamp: Date.now()
           });
         }
       }
@@ -309,19 +336,19 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const userId = this.socketToUser.get(client.id);
       
-      // Check if user is the host (creator) of the room
+      // Check if user is the host (creator) of the room or if guest control is allowed
       const room = await this.database.room.findUnique({
         where: { code: data.roomCode },
-        select: { creatorId: true },
+        select: { creatorId: true, allowGuestControl: true },
       });
-      
+
       if (!room) {
         client.emit('error', { message: 'Room not found' });
         return;
       }
-      
-      // Only allow host to play video
-      if (room.creatorId !== userId) {
+
+      // Check permissions
+      if (!room.allowGuestControl && room.creatorId !== userId) {
         client.emit('error', { message: 'Only the host can control video playback' });
         return;
       }
@@ -352,19 +379,19 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const userId = this.socketToUser.get(client.id);
       
-      // Check if user is the host (creator) of the room
+      // Check if user is the host (creator) of the room or if guest control is allowed
       const room = await this.database.room.findUnique({
         where: { code: data.roomCode },
-        select: { creatorId: true },
+        select: { creatorId: true, allowGuestControl: true },
       });
-      
+
       if (!room) {
         client.emit('error', { message: 'Room not found' });
         return;
       }
-      
-      // Only allow host to pause video
-      if (room.creatorId !== userId) {
+
+      // Check permissions
+      if (!room.allowGuestControl && room.creatorId !== userId) {
         client.emit('error', { message: 'Only the host can control video playback' });
         return;
       }
@@ -395,19 +422,19 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const userId = this.socketToUser.get(client.id);
       
-      // Check if user is the host (creator) of the room
+      // Check if user is the host (creator) of the room or if guest control is allowed
       const room = await this.database.room.findUnique({
         where: { code: data.roomCode },
-        select: { creatorId: true },
+        select: { creatorId: true, allowGuestControl: true },
       });
-      
+
       if (!room) {
         client.emit('error', { message: 'Room not found' });
         return;
       }
-      
-      // Only allow host to seek video
-      if (room.creatorId !== userId) {
+
+      // Check permissions
+      if (!room.allowGuestControl && room.creatorId !== userId) {
         client.emit('error', { message: 'Only the host can control video playback' });
         return;
       }

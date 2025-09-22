@@ -249,7 +249,7 @@ export const JoinRoomPage: React.FC = () => {
 
     const fetchRoomInfo = async () => {
       try {
-        const response = await apiService.getRoom(roomCode);
+        const response = await apiService.getRoomByCode(roomCode);
         setRoomInfo(response.data);
         setError(null);
       } catch (error: any) {

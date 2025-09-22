@@ -8,12 +8,15 @@ Real-time video synchronization platform that lets you watch YouTube videos toge
 
 ## ✨ Features
 
-- **Real-time Synchronization** - Watch videos in perfect sync with <500ms latency
-- **Multi-room Support** - Create unlimited rooms for different watch parties
+- **Real-time Synchronization** - Watch videos in perfect sync with latency monitoring
+- **Unlimited Rooms** - Create unlimited rooms with no user limits
 - **User Authentication** - Secure login and registration system
 - **Participant Tracking** - See who's watching with you in real-time
 - **YouTube Integration** - Supports all YouTube videos via iframe API
 - **Responsive Design** - Works on desktop and mobile devices
+- **Voice Chat** - Built-in WebRTC voice communication
+- **Collaborative Control** - Optional setting to allow all participants to control video
+- **Room Management** - Public/private rooms with tags and descriptions
 
 ## 🛠️ Tech Stack
 
@@ -314,8 +317,12 @@ PORT=3001
 |--------|----------|-------------|
 | POST | `/api/auth/register` | Register new user |
 | POST | `/api/auth/login` | Login user |
-| POST | `/api/rooms` | Create room |
+| POST | `/api/rooms` | Create room (supports allowGuestControl flag) |
+| GET | `/api/rooms/public` | List public rooms |
 | GET | `/api/rooms/:code` | Get room details |
+| GET | `/api/rooms/user/:userId` | User's rooms |
+| PATCH | `/api/rooms/:code` | Update room |
+| DELETE | `/api/rooms/:code` | Delete room (host only) |
 
 
 ## 📄 License

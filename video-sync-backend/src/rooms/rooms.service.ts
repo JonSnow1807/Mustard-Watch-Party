@@ -6,12 +6,13 @@ export class RoomsService {
   constructor(private database: DatabaseService) {}
 
   async createRoom(
-    userId: string, 
-    name: string, 
+    userId: string,
+    name: string,
     videoUrl?: string,
     isPublic?: boolean,
     description?: string,
-    tags?: string[]
+    tags?: string[],
+    allowGuestControl?: boolean
   ) {
     const room = await this.database.room.create({
       data: {
@@ -21,6 +22,7 @@ export class RoomsService {
         isPublic: isPublic || false,
         description,
         tags: tags || [],
+        allowGuestControl: allowGuestControl || false,
       },
     });
 

@@ -118,26 +118,20 @@ const DangerButton = styled(Button)`
 
 interface RoomSettingsProps {
   room: any;
-  isHost: boolean;
+  onClose: () => void;
   onUpdate?: () => void;
 }
 
-export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, isHost, onUpdate }) => {
+export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpdate }) => {
   const [isPublic, setIsPublic] = useState(room.isPublic || false);
   const [maxUsers, setMaxUsers] = useState(room.maxUsers || 20);
   const [videoUrl, setVideoUrl] = useState(room.videoUrl || '');
   const [loading, setLoading] = useState(false);
 
-  if (!isHost) {
-    return null;
-  }
-
   const handleUpdateSettings = async () => {
     setLoading(true);
     try {
-      await apiService.updateRoom(room.id, {
-        isPublic,
-        maxUsers,
+      await apiService.updateRoom(room.code, {
         videoUrl,
       });
       toast.success('Room settings updated!');
@@ -155,9 +149,10 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, isHost, onUpda
     }
     
     try {
-      await apiService.updateRoom(room.id, {
-        isActive: false,
-      });
+      // For now, just navigate away - room deletion handled separately
+      // await apiService.updateRoom(room.code, {
+      //   isActive: false,
+      // });
       toast.success('Room ended');
       window.location.href = '/';
     } catch (error) {
@@ -169,6 +164,7 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, isHost, onUpda
     <SettingsContainer>
       <SettingsHeader>
         <h3>⚙️ Room Settings</h3>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>✕</button>
       </SettingsHeader>
       
       <SettingRow>

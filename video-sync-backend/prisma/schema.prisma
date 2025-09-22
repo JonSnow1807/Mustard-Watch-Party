@@ -38,13 +38,14 @@ model Room {
   code          String         @unique @default(cuid())  // Unique code for joining
   videoUrl      String?                            // Optional video URL
   isActive      Boolean        @default(true)       // Is room currently active?
-  maxUsers      Int            @default(20)         // Maximum concurrent users
+  maxUsers      Int?                               // Optional maximum concurrent users (null = unlimited)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   chatMessages  ChatMessage[]
   isPublic      Boolean        @default(false)
   description   String?
   tags          String[]       @default([])
+  allowGuestControl Boolean    @default(false)      // Allow non-hosts to control video
   
   // Video synchronization state
   currentTime   Float          @default(0)          // Current video position in seconds

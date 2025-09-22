@@ -2,9 +2,6 @@ import axios from 'axios';
 
 // Get API URL from environment or fallback to localhost
 const getApiUrl = () => {
-  if (typeof window !== 'undefined' && window.ENV) {
-    return window.ENV.API_URL + '/api';
-  }
   return process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
 };
 
@@ -27,14 +24,25 @@ export const apiService = {
     api.post('/auth/register', { username, email, password }),
   
   // Rooms
-  createRoom: (data: { name: string; videoUrl?: string; userId: string; isPublic?: boolean; description?: string; tags?: string[] }) =>
-    api.post('/rooms', data),
+  createRoom: (data: {
+    name: string;
+    videoUrl?: string;
+    userId: string;
+    isPublic?: boolean;
+    description?: string;
+    tags?: string[];
+    allowGuestControl?: boolean;
+  }) => api.post('/rooms', data),
   
-  getRoom: (code: string) =>
+  getRoomByCode: (code: string) =>
     api.get(`/rooms/${code}`),
   
-  updateRoom: (id: string, data: any) =>
-    api.patch(`/rooms/${id}`, data),
+  updateRoom: (code: string, data: {
+    name?: string;
+    videoUrl?: string;
+    userId?: string;
+    allowGuestControl?: boolean;
+  }) => api.patch(`/rooms/${code}`, data),
   
   deleteRoom: (code: string, userId: string) =>
     api.delete(`/rooms/${code}`, { data: { userId } }),

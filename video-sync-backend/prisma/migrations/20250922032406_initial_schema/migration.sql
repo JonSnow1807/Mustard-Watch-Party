@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Room" ADD COLUMN     "allowGuestControl" BOOLEAN NOT NULL DEFAULT false,
+ALTER COLUMN "maxUsers" DROP NOT NULL,
+ALTER COLUMN "maxUsers" DROP DEFAULT;

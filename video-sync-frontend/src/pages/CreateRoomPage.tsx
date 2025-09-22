@@ -266,6 +266,7 @@ export const CreateRoomPage: React.FC = () => {
     isPublic: false,
     description: '',
     tags: '',
+    allowGuestControl: false,
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -301,6 +302,7 @@ export const CreateRoomPage: React.FC = () => {
         isPublic: formData.isPublic,
         description: formData.isPublic ? formData.description : undefined,
         tags: formData.isPublic && formData.tags ? formData.tags.split(',').map(t => t.trim()) : [],
+        allowGuestControl: formData.allowGuestControl,
       });
       
       toast.success('Watch party created successfully! 🎉');
@@ -376,6 +378,24 @@ export const CreateRoomPage: React.FC = () => {
         <FormGroup>
           <CheckboxGroup>
             <Checkbox
+              id="allowGuestControl"
+              name="allowGuestControl"
+              type="checkbox"
+              checked={formData.allowGuestControl}
+              onChange={handleInputChange}
+            />
+            <Label htmlFor="allowGuestControl" style={{ margin: 0, cursor: 'pointer', flex: 1 }}>
+              👥 Allow collaborative control (all participants can control video)
+            </Label>
+          </CheckboxGroup>
+          <HelpText>
+            Enable this to let all participants play, pause, and seek the video. Otherwise, only you can control.
+          </HelpText>
+        </FormGroup>
+
+        <FormGroup>
+          <CheckboxGroup>
+            <Checkbox
               id="isPublic"
               name="isPublic"
               type="checkbox"
@@ -430,6 +450,7 @@ export const CreateRoomPage: React.FC = () => {
           <p>
             • Choose an engaging video that everyone will enjoy<br />
             • Set the right mood with a descriptive title and tags<br />
+            • Consider enabling collaborative control for interactive sessions<br />
             • Invite friends who share similar interests<br />
             • Be active in the chat to keep everyone engaged
           </p>

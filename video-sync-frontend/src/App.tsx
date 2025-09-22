@@ -5,7 +5,7 @@ import { Toaster } from 'react-hot-toast';
 import { SocketProvider } from './contexts/SocketContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { HomePage } from './pages/HomePage';
-import { RoomPage } from './pages/RoomPage';
+import { EnhancedRoomPage } from './pages/EnhancedRoomPage';
 import { LoginPage } from './pages/LoginPage';
 import { CreateRoomPage } from './pages/CreateRoomPage';
 import { JoinRoomPage } from './pages/JoinRoomPage';
@@ -33,7 +33,7 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/create-room" element={<CreateRoomPage />} />
                 <Route path="/join-room/:roomCode" element={<JoinRoomPage />} />
-                <Route path="/room/:roomCode" element={<RoomPage />} />
+                <Route path="/room/:roomCode" element={<EnhancedRoomPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               <Toaster position="top-right" />

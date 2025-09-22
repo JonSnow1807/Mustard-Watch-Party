@@ -7,13 +7,14 @@ export class RoomsController {
 
   @Post()
   async createRoom(
-    @Body() createRoomDto: { 
-      name: string; 
-      videoUrl?: string; 
+    @Body() createRoomDto: {
+      name: string;
+      videoUrl?: string;
       userId: string;
       isPublic?: boolean;
       description?: string;
       tags?: string[];
+      allowGuestControl?: boolean;
     },
   ) {
     return await this.roomsService.createRoom(
@@ -23,6 +24,7 @@ export class RoomsController {
       createRoomDto.isPublic,
       createRoomDto.description,
       createRoomDto.tags,
+      createRoomDto.allowGuestControl,
     );
   }
   
@@ -42,12 +44,14 @@ export class RoomsController {
     return await this.roomsService.getRoomByCode(code);
   }
 
-  @Patch(':id')
+  @Patch(':code')
   async updateRoom(
-    @Param('id') id: string,
-    @Body() updateRoomDto: { name?: string; videoUrl?: string },
+    @Param('code') code: string,
+    @Body() updateRoomDto: { name?: string; videoUrl?: string; userId?: string },
   ) {
-    return await this.roomsService.updateRoom(id, updateRoomDto);
+    // Get room by code first to get the ID
+    const room = await this.roomsService.getRoomByCode(code);
+    return await this.roomsService.updateRoom(room.id, updateRoomDto);
   }
 
   @Delete(':code')
