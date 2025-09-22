@@ -12,7 +12,7 @@ const Container = styled.div`
   padding: 2rem;
   min-height: 100vh;
   position: relative;
-  
+
   &::before {
     content: '';
     position: fixed;
@@ -20,9 +20,9 @@ const Container = styled.div`
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(37, 99, 235, 0.08) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(30, 64, 175, 0.08) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(25, 57, 155, 0.05) 0%, transparent 50%);
+    background: radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(16, 185, 129, 0.02) 0%, transparent 50%);
     pointer-events: none;
     z-index: -1;
   }
@@ -38,7 +38,7 @@ const Title = styled.h1`
   font-size: 4rem;
   font-weight: 700;
   margin-bottom: 1rem;
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 50%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #10b981 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -51,15 +51,15 @@ const Title = styled.h1`
 
 const Subtitle = styled.p`
   font-size: 1.2rem;
-  color: #64748b;
+  color: #718096;
   margin-bottom: 2rem;
   animation: fadeIn 1s ease-out 0.2s both;
 `;
 
 const UserInfo = styled.div`
-  background: rgba(0, 0, 0, 0.03);
+  background: #ffffff;
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
   padding: 1.5rem 2rem;
   margin-bottom: 3rem;
@@ -67,7 +67,7 @@ const UserInfo = styled.div`
   justify-content: space-between;
   align-items: center;
   animation: fadeIn 1s ease-out 0.4s both;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   @media (max-width: 768px) {
     flex-direction: column;
@@ -78,13 +78,13 @@ const UserInfo = styled.div`
 
 const WelcomeText = styled.span`
   font-size: 1.1rem;
-  color: #334155;
+  color: #4a5568;
   font-weight: 500;
 `;
 
 const CreateButton = styled.button`
   padding: 1rem 2rem;
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  background: #6366f1;
   color: white;
   border: none;
   border-radius: 12px;
@@ -95,11 +95,12 @@ const CreateButton = styled.button`
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(37, 99, 235, 0.4);
+    transform: translateY(-1px);
+    background: #5558e3;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 
   &:active {
@@ -109,17 +110,19 @@ const CreateButton = styled.button`
 
 const LogoutButton = styled.button`
   padding: 0.75rem 1.5rem;
-  background: rgba(220, 38, 38, 0.1);
-  color: #dc2626;
-  border: 1px solid rgba(220, 38, 38, 0.2);
+  background: rgba(248, 113, 113, 0.1);
+  color: #f87171;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   cursor: pointer;
   font-weight: 500;
   transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    background: rgba(220, 38, 38, 0.2);
-    border-color: rgba(220, 38, 38, 0.3);
+    background: rgba(248, 113, 113, 0.15);
+    border-color: rgba(248, 113, 113, 0.3);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 `;
 
@@ -132,7 +135,7 @@ const SectionTitle = styled.h2`
   font-size: 2.2rem;
   font-weight: 600;
   margin-bottom: 2rem;
-  color: #1e293b;
+  color: #2d3748;
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -158,16 +161,16 @@ const RoomsGrid = styled.div`
 `;
 
 const RoomCard = styled.div`
-  background: rgba(0, 0, 0, 0.03);
+  background: #ffffff;
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
   padding: 2rem;
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &::before {
     content: '';
@@ -176,15 +179,15 @@ const RoomCard = styled.div`
     left: 0;
     right: 0;
     height: 2px;
-    background: linear-gradient(90deg, #2563eb, #1e40af, #1d4ed8);
+    background: linear-gradient(90deg, #6366f1, #8b5cf6, #10b981);
     opacity: 0;
     transition: opacity 0.3s ease;
   }
 
   &:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-    border-color: rgba(0, 0, 0, 0.2);
+    transform: translateY(-4px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    border-color: #cbd5e1;
 
     &::before {
       opacity: 1;
@@ -192,7 +195,7 @@ const RoomCard = styled.div`
   }
 
   &:active {
-    transform: translateY(-4px);
+    transform: translateY(-2px);
   }
 `;
 
@@ -206,7 +209,7 @@ const RoomHeader = styled.div`
 const RoomTitle = styled.h3`
   margin: 0;
   font-size: 1.4rem;
-  color: #1e293b;
+  color: #2d3748;
   font-weight: 600;
   line-height: 1.3;
 `;
@@ -217,26 +220,26 @@ const LiveBadge = styled.span<{ isPlaying: boolean }>`
   font-size: 0.8rem;
   font-weight: 600;
   background: ${props => props.isPlaying
-    ? 'linear-gradient(135deg, #ef4444, #dc2626)'
-    : 'rgba(0, 0, 0, 0.1)'};
-  color: ${props => props.isPlaying ? 'white' : '#64748b'};
+    ? '#f87171'
+    : '#f8fafc'};
+  color: ${props => props.isPlaying ? 'white' : '#718096'};
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  border: 1px solid ${props => props.isPlaying ? 'rgba(239, 68, 68, 0.3)' : 'rgba(0, 0, 0, 0.1)'};
+  border: 1px solid ${props => props.isPlaying ? 'rgba(248, 113, 113, 0.3)' : '#e2e8f0'};
 
   &::before {
     content: '';
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: ${props => props.isPlaying ? 'white' : '#94a3b8'};
+    background: ${props => props.isPlaying ? 'white' : '#a0aec0'};
     animation: ${props => props.isPlaying ? 'pulse 2s infinite' : 'none'};
   }
 `;
 
 const RoomDescription = styled.p`
-  color: #64748b;
+  color: #718096;
   font-size: 0.95rem;
   margin: 1rem 0;
   line-height: 1.5;
@@ -251,7 +254,7 @@ const RoomStats = styled.div`
   gap: 1.5rem;
   margin-top: 1.5rem;
   font-size: 0.9rem;
-  color: #94a3b8;
+  color: #a0aec0;
   flex-wrap: wrap;
 `;
 
@@ -264,17 +267,17 @@ const StatItem = styled.span`
 const Tag = styled.span`
   display: inline-block;
   padding: 0.4rem 0.8rem;
-  background: rgba(37, 99, 235, 0.1);
-  color: #2563eb;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
   border-radius: 8px;
   font-size: 0.8rem;
   margin-right: 0.5rem;
   margin-bottom: 0.5rem;
-  border: 1px solid rgba(37, 99, 235, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.2);
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(37, 99, 235, 0.2);
+    background: rgba(99, 102, 241, 0.15);
     transform: translateY(-1px);
   }
 `;
@@ -282,7 +285,7 @@ const Tag = styled.span`
 const PrivateBadge = styled.span`
   padding: 0.4rem 0.8rem;
   background: rgba(245, 158, 11, 0.1);
-  color: #d97706;
+  color: #f59e0b;
   border-radius: 8px;
   font-size: 0.8rem;
   font-weight: 600;
@@ -294,14 +297,15 @@ const PrivateBadge = styled.span`
 const EmptyState = styled.div`
   text-align: center;
   padding: 4rem 2rem;
-  color: #64748b;
-  background: rgba(0, 0, 0, 0.03);
+  color: #718096;
+  background: #ffffff;
   border-radius: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   h3 {
     margin-bottom: 1rem;
-    color: #1e293b;
+    color: #2d3748;
     font-size: 1.5rem;
     font-weight: 600;
   }
@@ -319,30 +323,33 @@ const FilterBar = styled.div`
   margin-bottom: 2rem;
   flex-wrap: wrap;
   padding: 1rem;
-  background: rgba(0, 0, 0, 0.03);
+  background: #ffffff;
   border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 `;
 
 const FilterButton = styled.button<{ active: boolean }>`
   padding: 0.75rem 1.5rem;
-  border: 1px solid ${props => props.active ? 'rgba(37, 99, 235, 0.5)' : 'rgba(0, 0, 0, 0.1)'};
+  border: 1px solid ${props => props.active ? 'rgba(99, 102, 241, 0.3)' : '#e2e8f0'};
   background: ${props => props.active
-    ? 'linear-gradient(135deg, #2563eb, #1e40af)'
-    : 'rgba(0, 0, 0, 0.05)'};
-  color: ${props => props.active ? 'white' : '#64748b'};
+    ? '#6366f1'
+    : '#f8fafc'};
+  color: ${props => props.active ? 'white' : '#718096'};
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.3s ease;
   font-weight: 500;
   backdrop-filter: blur(10px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    border-color: rgba(37, 99, 235, 0.5);
+    border-color: rgba(99, 102, 241, 0.3);
     background: ${props => props.active
-      ? 'linear-gradient(135deg, #1e40af, #1d4ed8)'
-      : 'rgba(0, 0, 0, 0.1)'};
+      ? '#5558e3'
+      : '#f1f5f9'};
     transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 `;
 
@@ -351,24 +358,26 @@ const LoadingSpinner = styled.div`
   justify-content: center;
   align-items: center;
   padding: 3rem;
-  color: #64748b;
+  color: #718096;
   font-size: 1.1rem;
 `;
 
 const DeleteButton = styled.button`
   padding: 0.5rem;
-  background: rgba(239, 68, 68, 0.1);
-  color: #dc2626;
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: rgba(248, 113, 113, 0.1);
+  color: #f87171;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   cursor: pointer;
   font-size: 0.8rem;
   transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    background: rgba(239, 68, 68, 0.2);
-    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(248, 113, 113, 0.15);
+    border-color: rgba(248, 113, 113, 0.3);
     transform: scale(1.05);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 `;
 
@@ -397,26 +406,26 @@ const Modal = styled.div`
 `;
 
 const ModalContent = styled.div`
-  background: rgba(255, 255, 255, 0.95);
+  background: #ffffff;
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
   padding: 2rem;
   max-width: 400px;
   width: 90%;
   text-align: center;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
 `;
 
 const ModalTitle = styled.h3`
-  color: #1e293b;
+  color: #2d3748;
   margin-bottom: 1rem;
   font-size: 1.5rem;
   font-weight: 600;
 `;
 
 const ModalText = styled.p`
-  color: #64748b;
+  color: #718096;
   margin-bottom: 2rem;
   line-height: 1.5;
 `;
@@ -429,33 +438,37 @@ const ModalButtons = styled.div`
 
 const ConfirmButton = styled.button`
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #ef4444, #dc2626);
+  background: #f87171;
   color: white;
   border: none;
   border-radius: 8px;
   cursor: pointer;
   font-weight: 600;
   transition: all 0.3s ease;
-  
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+    background: #ef4444;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 `;
 
 const CancelButton = styled.button`
   padding: 0.75rem 1.5rem;
-  background: rgba(0, 0, 0, 0.05);
-  color: #64748b;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #f8fafc;
+  color: #718096;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   cursor: pointer;
   font-weight: 500;
   transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    background: rgba(0, 0, 0, 0.1);
-    border-color: rgba(0, 0, 0, 0.2);
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 `;
 

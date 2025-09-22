@@ -11,7 +11,8 @@ const Container = styled.div`
   padding: 2rem;
   min-height: 100vh;
   position: relative;
-  
+  background: linear-gradient(to bottom, #ffffff, #fafafa);
+
   &::before {
     content: '';
     position: fixed;
@@ -19,8 +20,8 @@ const Container = styled.div`
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(37, 99, 235, 0.08) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(30, 64, 175, 0.08) 0%, transparent 50%);
+    background: radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.03) 0%, transparent 50%);
     pointer-events: none;
     z-index: -1;
   }
@@ -36,7 +37,7 @@ const Title = styled.h1`
   font-size: 3.5rem;
   font-weight: 700;
   margin-bottom: 1rem;
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 50%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #10b981 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -48,18 +49,18 @@ const Title = styled.h1`
 
 const Subtitle = styled.p`
   font-size: 1.2rem;
-  color: #64748b;
+  color: #718096;
   margin-bottom: 2rem;
   animation: fadeIn 1s ease-out 0.2s both;
 `;
 
 const Form = styled.form`
-  background: rgba(255, 255, 255, 0.95);
+  background: #ffffff;
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
   border-radius: 20px;
   padding: 3rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   animation: fadeIn 1s ease-out 0.4s both;
 
   @media (max-width: 768px) {
@@ -75,41 +76,43 @@ const Label = styled.label`
   display: block;
   margin-bottom: 0.75rem;
   font-weight: 600;
-  color: #334155;
+  color: #4a5568;
   font-size: 1rem;
 `;
 
 const Input = styled.input`
   width: 100%;
   padding: 1rem 1.25rem;
-  background: rgba(0, 0, 0, 0.03);
-  border: 2px solid rgba(0, 0, 0, 0.1);
+  background: #fcfcfc;
+  border: 2px solid #e2e8f0;
   border-radius: 12px;
   font-size: 1rem;
-  color: #1e293b;
+  color: #2d3748;
   transition: all 0.3s ease;
   backdrop-filter: blur(10px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &::placeholder {
-    color: #94a3b8;
+    color: #a0aec0;
   }
 
   &:focus {
     outline: none;
-    border-color: rgba(37, 99, 235, 0.5);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(99, 102, 241, 0.3);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    background: #ffffff;
   }
 
   &:hover {
-    border-color: rgba(0, 0, 0, 0.2);
+    border-color: #cbd5e1;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 `;
 
 const Button = styled.button`
   width: 100%;
   padding: 1.25rem;
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  background: #6366f1;
   color: white;
   border: none;
   border-radius: 12px;
@@ -117,16 +120,17 @@ const Button = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(37, 99, 235, 0.4);
+    transform: translateY(-1px);
+    background: #5558e3;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 
   &:disabled {
-    background: rgba(0, 0, 0, 0.1);
-    color: #94a3b8;
+    background: #e2e8f0;
+    color: #a0aec0;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
@@ -139,45 +143,47 @@ const Button = styled.button`
 
 const BackButton = styled.button`
   padding: 0.75rem 1.5rem;
-  background: rgba(0, 0, 0, 0.05);
-  color: #64748b;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #f8fafc;
+  color: #718096;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
   cursor: pointer;
   margin-bottom: 2rem;
   font-weight: 500;
   transition: all 0.3s ease;
   backdrop-filter: blur(10px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    background: rgba(0, 0, 0, 0.1);
-    border-color: rgba(0, 0, 0, 0.2);
+    background: #f1f5f9;
+    border-color: #cbd5e1;
     transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 `;
 
 const RoomInfo = styled.div`
-  background: rgba(0, 0, 0, 0.03);
+  background: #ffffff;
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
   padding: 2rem;
   margin-bottom: 2rem;
-  border-left: 4px solid rgba(37, 99, 235, 0.5);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #6366f1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   animation: slideIn 0.6s ease-out;
 `;
 
 const RoomName = styled.h3`
   margin: 0 0 1rem 0;
-  color: #1e293b;
+  color: #2d3748;
   font-size: 1.5rem;
   font-weight: 600;
 `;
 
 const RoomDescription = styled.p`
   margin: 0;
-  color: #64748b;
+  color: #718096;
   font-size: 1rem;
   line-height: 1.5;
 `;
@@ -185,15 +191,15 @@ const RoomDescription = styled.p`
 const RoomMeta = styled.div`
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
-  color: #94a3b8;
+  border-top: 1px solid #e2e8f0;
+  color: #a0aec0;
   font-size: 0.9rem;
 `;
 
 const LoadingSpinner = styled.div`
   text-align: center;
   padding: 4rem 2rem;
-  color: #64748b;
+  color: #718096;
   font-size: 1.1rem;
 
   .spinner {
@@ -204,20 +210,20 @@ const LoadingSpinner = styled.div`
 const PublicBadge = styled.span`
   display: inline-block;
   padding: 0.5rem 1rem;
-  background: rgba(34, 197, 94, 0.2);
-  color: #86efac;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
   border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  border: 1px solid rgba(16, 185, 129, 0.3);
   margin-bottom: 1rem;
 `;
 
 const PrivateBadge = styled.span`
   display: inline-block;
   padding: 0.5rem 1rem;
-  background: rgba(245, 158, 11, 0.2);
-  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
   border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
@@ -227,7 +233,7 @@ const PrivateBadge = styled.span`
 
 const HelpText = styled.p`
   font-size: 0.9rem;
-  color: #94a3b8;
+  color: #a0aec0;
   margin-top: 0.5rem;
   line-height: 1.4;
 `;
@@ -364,7 +370,7 @@ export const JoinRoomPage: React.FC = () => {
       <Form onSubmit={handleJoinRoom}>
         {roomInfo.isPublic ? (
           <>
-            <p style={{ textAlign: 'center', color: '#64748b', marginBottom: '2rem', fontSize: '1.1rem' }}>
+            <p style={{ textAlign: 'center', color: '#718096', marginBottom: '2rem', fontSize: '1.1rem' }}>
               This is a public watch party. Anyone can join!
             </p>
             <Button type="button" onClick={handleJoinPublicRoom}>

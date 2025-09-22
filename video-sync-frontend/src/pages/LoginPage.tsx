@@ -9,7 +9,8 @@ const Container = styled.div`
   align-items: center;
   justify-content: center;
   position: relative;
-  
+  background: linear-gradient(to bottom, #ffffff, #fafafa);
+
   &::before {
     content: '';
     position: fixed;
@@ -17,21 +18,21 @@ const Container = styled.div`
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(37, 99, 235, 0.08) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(30, 64, 175, 0.08) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(25, 57, 155, 0.05) 0%, transparent 50%);
+    background: radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(16, 185, 129, 0.02) 0%, transparent 50%);
     pointer-events: none;
     z-index: -1;
   }
 `;
 
 const LoginCard = styled.div`
-  background: rgba(255, 255, 255, 0.95);
+  background: #ffffff;
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
   border-radius: 20px;
   padding: 3rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   width: 100%;
   max-width: 450px;
   animation: fadeIn 1s ease-out;
@@ -47,7 +48,7 @@ const Title = styled.h2`
   margin-bottom: 0.5rem;
   font-size: 2.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 50%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #10b981 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -56,7 +57,7 @@ const Title = styled.h2`
 const Subtitle = styled.p`
   text-align: center;
   margin-bottom: 2.5rem;
-  color: #64748b;
+  color: #718096;
   font-size: 1.1rem;
 `;
 
@@ -68,33 +69,35 @@ const Form = styled.form`
 
 const Input = styled.input`
   padding: 1rem 1.25rem;
-  background: rgba(0, 0, 0, 0.03);
-  border: 2px solid rgba(0, 0, 0, 0.1);
+  background: #fcfcfc;
+  border: 2px solid #e2e8f0;
   border-radius: 12px;
   font-size: 1rem;
-  color: #1e293b;
+  color: #2d3748;
   transition: all 0.3s ease;
   backdrop-filter: blur(10px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &::placeholder {
-    color: #94a3b8;
+    color: #a0aec0;
   }
 
   &:focus {
     outline: none;
-    border-color: rgba(37, 99, 235, 0.5);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(99, 102, 241, 0.3);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    background: #ffffff;
   }
 
   &:hover {
-    border-color: rgba(0, 0, 0, 0.2);
+    border-color: #cbd5e1;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 `;
 
 const Button = styled.button`
   padding: 1.25rem;
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  background: #6366f1;
   color: white;
   border: none;
   border-radius: 12px;
@@ -102,16 +105,17 @@ const Button = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(37, 99, 235, 0.4);
+    transform: translateY(-1px);
+    background: #5558e3;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 
   &:disabled {
-    background: rgba(0, 0, 0, 0.1);
-    color: #94a3b8;
+    background: #e2e8f0;
+    color: #a0aec0;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
@@ -125,19 +129,19 @@ const Button = styled.button`
 const ToggleText = styled.p`
   text-align: center;
   margin-top: 2rem;
-  color: #64748b;
+  color: #718096;
   font-size: 1rem;
 
   button {
     background: none;
     border: none;
-    color: #2563eb;
+    color: #6366f1;
     cursor: pointer;
     font-weight: 600;
     transition: color 0.3s ease;
 
     &:hover {
-      color: #1e40af;
+      color: #5558e3;
       text-decoration: underline;
     }
   }
@@ -146,12 +150,13 @@ const ToggleText = styled.p`
 const FeatureList = styled.div`
   margin-top: 2rem;
   padding: 1.5rem;
-  background: rgba(0, 0, 0, 0.03);
+  background: #f8fafc;
   border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   h4 {
-    color: #1e293b;
+    color: #2d3748;
     margin-bottom: 1rem;
     font-weight: 600;
     text-align: center;
@@ -164,7 +169,7 @@ const FeatureList = styled.div`
   }
 
   li {
-    color: #64748b;
+    color: #718096;
     margin-bottom: 0.5rem;
     display: flex;
     align-items: center;

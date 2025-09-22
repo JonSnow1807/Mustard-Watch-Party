@@ -10,8 +10,8 @@ const PlayerContainer = styled.div`
   flex-direction: column;
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: #ffffff;
 `;
 
 const VideoWrapper = styled.div`
@@ -35,10 +35,10 @@ const LatencyBadge = styled.div<{ latency: number }>`
   top: 20px;
   right: 20px;
   background: ${props =>
-    props.latency < 100 ? 'rgba(34, 197, 94, 0.9)' :
-    props.latency < 300 ? 'rgba(255, 193, 7, 0.9)' :
-    props.latency < 500 ? 'rgba(255, 152, 0, 0.9)' :
-    'rgba(244, 67, 54, 0.9)'
+    props.latency < 100 ? '#10b981' :
+    props.latency < 300 ? '#f59e0b' :
+    props.latency < 500 ? '#f97316' :
+    '#f87171'
   };
   color: white;
   padding: 8px 16px;
@@ -51,6 +51,7 @@ const LatencyBadge = styled.div<{ latency: number }>`
   align-items: center;
   gap: 6px;
   animation: fadeIn 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 
   @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-10px); }
@@ -59,12 +60,12 @@ const LatencyBadge = styled.div<{ latency: number }>`
 `;
 
 const Controls = styled.div`
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.95) 100%);
+  background: #ffffff;
   padding: 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  border-top: 1px solid #e2e8f0;
 `;
 
 const ControlRow = styled.div`
@@ -75,8 +76,8 @@ const ControlRow = styled.div`
 
 const PlayButton = styled.button<{ canControl: boolean }>`
   background: ${props => props.canControl
-    ? 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)'
-    : 'rgba(100, 116, 139, 0.3)'};
+    ? '#6366f1'
+    : '#a0aec0'};
   border: none;
   color: white;
   padding: 12px 24px;
@@ -89,13 +90,14 @@ const PlayButton = styled.button<{ canControl: boolean }>`
   gap: 8px;
   transition: all 0.3s ease;
   box-shadow: ${props => props.canControl
-    ? '0 4px 15px rgba(37, 99, 235, 0.3)'
+    ? '0 1px 3px rgba(0, 0, 0, 0.05)'
     : 'none'};
 
   &:hover {
-    transform: ${props => props.canControl ? 'translateY(-2px)' : 'none'};
+    transform: ${props => props.canControl ? 'translateY(-1px)' : 'none'};
+    background: ${props => props.canControl ? '#5558e3' : '#a0aec0'};
     box-shadow: ${props => props.canControl
-      ? '0 6px 20px rgba(37, 99, 235, 0.4)'
+      ? '0 4px 6px rgba(0, 0, 0, 0.07)'
       : 'none'};
   }
 
@@ -115,7 +117,7 @@ const ProgressContainer = styled.div`
 const ProgressBar = styled.div<{ canControl: boolean }>`
   width: 100%;
   height: 6px;
-  background: rgba(0, 0, 0, 0.1);
+  background: #e2e8f0;
   border-radius: 3px;
   cursor: ${props => props.canControl ? 'pointer' : 'default'};
   position: relative;
@@ -129,7 +131,7 @@ const ProgressBar = styled.div<{ canControl: boolean }>`
 
 const ProgressFill = styled.div<{ progress: number }>`
   height: 100%;
-  background: linear-gradient(90deg, #2563eb 0%, #1e40af 100%);
+  background: #6366f1;
   border-radius: 3px;
   width: ${props => props.progress}%;
   position: relative;
@@ -145,7 +147,7 @@ const ProgressFill = styled.div<{ progress: number }>`
     height: 14px;
     background: white;
     border-radius: 50%;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     opacity: 0;
     transition: opacity 0.2s;
   }
@@ -156,7 +158,7 @@ const ProgressFill = styled.div<{ progress: number }>`
 `;
 
 const TimeDisplay = styled.div`
-  color: #334155;
+  color: #4a5568;
   font-size: 14px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -169,7 +171,7 @@ const StatusRow = styled.div`
   align-items: center;
   justify-content: space-between;
   padding: 12px 0;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  border-top: 1px solid #e2e8f0;
 `;
 
 const StatusGroup = styled.div`
@@ -185,11 +187,11 @@ const StatusItem = styled.div<{ type?: 'success' | 'warning' | 'error' | 'info' 
   font-size: 13px;
   color: ${props => {
     switch(props.type) {
-      case 'success': return '#2563eb';
-      case 'warning': return '#d97706';
-      case 'error': return '#dc2626';
-      case 'info': return '#1e40af';
-      default: return '#64748b';
+      case 'success': return '#10b981';
+      case 'warning': return '#f59e0b';
+      case 'error': return '#f87171';
+      case 'info': return '#6366f1';
+      default: return '#718096';
     }
   }};
 `;
@@ -210,15 +212,15 @@ const StatusDot = styled.div<{ color: string }>`
 const ControlButton = styled.button<{ active?: boolean; variant?: 'primary' | 'secondary' }>`
   background: ${props =>
     props.variant === 'primary'
-      ? 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)'
+      ? '#6366f1'
       : props.active
-        ? 'rgba(37, 99, 235, 0.2)'
-        : 'rgba(0, 0, 0, 0.05)'
+        ? 'rgba(99, 102, 241, 0.1)'
+        : '#ffffff'
   };
   border: 1px solid ${props =>
-    props.active ? 'rgba(37, 99, 235, 0.5)' : 'rgba(0, 0, 0, 0.1)'
+    props.active ? 'rgba(99, 102, 241, 0.3)' : '#e2e8f0'
   };
-  color: ${props => props.variant === 'primary' ? 'white' : '#1e293b'};
+  color: ${props => props.variant === 'primary' ? 'white' : '#2d3748'};
   padding: 8px 16px;
   border-radius: 8px;
   cursor: pointer;
@@ -228,16 +230,18 @@ const ControlButton = styled.button<{ active?: boolean; variant?: 'primary' | 's
   display: flex;
   align-items: center;
   gap: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
     background: ${props =>
       props.variant === 'primary'
-        ? 'linear-gradient(135deg, #1e40af 0%, #1d4ed8 100%)'
+        ? '#5558e3'
         : props.active
-          ? 'rgba(37, 99, 235, 0.3)'
-          : 'rgba(0, 0, 0, 0.1)'
+          ? 'rgba(99, 102, 241, 0.15)'
+          : '#f8fafc'
     };
     transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
 `;
 
@@ -247,17 +251,18 @@ const CollaborativeIndicator = styled.div<{ enabled: boolean }>`
   gap: 8px;
   padding: 6px 12px;
   background: ${props => props.enabled
-    ? 'rgba(34, 197, 94, 0.1)'
-    : 'rgba(0, 0, 0, 0.05)'
+    ? 'rgba(16, 185, 129, 0.1)'
+    : '#ffffff'
   };
   border: 1px solid ${props => props.enabled
-    ? 'rgba(34, 197, 94, 0.3)'
-    : 'rgba(0, 0, 0, 0.1)'
+    ? 'rgba(16, 185, 129, 0.3)'
+    : '#e2e8f0'
   };
   border-radius: 8px;
   font-size: 12px;
-  color: ${props => props.enabled ? '#2563eb' : '#94a3b8'};
+  color: ${props => props.enabled ? '#10b981' : '#a0aec0'};
   font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 `;
 
 interface VideoPlayerProps {
@@ -509,9 +514,9 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   if (!videoId) {
     return (
       <PlayerContainer>
-        <div style={{ padding: '60px', textAlign: 'center', color: '#1e293b' }}>
+        <div style={{ padding: '60px', textAlign: 'center', color: '#2d3748' }}>
           <h3>No Video Selected</h3>
-          <p style={{ color: '#64748b' }}>
+          <p style={{ color: '#718096' }}>
             Please provide a valid YouTube URL
           </p>
         </div>
@@ -559,7 +564,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
         <StatusRow>
           <StatusGroup>
             <StatusItem type={connected ? 'success' : 'error'}>
-              <StatusDot color={connected ? '#60a5fa' : '#F44336'} />
+              <StatusDot color={connected ? '#6366f1' : '#f87171'} />
               {connected ? 'Connected' : 'Disconnected'}
             </StatusItem>
 

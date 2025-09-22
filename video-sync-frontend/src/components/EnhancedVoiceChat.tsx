@@ -6,13 +6,13 @@ import SimplePeer from 'simple-peer';
 import { toast } from 'react-hot-toast';
 
 const VoiceContainer = styled.div`
-  background: linear-gradient(135deg, rgba(248, 250, 252, 0.95) 0%, rgba(241, 245, 249, 0.95) 100%);
+  background: #ffffff;
   backdrop-filter: blur(20px);
   border-radius: 16px;
   padding: 24px;
   margin-top: 20px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 `;
 
 const Header = styled.div`
@@ -21,12 +21,12 @@ const Header = styled.div`
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid #e2e8f0;
 `;
 
 const Title = styled.h3`
   margin: 0;
-  color: #1e293b;
+  color: #2d3748;
   font-size: 1.2rem;
   font-weight: 600;
   display: flex;
@@ -45,7 +45,7 @@ const ControlButtons = styled.div`
 
 const ControlButton = styled.button<{ active?: boolean; danger?: boolean; disabled?: boolean }>`
   padding: 10px 20px;
-  border: none;
+  border: 1px solid #e2e8f0;
   border-radius: 12px;
   cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
   font-size: 14px;
@@ -54,24 +54,25 @@ const ControlButton = styled.button<{ active?: boolean; danger?: boolean; disabl
   display: flex;
   align-items: center;
   gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   background: ${props =>
-    props.danger ? 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)' :
-    props.active ? 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)' :
-    'rgba(100, 116, 139, 0.2)'
+    props.danger ? '#f87171' :
+    props.active ? '#6366f1' :
+    '#ffffff'
   };
 
-  color: white;
+  color: ${props => (props.danger || props.active) ? 'white' : '#2d3748'};
   opacity: ${props => props.disabled ? 0.5 : 1};
 
   &:hover {
-    transform: ${props => !props.disabled ? 'translateY(-2px)' : 'none'};
-    box-shadow: ${props => !props.disabled ? '0 4px 12px rgba(0, 0, 0, 0.1)' : 'none'};
+    transform: ${props => !props.disabled ? 'translateY(-1px)' : 'none'};
+    box-shadow: ${props => !props.disabled ? '0 4px 6px rgba(0, 0, 0, 0.07)' : 'none'};
     background: ${props =>
       props.disabled ? '' :
-      props.danger ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' :
-      props.active ? 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)' :
-      'rgba(100, 116, 139, 0.3)'
+      props.danger ? '#ef4444' :
+      props.active ? '#5558e3' :
+      '#f8fafc'
     };
   }
 
@@ -85,10 +86,11 @@ const StatusIndicator = styled.div`
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(0, 0, 0, 0.05);
+  background: #f8fafc;
   border-radius: 8px;
   font-size: 13px;
-  color: #64748b;
+  color: #718096;
+  border: 1px solid #e2e8f0;
 `;
 
 const ParticipantsGrid = styled.div`
@@ -101,27 +103,28 @@ const ParticipantsGrid = styled.div`
 const ParticipantCard = styled.div<{ isSpeaking: boolean; isMuted: boolean; isDeafened: boolean }>`
   background: ${props =>
     props.isSpeaking
-      ? 'linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(30, 64, 175, 0.05) 100%)'
-      : 'rgba(0, 0, 0, 0.03)'
+      ? 'rgba(99, 102, 241, 0.05)'
+      : '#ffffff'
   };
   border: 2px solid ${props =>
     props.isSpeaking
-      ? 'rgba(37, 99, 235, 0.5)'
-      : 'rgba(0, 0, 0, 0.1)'
+      ? 'rgba(99, 102, 241, 0.3)'
+      : '#e2e8f0'
   };
   border-radius: 16px;
   padding: 16px;
   text-align: center;
   transition: all 0.3s ease;
   opacity: ${props => props.isDeafened ? 0.5 : 1};
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
     background: ${props =>
       props.isSpeaking
-        ? 'linear-gradient(135deg, rgba(37, 99, 235, 0.2) 0%, rgba(30, 64, 175, 0.1) 100%)'
-        : 'rgba(0, 0, 0, 0.05)'
+        ? 'rgba(99, 102, 241, 0.1)'
+        : '#f8fafc'
     };
   }
 `;
@@ -145,7 +148,7 @@ const Avatar = styled.div<{ color: string; size?: number }>`
 const SpeakingRing = styled.div`
   position: absolute;
   inset: -4px;
-  border: 3px solid #2563eb;
+  border: 3px solid #6366f1;
   border-radius: 50%;
   animation: pulse 1.5s ease-in-out infinite;
 
@@ -168,7 +171,7 @@ const SpeakingRing = styled.div`
 const Username = styled.div`
   font-size: 14px;
   font-weight: 600;
-  color: #1e293b;
+  color: #2d3748;
   margin-bottom: 8px;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -185,8 +188,8 @@ const StatusIcon = styled.span<{ active: boolean; type: 'mic' | 'headphone' }>`
   font-size: 18px;
   color: ${props =>
     props.type === 'mic'
-      ? (props.active ? '#2563eb' : '#dc2626')
-      : (props.active ? '#1e40af' : '#dc2626')
+      ? (props.active ? '#6366f1' : '#f87171')
+      : (props.active ? '#10b981' : '#f87171')
   };
   transition: all 0.2s;
 `;
@@ -194,29 +197,29 @@ const StatusIcon = styled.span<{ active: boolean; type: 'mic' | 'headphone' }>`
 const ConnectionInfo = styled.div`
   margin-top: 20px;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.03);
+  background: #f8fafc;
   border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
 `;
 
 const InfoRow = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: #64748b;
+  color: #4a5568;
   font-size: 13px;
 
   & + & {
     margin-top: 8px;
     padding-top: 8px;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    border-top: 1px solid #e2e8f0;
   }
 `;
 
 const EmptyState = styled.div`
   text-align: center;
   padding: 40px;
-  color: #94a3b8;
+  color: #a0aec0;
 
   .icon {
     font-size: 48px;
@@ -498,7 +501,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
   };
 
   const getAvatarColor = (username: string) => {
-    const colors = ['#3b82f6', '#2563eb', '#1e40af', '#1d4ed8', '#1e3a8a', '#1e40af'];
+    const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#f97316', '#ef4444'];
     const index = username.charCodeAt(0) % colors.length;
     return colors[index];
   };
@@ -616,7 +619,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
           <ConnectionInfo>
             <InfoRow>
               <span>Connection Quality</span>
-              <span style={{ color: '#2563eb' }}>● Excellent</span>
+              <span style={{ color: '#10b981' }}>● Excellent</span>
             </InfoRow>
             <InfoRow>
               <span>Audio Codec</span>
@@ -624,7 +627,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
             </InfoRow>
             <InfoRow>
               <span>Noise Suppression</span>
-              <span style={{ color: '#2563eb' }}>Enabled</span>
+              <span style={{ color: '#10b981' }}>Enabled</span>
             </InfoRow>
           </ConnectionInfo>
         </>

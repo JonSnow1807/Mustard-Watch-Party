@@ -9,8 +9,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 50%, #f1f5f9 100%);
-  color: #1e293b;
+  background: #fafafa;
+  color: #2d3748;
   min-height: 100vh;
 }
 
@@ -30,39 +30,39 @@ code {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.02);
+  background: #fafafa;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  background: #e2e8f0;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+  background: #cbd5e1;
 }
 
 /* Reset default styles */
 h1, h2, h3, h4, h5, h6 {
   margin: 0;
   font-weight: 600;
-  color: #1e293b;
+  color: #2d3748;
 }
 
 p {
   margin: 0;
-  color: #334155;
+  color: #4a5568;
 }
 
 a {
-  color: #60a5fa;
+  color: #6366f1;
   text-decoration: none;
   transition: color 0.2s;
 }
 
 a:hover {
-  color: #93bbfd;
+  color: #5558e3;
 }
 
 /* Animations */
@@ -112,15 +112,16 @@ a:hover {
 
 /* Glass morphism effect */
 .glass {
-  background: rgba(0, 0, 0, 0.02);
+  background: #ffffff;
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 /* Gradient buttons */
 .btn-gradient {
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #5558e3 100%);
   color: white;
   border: none;
   padding: 12px 24px;
@@ -128,20 +129,20 @@ a:hover {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .btn-gradient:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
 }
 
 /* Loading spinner */
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(0, 0, 0, 0.1);
-  border-top: 3px solid #2563eb;
+  border: 3px solid #e2e8f0;
+  border-top: 3px solid #6366f1;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -153,12 +154,13 @@ a:hover {
 
 /* Toaster custom styles */
 .Toastify__toast {
-  background: linear-gradient(135deg, rgba(248, 250, 252, 0.95) 0%, rgba(241, 245, 249, 0.95) 100%);
+  background: #ffffff;
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  color: #1e293b;
+  border: 1px solid #e2e8f0;
+  color: #2d3748;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
 }
 
 .Toastify__progress-bar {
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #5558e3 100%);
 }
