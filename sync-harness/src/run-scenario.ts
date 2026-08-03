@@ -107,14 +107,21 @@ async function runScenario(s: ScenarioSpec, attempt = 1): Promise<boolean> {
     console.log('[action] host pressed play');
 
     const healthy = await Promise.all(clients.map((c) => waitForPlaying(c)));
+    let healthNote: string | undefined;
     if (!healthy.every(Boolean)) {
       console.warn(`[health] players not all PLAYING within deadline: ${healthy}`);
-      await collector.stop();
-      await browser.close();
-      await clearImpairment(s);
-      if (attempt < 2) return runScenario(s, attempt + 1);
-      console.error(`[health] ${s.id} failed twice — aborting this scenario`);
-      return false;
+      // HARNESS_ALLOW_UNHEALTHY=1 records the run anyway as an exhibit —
+      // meta.notes marks it invalid per the health gate. Used to document
+      // total-failure baselines where the app never starts remote playback.
+      if (process.env.HARNESS_ALLOW_UNHEALTHY !== '1') {
+        await collector.stop();
+        await browser.close();
+        await clearImpairment(s);
+        if (attempt < 2) return runScenario(s, attempt + 1);
+        console.error(`[health] ${s.id} failed twice — aborting this scenario`);
+        return false;
+      }
+      healthNote = `INVALID per health gate: players PLAYING = [${healthy.join(',')}] — recorded as exhibit`;
     }
 
     await untilS(TIMELINE.seekAtS);
@@ -147,6 +154,7 @@ async function runScenario(s: ScenarioSpec, attempt = 1): Promise<boolean> {
       wsUrl,
       hardware: `${hostname()} · ${process.arch} · node ${process.version}`,
       engine: ENGINE,
+      notes: healthNote,
     };
     const dir = join(OUT_ROOT, runId);
     await writeRun(dir, meta, samples, log.events, stats, pairwiseSeries);

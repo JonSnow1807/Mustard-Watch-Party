@@ -2,7 +2,12 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ActionEvent, CollectedSample, RunMeta, RunStats } from './types.js';
 import type { PairwisePoint } from './stats.js';
-import { driftCdfSvg, driftTimeSeriesSvg, noiseHistogramSvg } from './charts.js';
+import {
+  driftCdfSvg,
+  driftTimeSeriesSvg,
+  noiseHistogramSvg,
+  playheadTimeSeriesSvg,
+} from './charts.js';
 
 const fmtMs = (s: number): string => (Number.isFinite(s) ? `${Math.round(s * 1000)}ms` : 'n/a');
 
@@ -29,6 +34,21 @@ export async function writeRun(
   writeFileSync(
     join(dir, 'charts', 'drift-timeseries.svg'),
     await driftTimeSeriesSvg(pairwiseSeries, events, tStart, title),
+  );
+
+  // per-client playhead (1s downsample): makes total-failure runs legible —
+  // a follower that never starts is a flatline against the host's climb
+  const playhead: Array<{ tS: number; playheadS: number; client: string }> = [];
+  const lastEmitted = new Map<number, number>();
+  for (const s of samples) {
+    const tS = Math.floor((s.tLocal - tStart) / 1000);
+    if (lastEmitted.get(s.client) === tS) continue;
+    lastEmitted.set(s.client, tS);
+    playhead.push({ tS, playheadS: s.playerTime, client: `c${s.client}` });
+  }
+  writeFileSync(
+    join(dir, 'charts', 'playhead-timeseries.svg'),
+    await playheadTimeSeriesSvg(playhead, `per-client playhead · ${title}`),
   );
 
   const increments: Array<{ incrementMs: number }> = [];

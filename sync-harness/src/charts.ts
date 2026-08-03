@@ -88,6 +88,23 @@ export async function driftTimeSeriesSvg(
   } as TopLevelSpec);
 }
 
+export async function playheadTimeSeriesSvg(
+  samples: Array<{ tS: number; playheadS: number; client: string }>,
+  title: string,
+): Promise<string> {
+  return renderSvg({
+    ...BASE,
+    title,
+    data: { values: samples },
+    mark: { type: 'line' },
+    encoding: {
+      x: { field: 'tS', type: 'quantitative', title: 'scenario time (s)' },
+      y: { field: 'playheadS', type: 'quantitative', title: 'playhead (s)' },
+      color: { field: 'client', type: 'nominal', title: 'client' },
+    },
+  } as TopLevelSpec);
+}
+
 export async function noiseHistogramSvg(
   increments: Array<{ incrementMs: number }>,
   title: string,

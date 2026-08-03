@@ -1,0 +1,22 @@
+{
+  "runId": "S2-baseline-mscjtbgk",
+  "scenario": {
+    "id": "S2",
+    "title": "+150ms each way (~300ms RTT), symmetric — intercontinental",
+    "must": true,
+    "impairment": {
+      "tool": "toxiproxy",
+      "upLatencyMs": 150,
+      "downLatencyMs": 150
+    },
+    "durationS": 240
+  },
+  "gitSha": "a55e81c34fb8b47e9392adff168ee3a2e48c181e",
+  "startedAt": "2026-08-03T01:26:30.727Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3101",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "baseline",
+  "notes": "INVALID per health gate: players PLAYING = [true,false,false] — recorded as exhibit"
+}
