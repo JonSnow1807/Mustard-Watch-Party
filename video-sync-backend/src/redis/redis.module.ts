@@ -11,32 +11,35 @@ export function redisEnabled(): boolean {
   return Boolean(process.env.REDIS_URL);
 }
 
-function makeClient(url: string): Redis {
+function makeClient(url: string, kind: 'kv' | 'pubsub'): Redis {
   return new Redis(url, {
-    // capped backoff; control events fail fast rather than queueing forever
     retryStrategy: (times) => Math.min(times * 200, 5000),
-    maxRetriesPerRequest: 2,
-    enableOfflineQueue: false,
-    lazyConnect: false,
+    // KV fails fast: a control event against a down Redis should reject
+    // (client gets a typed error), not queue forever. Pub/sub clients must
+    // queue - the adapter subscribes during connection setup, and dropped
+    // subscriptions would silently kill cross-instance fanout.
+    ...(kind === 'kv'
+      ? { maxRetriesPerRequest: 2, enableOfflineQueue: false }
+      : { maxRetriesPerRequest: null, enableOfflineQueue: true }),
   });
 }
 
-const factory = (kind: symbol) => ({
+const factory = (kind: symbol, clientKind: 'kv' | 'pubsub') => ({
   provide: kind,
   inject: [ConfigService],
   useFactory: (config: ConfigService): Redis | null => {
     const url = config.get<string>('redis.url') ?? process.env.REDIS_URL;
     if (!url) return null;
-    return makeClient(url);
+    return makeClient(url, clientKind);
   },
 });
 
 @Global()
 @Module({
   providers: [
-    factory(REDIS_KV),
-    factory(REDIS_PUB),
-    factory(REDIS_SUB),
+    factory(REDIS_KV, 'kv'),
+    factory(REDIS_PUB, 'pubsub'),
+    factory(REDIS_SUB, 'pubsub'),
     ClockDomainService,
   ],
   exports: [REDIS_KV, REDIS_PUB, REDIS_SUB, ClockDomainService],

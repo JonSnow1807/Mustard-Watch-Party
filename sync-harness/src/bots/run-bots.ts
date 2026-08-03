@@ -40,6 +40,11 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 async function main(): Promise<void> {
   const args = parseArgs();
+  // fixtures must live on the same topology the sockets hit (JWT secrets
+  // and databases differ between the host backend and the lab)
+  if (!process.env.HARNESS_API_URL) {
+    process.env.HARNESS_API_URL = `${args.wsUrl}/api`;
+  }
   const runId = `bots-${Date.now().toString(36)}`;
   const rng = mulberry32(12345);
   console.log(`[bots] ${args.n} bots, ${args.durationS}s, gate=${args.gate}`);

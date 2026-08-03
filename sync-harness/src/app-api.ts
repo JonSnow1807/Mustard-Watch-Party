@@ -1,6 +1,9 @@
 // REST driver for test fixtures: ephemeral users and the scenario room.
+// Base resolved lazily so runners can point it at a lab topology first.
 
-const API = process.env.HARNESS_API_URL ?? 'http://localhost:3000/api';
+function apiBase(): string {
+  return process.env.HARNESS_API_URL ?? 'http://localhost:3000/api';
+}
 
 export interface HarnessUser {
   id: string;
@@ -11,7 +14,7 @@ export interface HarnessUser {
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`${apiBase()}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
