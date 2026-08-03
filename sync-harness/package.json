@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "scenario": "tsx src/run-scenario.ts",
     "matrix": "tsx src/run-scenario.ts S0,S1,S2,S3,S4,S5,S6,S7",
-    "report": "tsx src/report-only.ts"
+    "report": "tsx src/report-only.ts",
+    "bots": "tsx src/bots/run-bots.ts"
   },
   "dependencies": {
     "playwright": "^1.49.0",
