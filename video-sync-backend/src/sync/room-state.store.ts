@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
 import { applyControl, snapshot } from '../shared/sync-core/timeline';
 
@@ -83,7 +82,9 @@ export class InMemoryRoomStateStore implements RoomStateStore {
     const created: Timeline = {
       v: 1,
       seq: 0,
-      storeEpoch: randomBytes(6).toString('hex'),
+      // ordered epoch (store-domain mint time): the TLA+ spec proved random
+      // epochs unsound - a stale pre-flush broadcast can regress clients
+      storeEpoch: String(serverNow),
       videoId,
       isPlaying: false,
       mediaTime,

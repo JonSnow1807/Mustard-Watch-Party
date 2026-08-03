@@ -10,15 +10,16 @@
  *   mediaTimeAt(serverNow) = mediaTime + (isPlaying ? (serverNow - stampedAt)/1000 * rate : 0)
  *
  * Ordering: clients drop any timeline older than the last applied
- * (storeEpoch, seq). storeEpoch changes only when the authoritative store is
- * rehydrated (restart/flush); a changed epoch is always newer by definition
- * (plane A has no zombie writers; M13's actor plane adds numeric fencing).
+ * (storeEpoch, seq). storeEpoch is minted from the STORE CLOCK DOMAIN at
+ * rehydration and is therefore totally ordered - model-checked necessary
+ * (formal/SyncTimeline.tla): random epochs let stale pre-flush broadcasts
+ * regress clients, and no amount of client memory fixes it.
  */
 export interface Timeline {
   v: 1;
   /** monotonic per storeEpoch; assigned atomically by the state store */
   seq: number;
-  /** random id minted at store rehydration; different epoch === newer */
+  /** store-domain mint time (ms as string); numerically ordered */
   storeEpoch: string;
   videoId: string | null;
   isPlaying: boolean;

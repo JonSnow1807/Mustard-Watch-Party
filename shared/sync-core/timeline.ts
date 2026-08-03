@@ -7,14 +7,21 @@ export function projectMediaTime(tl: Timeline, serverNow: number): number {
 }
 
 /**
- * Ordering rule for applying received timelines. Same epoch: strictly higher
- * seq wins. Different epoch: the incoming one wins — an epoch only changes
- * when the authoritative store was rehydrated, which is by definition newer
- * than anything from the old epoch (see protocol note on fencing).
+ * Ordering rule for applying received timelines. Epochs are TOTALLY ORDERED
+ * (minted from the store clock domain at rehydration): higher epoch wins;
+ * same epoch, higher seq wins; anything else is stale and dropped.
+ *
+ * Model-checked (formal/SyncTimeline.tla): the earlier "different epoch
+ * always wins" rule let a stale pre-flush broadcast, delivered after the
+ * post-flush one, regress a client — and dead-epoch memory cannot fix it
+ * because a never-seen epoch is unclassifiable without ordering.
  */
 export function isNewer(incoming: Timeline, applied: Timeline | null): boolean {
   if (applied === null) return true;
-  if (incoming.storeEpoch !== applied.storeEpoch) return true;
+  const a = Number(incoming.storeEpoch);
+  const b = Number(applied.storeEpoch);
+  if (Number.isFinite(a) && Number.isFinite(b) && a !== b) return a > b;
+  if (incoming.storeEpoch !== applied.storeEpoch) return a > b; // NaN-safe: reject unorderable
   return incoming.seq > applied.seq;
 }
 

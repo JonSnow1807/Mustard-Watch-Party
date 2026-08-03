@@ -6,7 +6,7 @@ import { applyControl, isNewer, projectMediaTime, snapshot } from './timeline';
 const base: Timeline = {
   v: 1,
   seq: 5,
-  storeEpoch: 'epoch-a',
+  storeEpoch: '1000',
   videoId: 'vid',
   isPlaying: true,
   mediaTime: 100,
@@ -82,9 +82,16 @@ describe('isNewer', () => {
     expect(isNewer({ ...base, seq: 4 }, base)).toBe(false);
   });
 
-  it('different epoch always wins (store rehydration)', () => {
-    expect(isNewer({ ...base, storeEpoch: 'epoch-b', seq: 0 }, base)).toBe(
-      true,
+  it('a NEWER epoch wins regardless of seq (store rehydration)', () => {
+    expect(isNewer({ ...base, storeEpoch: '2000', seq: 0 }, base)).toBe(true);
+  });
+
+  it('a STALE pre-flush broadcast is dropped (the TLC counterexample)', () => {
+    // client already on the post-flush epoch; the old epoch's message
+    // arrives late via pub/sub reordering - must not regress
+    const postFlush = { ...base, storeEpoch: '2000', seq: 1 };
+    expect(isNewer({ ...base, storeEpoch: '500', seq: 9 }, postFlush)).toBe(
+      false,
     );
   });
 });

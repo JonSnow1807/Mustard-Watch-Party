@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
 import type Redis from 'ioredis';
 import { REDIS_KV } from '../redis/redis.module';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
@@ -85,13 +84,16 @@ save_tl(KEYS[1], tl, ${KEY_TTL_MS})
 return encode(tl)
 `;
 
-// KEYS[1]=room key, ARGV: videoId, mediaTime, epoch — first writer wins (P5)
+// KEYS[1]=room key, ARGV: videoId, mediaTime — first writer wins (P5).
+// storeEpoch is the store-domain mint time: TOTALLY ORDERED, which the TLA+
+// spec proved necessary — with random epochs a client cannot classify a
+// never-seen epoch as fresh or stale (formal/SyncTimeline.tla).
 const LUA_INIT = `${LUA_COMMON}
 local existing = load_tl(KEYS[1])
 if existing ~= nil then return encode(existing) end
 local now = now_ms()
 local tl = {
-  seq = 0, storeEpoch = ARGV[3], videoId = ARGV[1],
+  seq = 0, storeEpoch = tostring(now), videoId = ARGV[1],
   isPlaying = '0', mediaTime = ARGV[2], stampedAt = now,
   reason = 'join', by = '',
 }
@@ -107,12 +109,7 @@ interface RedisWithCommands extends Redis {
     by: string,
   ): Promise<string | null>;
   mustardApplySnapshot(key: string): Promise<string | null>;
-  mustardInit(
-    key: string,
-    videoId: string,
-    mediaTime: string,
-    epoch: string,
-  ): Promise<string>;
+  mustardInit(key: string, videoId: string, mediaTime: string): Promise<string>;
 }
 
 @Injectable()
@@ -195,7 +192,6 @@ export class RedisRoomStateStore implements RoomStateStore {
       this.key(roomCode),
       videoId ?? '',
       String(mediaTime),
-      randomBytes(6).toString('hex'),
     );
     const parsed = this.parse(result);
     if (!parsed) throw new Error(`init failed for room ${roomCode}`);
