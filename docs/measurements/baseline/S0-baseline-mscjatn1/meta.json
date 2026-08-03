@@ -1,0 +1,19 @@
+{
+  "runId": "S0-baseline-mscjatn1",
+  "scenario": {
+    "id": "S0",
+    "title": "clean loopback (floor; loopback is unrealistically kind)",
+    "must": true,
+    "impairment": {
+      "tool": "none"
+    },
+    "durationS": 240
+  },
+  "gitSha": "a55e81c34fb8b47e9392adff168ee3a2e48c181e",
+  "startedAt": "2026-08-03T01:12:07.811Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3000",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "baseline"
+}

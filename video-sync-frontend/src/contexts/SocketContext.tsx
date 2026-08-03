@@ -26,7 +26,11 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:3000';
+    // Harness override: ?ws=<url> routes the socket through an impairment
+    // proxy during measurement runs; inert unless the query param is present.
+    const wsOverride = new URLSearchParams(window.location.search).get('ws');
+    const wsUrl =
+      wsOverride || process.env.REACT_APP_WS_URL || 'ws://localhost:3000';
     console.log('Connecting to WebSocket server:', wsUrl);
 
     const socketInstance = io(wsUrl, {

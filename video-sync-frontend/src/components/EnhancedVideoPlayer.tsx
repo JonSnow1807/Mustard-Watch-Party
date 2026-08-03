@@ -290,6 +290,51 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   const playerRef = useRef<any>(null);
   const canControl = isHost || allowGuestControl;
 
+  const latencyRef = useRef(0);
+  useEffect(() => {
+    latencyRef.current = latency;
+  }, [latency]);
+
+  // Baseline telemetry shim: a read-only observer polled by sync-harness via
+  // window.__mustardSync. Samples the player at 20Hz; never calls a mutating
+  // player API, so measured runs exercise the app exactly as shipped.
+  useEffect(() => {
+    if (!isReady) return;
+    let base = 0;
+    const MAX = 6000;
+    const buf: Array<{
+      tLocal: number;
+      playerTime: number;
+      playerState: number;
+      rtt: number;
+    }> = [];
+    const iv = setInterval(() => {
+      const p = playerRef.current;
+      if (!p?.getCurrentTime) return;
+      buf.push({
+        tLocal: Date.now(),
+        playerTime: p.getCurrentTime(),
+        playerState: p.getPlayerState ? p.getPlayerState() : -1,
+        rtt: latencyRef.current,
+      });
+      if (buf.length > MAX) {
+        base += buf.length - MAX;
+        buf.splice(0, buf.length - MAX);
+      }
+    }, 50);
+    (window as any).__mustardSync = {
+      version: 'baseline-1',
+      getSamplesSince: (abs: number) => {
+        const start = Math.max(0, abs - base);
+        return { next: base + buf.length, samples: buf.slice(start) };
+      },
+    };
+    return () => {
+      clearInterval(iv);
+      delete (window as any).__mustardSync;
+    };
+  }, [isReady]);
+
   // Extract YouTube video ID
   const getYouTubeId = useCallback((url: string): string | null => {
     if (!url) return null;
@@ -575,6 +620,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       <Controls>
         <ControlRow>
           <PlayButton
+            data-testid="play-button"
             onClick={handlePlayPause}
             canControl={canControl}
             disabled={!isReady}
@@ -585,6 +631,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
           <ProgressContainer>
             <ProgressBar
+              data-testid="progress-bar"
               onClick={handleProgressClick}
               canControl={canControl}
             >
