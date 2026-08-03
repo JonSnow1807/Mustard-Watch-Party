@@ -1,338 +1,108 @@
 # 🍿 Mustard Watch Party
 
-Real-time video synchronization platform that lets you watch YouTube videos together with friends, no matter where they are.
+Watch YouTube together, **measurably in sync**. A watch party is distributed
+clock synchronization under variable network conditions — this repo treats it
+that way: a server-authoritative timeline, NTP-style clock discipline, a
+measured drift controller, and a harness that proves the numbers instead of
+claiming them.
 
+![CI](https://github.com/JonSnow1807/Mustard-Watch-Party/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-green.svg)
-![TypeScript](https://img.shields.io/badge/typescript-%5E5.0.0-blue.svg)
 
-## ✨ Features
+## The numbers (measured, not claimed)
 
-- **Real-time Synchronization** - Watch videos in perfect sync with latency monitoring
-- **Unlimited Rooms** - Create unlimited rooms with no user limits
-- **User Authentication** - Secure login and registration system
-- **Participant Tracking** - See who's watching with you in real-time
-- **YouTube Integration** - Supports all YouTube videos via iframe API
-- **Responsive Design** - Works on desktop and mobile devices
-- **Voice Chat** - Built-in WebRTC voice communication
-- **Collaborative Control** - Optional setting to allow all participants to control video
-- **Room Management** - Public/private rooms with tags and descriptions
+Same deterministic 3-browser scenario, same hardware, before → after the
+sync overhaul. Every figure traces to a committed run under
+[`docs/measurements/`](docs/measurements/) with SHA + hardware provenance.
 
-## 🛠️ Tech Stack
+<!-- AFTER-MATRIX-TABLE -->
 
-### Backend
-- **NestJS** - Progressive Node.js framework
-- **Socket.IO** - Real-time bidirectional communication
-- **Prisma** - Next-generation ORM for PostgreSQL
-- **PostgreSQL** - Relational database
-- **JWT** - Authentication tokens
+The baseline wasn't just slow — **the shipped sync worked only on
+localhost**: control events were silently dropped on any real network, a
+host seek permanently desynced the room by the full seek distance (255s,
+measured), and no correction mechanism existed
+([baseline findings](docs/measurements/baseline/README.md)).
 
-### Frontend
-- **React** - UI library
-- **TypeScript** - Type safety
-- **Socket.IO Client** - WebSocket connection
-- **Emotion** - CSS-in-JS styling
-- **React Query** - Data fetching and caching
+Protocol-level, on the production multi-instance plane: 100 clients in one
+room hold P95 ≈ 170ms; a 10-cell load sweep (10→250 clients × 1/3 instances)
+found **no SLO breach within the load generator's valid range**, with the
+trend lines and the extrapolated knee stated honestly
+([scaling results](docs/SCALING.md#5-load-characterization)).
 
-## 🚀 Complete Setup Guide
+## How it works
 
-### Prerequisites
-Make sure you have these installed:
-- **Node.js** (v18 or higher)
-- **PostgreSQL** (v14 or higher)
-- **npm** or **yarn**
-
-### Step 1: Clone and Navigate to Project
-```bash
-cd Mustard-Watch-Party
+```mermaid
+flowchart LR
+  subgraph clients [N browsers]
+    E["SyncEngine\nclock estimator + drift controller\n(shared pure TS, 4Hz loop)"]
+  end
+  subgraph server [1..N instances]
+    G[gateway]
+  end
+  R[("Redis\nLua-serialized timeline\nredis TIME = the clock domain")]
+  E -- "sync:clock (NTP-style ack)" --> G
+  E -- "sync:control (intent)" --> G
+  G -- "sync:timeline (seq, storeEpoch)" --> E
+  G <--> R
 ```
 
-### Step 2: Set Up Database
+- **The room's state is a projectable function**, not a scalar:
+  `mediaTimeAt(now) = mediaTime + elapsed·rate`, restamped server-side per
+  control event with a monotone `seq`. Clients drop stale `(storeEpoch, seq)`.
+- **Wait-for-broadcast control**: the button-presser converges from the same
+  broadcast as everyone else — echo storms are structurally impossible.
+- **Clock discipline**: NTP-style offset over a Socket.IO ack, median-of-
+  best-RTT filtering, slew-not-step; validated by bot fleets with injected
+  ±1s offsets recovered to ~2ms.
+- **SEEK-first correction** (the YouTube API rounds fractional rates toward
+  1 — measured, not assumed): corrective seeks target `projected + lead`
+  where the lead is *learned* from every seek's settle residual; a per-video
+  probe enables rate-nudging only where it actually sticks.
+- **Multi-instance**: room timelines live in Redis behind one Lua script per
+  mutation (Redis's single-threaded execution is the serializer — no locks),
+  with `redis TIME` as the single clock domain (4ms measured spread across
+  live instances). Kill -9 an instance mid-playback and the room carries on.
 
-1. **Start PostgreSQL service:**
-   ```bash
-   brew services start postgresql@14
-   ```
+Full design: [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md) ·
+[docs/SCALING.md](docs/SCALING.md)
 
-2. **Create database and user:**
-   ```bash
-   psql postgres -c "CREATE USER videouser WITH PASSWORD 'videopass';"
-   psql postgres -c "CREATE DATABASE videosync OWNER videouser;"
-   psql postgres -c "GRANT ALL PRIVILEGES ON DATABASE videosync TO videouser;"
-   ```
+## Honest limits
 
-### Step 3: Set Up Backend
+- Embedded-player ads/interstitials can interrupt playback we cannot
+  observe; the engine surfaces a click-to-resume chip rather than fighting.
+- Path asymmetry biases the clock estimate by asym/2 — fundamental to any
+  NTP-family scheme; scenario S6 measures it rather than hiding it.
+- Background tabs suspend and resync on focus.
+- The load sweep attests up to 250 clients/room on documented hardware; the
+  extrapolated single-instance knee (~400–500) is stated as extrapolation.
 
-1. **Navigate to backend directory:**
-   ```bash
-   cd video-sync-backend
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Create environment file (.env):**
-   ```bash
-   echo 'DATABASE_URL="postgresql://videouser:videopass@localhost:5432/videosync"' > .env
-   echo 'JWT_SECRET="your-super-secret-jwt-key-change-this-in-production"' >> .env
-   echo 'PORT=3000' >> .env
-   echo 'FRONTEND_URL="http://localhost:3001"' >> .env
-   ```
-
-4. **Run database migrations:**
-   ```bash
-   npx prisma migrate deploy
-   ```
-
-5. **Start the backend server:**
-   ```bash
-   npm run start:dev
-   ```
-
-   **Expected output:** You should see:
-   ```
-   ✅ Database connected successfully
-   🚀 Server is running on http://localhost:3000
-   🔌 WebSocket server is ready for connections
-   ```
-
-### Step 4: Set Up Frontend
-
-1. **Open a new terminal and navigate to frontend directory:**
-   ```bash
-   cd video-sync-frontend
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Create environment file (.env):**
-   ```bash
-   echo 'REACT_APP_API_URL=http://localhost:3000/api' > .env
-   echo 'REACT_APP_WS_URL=ws://localhost:3000' >> .env
-   ```
-
-4. **Start the frontend server:**
-   ```bash
-   PORT=3001 npm start
-   ```
-
-   **Expected output:** You should see:
-   ```
-   Compiled successfully!
-   You can now view video-sync-frontend in the browser.
-   Local:            http://localhost:3001
-   ```
-
-### Step 5: Access the Application
-
-1. **Backend API:** http://localhost:3000/api
-2. **Frontend App:** http://localhost:3001
-
-### Step 6: Test the Setup
-
-1. **Test backend API:**
-   ```bash
-   curl http://localhost:3000/api/rooms/public
-   ```
-   Should return: `[]`
-
-2. **Test frontend:**
-   Open http://localhost:3001 in your browser
-
-### Troubleshooting
-
-**If backend fails to start:**
-- Check if PostgreSQL is running: `brew services list | grep postgres`
-- Verify database connection: `psql -U videouser -d videosync -h localhost`
-
-**If frontend fails to start:**
-- Make sure port 3001 is available
-- Check if backend is running on port 3000
-
-**If you get database errors:**
-- Drop and recreate the database:
-  ```bash
-  psql postgres -c "DROP DATABASE IF EXISTS videosync;"
-  psql postgres -c "CREATE DATABASE videosync OWNER videouser;"
-  npx prisma migrate deploy
-  ```
-
-### Quick Start Script
-
-You can create a quick start script. Create a file called `start.sh` in the root directory:
+## Reproduce the numbers
 
 ```bash
-#!/bin/bash
-
-# Start PostgreSQL
-brew services start postgresql@14
-
-# Start Backend
-cd video-sync-backend
-npm run start:dev &
-
-# Start Frontend
-cd ../video-sync-frontend
-PORT=3001 npm start
+docker compose -f sync-harness/lab/docker-compose.harness.yml up -d --build
+cd sync-harness && npm install && npx playwright install chromium
+npm run scenario -- S0          # one 3-browser scenario against your build
+npm run bots -- --n 100 --duration 120   # protocol-level, no browsers
 ```
 
-Make it executable: `chmod +x start.sh`
+Methodology — instrument independence, impairment lab (Toxiproxy + tc-netem
+in a container), steady-state windows, run validity gates:
+[`sync-harness/README.md`](sync-harness/README.md).
 
-### Port Configuration Summary
+## Product
 
-- **Backend API:** http://localhost:3000
-- **Frontend App:** http://localhost:3001
-- **WebSocket:** ws://localhost:3000
-- **Database:** localhost:5432
+Create a room, share the link, watch together: play/pause/seek stay in
+sync, with chat and WebRTC voice. Rooms are public or private with optional
+collaborative control; identity is a JWT verified at the socket handshake
+(forged control is a [tested rejection](sync-harness/src/verify-m3.ts)).
 
----
+## Development
 
-## 🚀 Quick Start (Legacy - Commented Out)
+Setup, labs, tests and gates: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-<!-- 
-### Prerequisites
-- Node.js 18+
-- PostgreSQL 15+
-- npm or yarn
+## Stack
 
-### Installation
-
-1. **Clone the repository**
-```bash
-git clone https://github.com/JonSnow1807/Mustard-Watch-Party.git
-cd Mustard-Watch-Party
-```
-
-2. **Backend Setup**
-```bash
-cd video-sync-backend
-npm install
-
-# Create .env file
-cp .env.example .env
-# Edit .env with your database credentials
-
-# Run database migrations
-npx prisma migrate dev
-
-# Start backend (port 3000)
-npm run start:dev
-```
-
-3. **Frontend Setup**
-```bash
-cd ../video-sync-frontend
-npm install
-
-# Create .env file
-echo "REACT_APP_API_URL=http://localhost:3000/api
-REACT_APP_WS_URL=http://localhost:3000
-PORT=3001" > .env
-
-# Start frontend (port 3001)
-npm start
-```
--->
-
-## 🚀 Commands to Run Your Project Locally
-
-### Option 1: Manual Start (Recommended for Development)
-
-**Terminal 1 - Start Backend:**
-```bash
-cd Mustard-Watch-Party/video-sync-backend
-npm run start:dev
-```
-
-**Terminal 2 - Start Frontend:**
-```bash
-cd Mustard-Watch-Party/video-sync-frontend
-PORT=3001 npm start
-```
-
-## 📖 Usage
-
-1. **Register/Login** - Create an account or login
-2. **Create Room** - Enter room name and YouTube URL
-3. **Share Room Code** - Give the code to friends
-4. **Watch Together** - Videos stay in sync automatically!
-
-## 🏗️ Architecture
-
-```
-┌─────────────┐     WebSocket      ┌─────────────┐
-│   React     │ ←────────────────→ │   NestJS    │
-│  Frontend   │                    │   Backend   │
-└─────────────┘                    └──────┬──────┘
-                                          │
-                                    ┌─────▼─────┐
-                                    │PostgreSQL │
-                                    │    DB     │
-                                    └───────────┘
-```
-
-### Key Components
-
-- **WebSocket Gateway** - Handles real-time video state synchronization
-- **Room Service** - Manages room creation and participant tracking
-- **Auth Service** - JWT-based authentication
-- **Video Player** - YouTube iframe API integration with sync logic
-
-## 🐳 Docker Support
-
-```bash
-# Run with Docker Compose
-docker-compose up --build
-
-# Access at:
-# Frontend: http://localhost:3001
-# Backend: http://localhost:3000
-```
-
-## 🔧 Environment Variables
-
-### Backend (.env)
-```env
-DATABASE_URL=postgresql://videouser:videopass@localhost:5432/videosync
-PORT=3000
-FRONTEND_URL=http://localhost:3001
-JWT_SECRET=your-secret-key
-```
-
-### Frontend (.env)
-```env
-REACT_APP_API_URL=http://localhost:3000/api
-REACT_APP_WS_URL=ws://localhost:3000
-PORT=3001
-```
-
-## 📝 API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Register new user |
-| POST | `/api/auth/login` | Login user |
-| POST | `/api/rooms` | Create room (supports allowGuestControl flag) |
-| GET | `/api/rooms/public` | List public rooms |
-| GET | `/api/rooms/:code` | Get room details |
-| GET | `/api/rooms/user/:userId` | User's rooms |
-| PATCH | `/api/rooms/:code` | Update room |
-| DELETE | `/api/rooms/:code` | Delete room (host only) |
-
-
-## 📄 License
-
-This project is licensed under the Apache 2.0 License.
-
-## 🙏 Acknowledgments
-
-- Built with ❤️ for movie nights with friends
-- Inspired by the need to stay connected while apart
-
----
-**Happy Watching! 🎬**
+NestJS · Socket.IO · Prisma/PostgreSQL · Redis (ioredis + Lua) · React ·
+a shared pure-TS sync core consumed by the browser, the bot fleet, and jest
+· Playwright + Toxiproxy + tc-netem for measurement · GitHub Actions with a
+sync-regression gate on every push.
