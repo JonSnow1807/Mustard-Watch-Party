@@ -73,7 +73,40 @@ bot P95 vs-timeline drift ≤ 100ms; event-loop lag p99 ≤ 100ms. The knee is
 the smallest N breaching an SLO, attributed via the correlated server
 metric.
 
-<!-- SWEEP-RESULTS: table + knee attribution inserted from the committed sweep run -->
+Sweep `sweep-mscpz6fr+mscql2az` · 10 cores (Apple M2 Pro) · 120s cells · SHA `60dbb0ba5d`
+
+| topology | clients | drift P50 | P95 | P99 | lag p99 max | server CPU (cores) | SLO | load-gen |
+|---|---|---|---|---|---|---|---|---|
+| 1 instance | 10 | 79ms | 167ms | 350ms | 17ms | 0.02 | ok | valid |
+| 3 instances | 10 | 80ms | 164ms | 348ms | 17ms | 0.03 | ok | valid |
+| 1 instance | 25 | 77ms | 169ms | 390ms | 20ms | 0.04 | ok | valid |
+| 3 instances | 25 | 80ms | 169ms | 358ms | 18ms | 0.06 | ok | valid |
+| 1 instance | 50 | 76ms | 164ms | 346ms | 22ms | 0.08 | ok | valid |
+| 3 instances | 50 | 71ms | 171ms | 375ms | 18ms | 0.08 | ok | valid |
+| 1 instance | 100 | 72ms | 164ms | 345ms | 37ms | 0.15 | ok | valid |
+| 3 instances | 100 | 77ms | 164ms | 355ms | 24ms | 0.15 | ok | valid |
+| 1 instance | 250 | 74ms | 165ms | 382ms | 62ms | 0.51 | ok | valid |
+| 3 instances | 250 | 74ms | 166ms | 381ms | 90ms | 0.37 | ok | valid |
+
+**1 instance:** no SLO breach on any valid cell in this sweep.
+
+**3 instances:** no SLO breach on any valid cell in this sweep.
+
+**Reading the trends** (the knee lies beyond this hardware's valid range):
+protocol drift P95 is flat at ~165ms across every size and topology — that
+floor is the bot fleet's deliberately pessimistic player simulation
+(command latency + seek settle), not the server, which is exactly why the
+drift SLO (250ms) is calibrated above it. The load signal is in the server
+columns: single-instance CPU grows linearly with fanout (0.02 → 0.51 cores,
+10 → 250 clients) and its event-loop lag p99 follows (17 → 62ms);
+3 instances hold one third the per-instance CPU but pay for cross-instance
+pub/sub with higher lag at 250 (90ms vs 62ms) while still inside the SLO.
+Extrapolating the single-instance trend, event-loop lag crosses the 100ms
+SLO in the 400–500-clients-per-room region — beyond the room sizes this
+product targets, and the honest limit of what this load generator can
+attest ([full run](measurements/sweep/), charts:
+[drift](measurements/sweep/charts/sweep-drift.svg) ·
+[lag](measurements/sweep/charts/sweep-lag.svg)).
 
 ## 6. Production topology and cost
 

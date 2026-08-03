@@ -1,0 +1,419 @@
+{
+  "sweepId": "sweep-mscpz6fr+mscql2az",
+  "gitSha": "60dbb0ba5d2db847fbdd9cf0db6021253601432b",
+  "hardware": "10 cores (Apple M2 Pro)",
+  "durationSPerCell": 120,
+  "note": "cells one-250/three-250 re-run after an external stop of the original sweep process; identical topology and parameters",
+  "results": [
+    {
+      "label": "one-10",
+      "n": 10,
+      "rooms": 1,
+      "ws": "http://localhost:3301",
+      "botSummary": {
+        "runId": "bots-mscpz6qc",
+        "n": 10,
+        "durationS": 120,
+        "steadySamples": 3507,
+        "driftMs": {
+          "p50": 78.86894003416955,
+          "p95": 166.53777052857777,
+          "p99": 349.9254170012591
+        },
+        "slopeMsPerMin": -0.14116386107616563,
+        "thetaErrorP95Ms": 5.547119140625,
+        "seqGaps": 0,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b1": {
+          "lagP99MaxMs": 16.891903,
+          "cpuCoresAvg": 0.02050339393838442,
+          "rssMaxMb": 124.854272,
+          "clientsMax": 10
+        }
+      },
+      "loadGenLoad1PerCore": 0.588525390625,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    },
+    {
+      "label": "three-10",
+      "n": 10,
+      "rooms": 1,
+      "ws": "http://localhost:3300",
+      "botSummary": {
+        "runId": "bots-mscq1s14",
+        "n": 10,
+        "durationS": 120,
+        "steadySamples": 3508,
+        "driftMs": {
+          "p50": 79.87581497690144,
+          "p95": 163.62054708772968,
+          "p99": 348.21066992850547
+        },
+        "slopeMsPerMin": -4.206468676852637,
+        "thetaErrorP95Ms": 2.951171875,
+        "seqGaps": 0,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b1": {
+          "lagP99MaxMs": 16.875518999999997,
+          "cpuCoresAvg": 0.011075303839329576,
+          "rssMaxMb": 125.739008,
+          "clientsMax": 4
+        },
+        "b3": {
+          "lagP99MaxMs": 16.736255,
+          "cpuCoresAvg": 0.012029071946820796,
+          "rssMaxMb": 120.901632,
+          "clientsMax": 3
+        },
+        "b2": {
+          "lagP99MaxMs": 16.711679,
+          "cpuCoresAvg": 0.011458845285596493,
+          "rssMaxMb": 120.516608,
+          "clientsMax": 3
+        }
+      },
+      "loadGenLoad1PerCore": 0.49375,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    },
+    {
+      "label": "one-25",
+      "n": 25,
+      "rooms": 1,
+      "ws": "http://localhost:3301",
+      "botSummary": {
+        "runId": "bots-mscq4db8",
+        "n": 25,
+        "durationS": 120,
+        "steadySamples": 8772,
+        "driftMs": {
+          "p50": 76.88629259314794,
+          "p95": 168.8736057111555,
+          "p99": 389.927838236531
+        },
+        "slopeMsPerMin": -2.903622556686969,
+        "thetaErrorP95Ms": 3.392578125,
+        "seqGaps": 0,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b1": {
+          "lagP99MaxMs": 19.513343,
+          "cpuCoresAvg": 0.038739714616531605,
+          "rssMaxMb": 135.622656,
+          "clientsMax": 25
+        }
+      },
+      "loadGenLoad1PerCore": 0.55654296875,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    },
+    {
+      "label": "three-25",
+      "n": 25,
+      "rooms": 1,
+      "ws": "http://localhost:3300",
+      "botSummary": {
+        "runId": "bots-mscq6yte",
+        "n": 25,
+        "durationS": 120,
+        "steadySamples": 8774,
+        "driftMs": {
+          "p50": 79.95634984837352,
+          "p95": 169.35457574976454,
+          "p99": 358.2529774001273
+        },
+        "slopeMsPerMin": -1.922080237920909,
+        "thetaErrorP95Ms": 3.84716796875,
+        "seqGaps": 7,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b1": {
+          "lagP99MaxMs": 17.661951,
+          "cpuCoresAvg": 0.017538781290349432,
+          "rssMaxMb": 126.967808,
+          "clientsMax": 9
+        },
+        "b2": {
+          "lagP99MaxMs": 16.990207,
+          "cpuCoresAvg": 0.021169653046774158,
+          "rssMaxMb": 123.92448,
+          "clientsMax": 9
+        },
+        "b3": {
+          "lagP99MaxMs": 17.137663,
+          "cpuCoresAvg": 0.019103961014619496,
+          "rssMaxMb": 123.088896,
+          "clientsMax": 7
+        }
+      },
+      "loadGenLoad1PerCore": 0.306103515625,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    },
+    {
+      "label": "one-50",
+      "n": 50,
+      "rooms": 1,
+      "ws": "http://localhost:3301",
+      "botSummary": {
+        "runId": "bots-mscq9k7y",
+        "n": 50,
+        "durationS": 120,
+        "steadySamples": 17640,
+        "driftMs": {
+          "p50": 76.29296867322921,
+          "p95": 163.84206275307278,
+          "p99": 345.9302338362136
+        },
+        "slopeMsPerMin": -3.2178282551512893,
+        "thetaErrorP95Ms": 2.6707763671875,
+        "seqGaps": 0,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b1": {
+          "lagP99MaxMs": 21.839871,
+          "cpuCoresAvg": 0.07506199438459686,
+          "rssMaxMb": 143.50336,
+          "clientsMax": 50
+        }
+      },
+      "loadGenLoad1PerCore": 0.41806640625,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    },
+    {
+      "label": "three-50",
+      "n": 50,
+      "rooms": 1,
+      "ws": "http://localhost:3300",
+      "botSummary": {
+        "runId": "bots-mscqc6dx",
+        "n": 50,
+        "durationS": 120,
+        "steadySamples": 17670,
+        "driftMs": {
+          "p50": 70.86551584956169,
+          "p95": 170.79208042226313,
+          "p99": 375.32017458426026
+        },
+        "slopeMsPerMin": 0.17113193753175437,
+        "thetaErrorP95Ms": 3.0657958984375,
+        "seqGaps": 0,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b1": {
+          "lagP99MaxMs": 17.842174999999997,
+          "cpuCoresAvg": 0.027643902154533027,
+          "rssMaxMb": 136.093696,
+          "clientsMax": 18
+        },
+        "b2": {
+          "lagP99MaxMs": 16.302079,
+          "cpuCoresAvg": 0.028340926132671255,
+          "rssMaxMb": 127.381504,
+          "clientsMax": 15
+        },
+        "b3": {
+          "lagP99MaxMs": 16.293887,
+          "cpuCoresAvg": 0.027705280522553395,
+          "rssMaxMb": 127.778816,
+          "clientsMax": 17
+        }
+      },
+      "loadGenLoad1PerCore": 0.24638671875,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    },
+    {
+      "label": "one-100",
+      "n": 100,
+      "rooms": 1,
+      "ws": "http://localhost:3301",
+      "botSummary": {
+        "runId": "bots-mscqes3n",
+        "n": 100,
+        "durationS": 120,
+        "steadySamples": 35433,
+        "driftMs": {
+          "p50": 71.85328789557843,
+          "p95": 163.7203816887336,
+          "p99": 344.893319311268
+        },
+        "slopeMsPerMin": -9.626455922394989,
+        "thetaErrorP95Ms": 75.664794921875,
+        "seqGaps": 0,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b1": {
+          "lagP99MaxMs": 37.322751000000004,
+          "cpuCoresAvg": 0.14556940878322047,
+          "rssMaxMb": 168.411136,
+          "clientsMax": 100
+        }
+      },
+      "loadGenLoad1PerCore": 0.169287109375,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    },
+    {
+      "label": "three-100",
+      "n": 100,
+      "rooms": 1,
+      "ws": "http://localhost:3300",
+      "botSummary": {
+        "runId": "bots-mscqhfo8",
+        "n": 100,
+        "durationS": 120,
+        "steadySamples": 35225,
+        "driftMs": {
+          "p50": 77.42473247530057,
+          "p95": 163.72305614804716,
+          "p99": 355.2744892293731
+        },
+        "slopeMsPerMin": 0.0745926108720596,
+        "thetaErrorP95Ms": 2.8341064453125,
+        "seqGaps": 0,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b2": {
+          "lagP99MaxMs": 20.791295,
+          "cpuCoresAvg": 0.05152065144951677,
+          "rssMaxMb": 135.962624,
+          "clientsMax": 30
+        },
+        "b3": {
+          "lagP99MaxMs": 18.366463,
+          "cpuCoresAvg": 0.05090670609796732,
+          "rssMaxMb": 137.412608,
+          "clientsMax": 34
+        },
+        "b1": {
+          "lagP99MaxMs": 24.068095,
+          "cpuCoresAvg": 0.04461259580139949,
+          "rssMaxMb": 154.292224,
+          "clientsMax": 36
+        }
+      },
+      "loadGenLoad1PerCore": 0.36787109375,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    },
+    {
+      "label": "one-250",
+      "n": 250,
+      "rooms": 1,
+      "ws": "http://localhost:3301",
+      "botSummary": {
+        "runId": "bots-mscql2lg",
+        "n": 250,
+        "durationS": 120,
+        "steadySamples": 88705,
+        "driftMs": {
+          "p50": 73.85442625940186,
+          "p95": 164.79244996049937,
+          "p99": 382.21694586655985
+        },
+        "slopeMsPerMin": 0.0025893098268170434,
+        "thetaErrorP95Ms": 2.992919921875,
+        "seqGaps": 0,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b1": {
+          "lagP99MaxMs": 62.324735,
+          "cpuCoresAvg": 0.509692979690396,
+          "rssMaxMb": 211.31264,
+          "clientsMax": 250
+        }
+      },
+      "loadGenLoad1PerCore": 0.353369140625,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    },
+    {
+      "label": "three-250",
+      "n": 250,
+      "rooms": 1,
+      "ws": "http://localhost:3300",
+      "botSummary": {
+        "runId": "bots-mscqnxne",
+        "n": 250,
+        "durationS": 120,
+        "steadySamples": 88588,
+        "driftMs": {
+          "p50": 73.80850715076193,
+          "p95": 165.54521660538057,
+          "p99": 380.94482420598297
+        },
+        "slopeMsPerMin": 0.708220757098843,
+        "thetaErrorP95Ms": 4.52197265625,
+        "seqGaps": 0,
+        "handlerErrors": 0,
+        "rejectedControls": 0
+      },
+      "servers": {
+        "b3": {
+          "lagP99MaxMs": 22.069247,
+          "cpuCoresAvg": 0.10858076849244958,
+          "rssMaxMb": 166.977536,
+          "clientsMax": 83
+        },
+        "b2": {
+          "lagP99MaxMs": 28.721151,
+          "cpuCoresAvg": 0.10923177949833617,
+          "rssMaxMb": 166.735872,
+          "clientsMax": 84
+        },
+        "b1": {
+          "lagP99MaxMs": 89.65324700000001,
+          "cpuCoresAvg": 0.1567060084463786,
+          "rssMaxMb": 193.388544,
+          "clientsMax": 83
+        }
+      },
+      "loadGenLoad1PerCore": 0.258447265625,
+      "loadGenSelfSkewed": false,
+      "sloDriftOk": true,
+      "sloLagOk": true,
+      "error": null
+    }
+  ]
+}

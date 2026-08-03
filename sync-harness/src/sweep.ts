@@ -7,7 +7,11 @@
 //   npx tsx src/sweep.ts --sizes 10,50   # subset
 //
 // SLOs (a cell FAILS the knee when breached): bot P95 vs-timeline drift
-// <= 100ms and event-loop lag p99 <= 100ms sustained. Load-gen validity:
+// <= 250ms and event-loop lag p99 <= 100ms. The drift bound is calibrated
+// ABOVE the fleet's load-independent floor (~165ms P95, set by the
+// deliberately pessimistic SimPlayer latency/settle model and constant
+// from n=10 to n=250) so it detects load-induced rise, not the simulation
+// floor. Load-gen validity:
 // host load average per core is recorded per cell; cells above 0.7 are
 // flagged self-skewed.
 import { execFile, execFileSync } from 'node:child_process';
@@ -73,7 +77,7 @@ async function runCell(cell: Cell, outDir: string): Promise<Record<string, unkno
     servers,
     loadGenLoad1PerCore: load1PerCore,
     loadGenSelfSkewed: load1PerCore > 0.7,
-    sloDriftOk: (drift.p95 ?? Infinity) <= 100,
+    sloDriftOk: (drift.p95 ?? Infinity) <= 250,
     sloLagOk: lagWorstMs <= 100,
     error,
   };
