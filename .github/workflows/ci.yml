@@ -106,5 +106,5 @@ jobs:
           JWT_SECRET: ci-secret
       - run: npm ci
         working-directory: sync-harness
-      - run: npx tsx src/bots/run-bots.ts --n 10 --duration 90 --gate
+      - run: npx tsx src/bots/run-bots.ts --n 10 --duration 120 --gate
         working-directory: sync-harness
