@@ -1,6 +1,6 @@
 # Stage 1: Building the application
 # We use node:18-alpine because it's a lightweight Linux distribution
-FROM node:18.19.0-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -26,7 +26,7 @@ RUN npm run build
 
 # Stage 2: Running the application
 # We create a smaller image for production by only copying what we need
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Install dumb-init for proper signal handling
 RUN apk add --no-cache dumb-init
