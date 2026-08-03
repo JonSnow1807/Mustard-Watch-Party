@@ -6,6 +6,8 @@ interface User {
   id: string;
   username: string;
   email: string;
+  /** JWT presented in the socket handshake; verified server-side at connect */
+  token?: string;
 }
 
 interface AuthContextType {

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
+import { useAuth } from './AuthContext';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -22,10 +23,20 @@ interface SocketProviderProps {
 }
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
+  const { user } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const token = user?.token;
 
   useEffect(() => {
+    // the gateway rejects unauthenticated sockets; without a token there is
+    // nothing to connect (login/register issue one)
+    if (!token) {
+      setSocket(null);
+      setConnected(false);
+      return;
+    }
+
     // Harness override: ?ws=<url> routes the socket through an impairment
     // proxy during measurement runs; inert unless the query param is present.
     const wsOverride = new URLSearchParams(window.location.search).get('ws');
@@ -35,6 +46,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
     const socketInstance = io(wsUrl, {
       transports: ['websocket', 'polling'],
+      auth: { token },
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
@@ -52,6 +64,10 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       toast.error('Disconnected from sync server');
     });
 
+    socketInstance.on('connect_error', (error: Error) => {
+      console.error('Socket connect error:', error.message);
+    });
+
     socketInstance.on('error', (error: any) => {
       console.error('Socket error:', error);
       toast.error(error.message || 'Connection error');
@@ -62,7 +78,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     return () => {
       socketInstance.disconnect();
     };
-  }, []);
+  }, [token]);
 
   return (
     <SocketContext.Provider value={{ socket, connected }}>
