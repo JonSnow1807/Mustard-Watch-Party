@@ -53,8 +53,8 @@ docker compose -f sync-harness/lab/docker-compose.harness.yml up -d --build
 
 # 2. backend on the host
 cd video-sync-backend
-DATABASE_URL='postgresql://videouser:videopass@localhost:5432/videosync' npx prisma migrate deploy
-DATABASE_URL='postgresql://videouser:videopass@localhost:5432/videosync' npm run start:prod &
+DATABASE_URL='postgresql://videouser:videopass@localhost:5433/videosync' npx prisma migrate deploy
+DATABASE_URL='postgresql://videouser:videopass@localhost:5433/videosync' npm run start:prod &
 
 # 3. frontend production build, served statically on :3001
 cd ../video-sync-frontend

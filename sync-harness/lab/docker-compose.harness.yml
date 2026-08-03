@@ -21,7 +21,8 @@ services:
       POSTGRES_PASSWORD: videopass
       POSTGRES_DB: videosync
     ports:
-      - "5432:5432"
+      # host port 5433: 5432 is commonly taken by a local postgres install
+      - "5433:5432"
     volumes:
       - harness-pgdata:/var/lib/postgresql/data
     healthcheck:
