@@ -1,0 +1,46 @@
+name: nightly multi-instance lab
+
+# Medium-scale nightly: the full 3-instance lab (Redis Lua store + pub/sub
+# adapter behind nginx least_conn) with a 50-bot fleet. Bigger than the
+# per-push tripwire, still honest about runner limits — headline numbers
+# come from local hardware-documented sweeps, never CI.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  lab-50:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: boot the 3-instance lab
+        run: |
+          docker compose -f docker-compose.lab.yml up -d --build
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3300/health && break
+            sleep 2
+          done
+          curl -sf http://localhost:3300/health
+      - run: npm ci
+        working-directory: sync-harness
+      - name: multi-instance proofs
+        run: npx tsx src/verify-m6.ts
+        working-directory: sync-harness
+      - name: 50-bot fleet through nginx (gated)
+        run: npx tsx src/bots/run-bots.ts --n 50 --duration 120 --ws http://localhost:3300 --gate
+        working-directory: sync-harness
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-lab-results
+          path: sync-harness/runs/
+          retention-days: 30
+      - name: lab logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.lab.yml logs --tail 100
