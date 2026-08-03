@@ -332,6 +332,8 @@ export const EnhancedRoomPage: React.FC = () => {
     }
 
     fetchRoomDetails();
+    // intentional: fetch once per room code
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode]);
 
   useEffect(() => {
