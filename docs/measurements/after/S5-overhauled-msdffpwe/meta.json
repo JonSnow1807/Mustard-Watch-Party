@@ -1,0 +1,20 @@
+{
+  "runId": "S5-overhauled-msdffpwe",
+  "scenario": {
+    "id": "S5",
+    "title": "25ms + 5% loss (netem) — ugly loss, stall behavior",
+    "must": true,
+    "impairment": {
+      "tool": "netem",
+      "netemSpec": "delay 25ms loss 5%"
+    },
+    "durationS": 240
+  },
+  "gitSha": "d7eead284ac481053cbb20fe113cbe489dbbbb49",
+  "startedAt": "2026-08-03T16:11:44.083Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3102",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled"
+}

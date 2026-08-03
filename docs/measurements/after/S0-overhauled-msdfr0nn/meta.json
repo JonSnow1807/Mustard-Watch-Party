@@ -1,0 +1,19 @@
+{
+  "runId": "S0-overhauled-msdfr0nn",
+  "scenario": {
+    "id": "S0",
+    "title": "clean loopback (floor; loopback is unrealistically kind)",
+    "must": true,
+    "impairment": {
+      "tool": "none"
+    },
+    "durationS": 240
+  },
+  "gitSha": "57b730a8610d96f23b248a2286f27ef4ced167e6",
+  "startedAt": "2026-08-03T16:20:31.060Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3000",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled"
+}

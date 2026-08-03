@@ -146,14 +146,26 @@ numbers come from local, hardware-documented runs.
 
 See `docs/measurements/` for the run directories behind every number.
 
-| Metric (S0 clean, 3 browsers) | baseline | overhauled |
-|---|---|---|
-| pairwise drift P50 | 363ms | **33ms** |
-| pairwise drift P95 | 255.3s | **102ms** |
-| convergence after play / seek | never | **1.5s / 0.75s** |
-| hard seeks per minute (steady) | — | **0** |
+| scenario (one-way impairment) | baseline P50 / P95 | overhauled P50 / P95 / P99 | convergence after seek |
+|---|---|---|---|
+| S0 — clean loopback (floor; loopback is unrealistically kind) | 363ms / 255.3s | 31ms / 83ms / 84ms | 0.75s |
+| S2 — +150ms each way (~300ms RTT), symmetric | **total failure** (followers never start) | 25ms / 139ms / 140ms | 1.00s |
+| S3 — 50±30ms jitter each way | **total failure** (as S2; unrecorded) | 68ms / 118ms / 119ms | 1.00s |
+| S5 — 25ms + 5% loss (netem) | **total failure** (as S2; unrecorded) | 60ms / 97ms / 136ms | 0.75s |
+| S6 — asymmetric 120ms up / 20ms down | **total failure** (as S2; unrecorded) | 47ms / 120ms / 121ms | 1.00s |
 
-<!-- RESULTS-MATRIX: full impaired matrix inserted by the M7 measurement pass -->
+Steady-state hard seeks per minute — S0: 0.00 · S2: 0.00 · S3: 0.00 · S5: 0.25 · S6: 0.00.
+
+3 real Chrome clients, deterministic 240s scenario, Chinmays-MacBook-Pro.local · arm64 · node v20.17.0; runs committed with SHA + scenario + impairment per directory.
+
+No control event in any baseline run ever converged; every overhauled run
+converges after every event (seek ≤1s across the matrix, table above).
+Asymmetry bias (S6): clients' θ̂ shows **+50.5ms vs the +50.0ms prediction**
+(asym/2), symmetric control 0.0ms — the NTP-family floor made visible.
+Earlier same-day runs under a loaded machine (idle lab containers + a
+mid-run Redis restart) measured 2–4× worse tails and were superseded by
+these controlled re-runs; both sets exist in history, and conditions are
+recorded per run.
 
 Protocol-level (bot fleet, local): 10 bots × 150s — P50 71ms / P95 112ms /
 P99 195ms, growth +5.6ms/min (bounded); 100 bots, one room, one instance —
