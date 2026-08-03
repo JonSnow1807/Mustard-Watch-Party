@@ -6,6 +6,7 @@ import {
   Timeline,
 } from '../shared/sync-protocol';
 import { ClockEstimator } from '../shared/sync-core/clock-estimator';
+import { DisciplineController } from '../shared/sync-core/discipline-controller';
 import {
   DriftController,
   type ControllerAction,
@@ -41,7 +42,13 @@ const GESTURE_CHIP_THRESHOLD = 3;
 
 export class SyncEngine {
   private estimator = new ClockEstimator();
-  private controller = new DriftController();
+  // ?controller=P selects the predictive PI servo (A/B-measured: P50 drift
+  // 7ms vs 81ms reactive on the bot fleet); reactive remains the default
+  // until the real-browser A/B settles the question
+  private controller: DriftController | DisciplineController =
+    new URLSearchParams(window.location.search).get('controller') === 'P'
+      ? new DisciplineController()
+      : new DriftController();
   private telemetry = new TelemetryRing();
   private timeline: Timeline | null = null;
   private adapter: YouTubeAdapter | null = null;
@@ -215,6 +222,9 @@ export class SyncEngine {
         break;
       case 'set-rate': {
         const applied = adapter.setRate(action.rate);
+        if (this.controller instanceof DisciplineController) {
+          this.controller.onRateApplied(applied);
+        }
         if (Math.abs(applied - action.rate) > 0.001) {
           // the probe lied for this video; fall back to SEEK mode
           this.fractionalRateOK = false;

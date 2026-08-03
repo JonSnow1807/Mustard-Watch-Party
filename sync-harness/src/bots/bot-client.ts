@@ -10,6 +10,7 @@ import {
   DriftController,
   type ControllerAction,
 } from '../../../shared/sync-core/drift-controller';
+import { DisciplineController } from '../../../shared/sync-core/discipline-controller';
 import { isNewer, projectMediaTime } from '../../../shared/sync-core/timeline';
 import type { ClockPong, ControlIntent, Timeline } from '../../../shared/sync-protocol';
 import { SYNC_EVENTS } from '../../../shared/sync-protocol';
@@ -26,6 +27,8 @@ export interface BotConfig {
   clockSkew: number;
   player: Partial<SimPlayerConfig>;
   seed: number;
+  /** reactive (threshold state machine) or predictive (PI servo) */
+  controller?: 'reactive' | 'predictive';
 }
 
 export interface BotSample {
@@ -52,7 +55,7 @@ export interface BotReport {
 export class BotClient {
   private socket!: Socket;
   private estimator = new ClockEstimator();
-  private controller = new DriftController();
+  private controller: DriftController | DisciplineController;
   private player: SimPlayer;
   private timeline: Timeline | null = null;
   private rng: () => number;
@@ -65,6 +68,10 @@ export class BotClient {
   user!: HarnessUser;
 
   constructor(private cfg: BotConfig) {
+    this.controller =
+      cfg.controller === 'predictive'
+        ? new DisciplineController()
+        : new DriftController();
     this.rng = mulberry32(cfg.seed);
     this.player = new SimPlayer({
       playbackSkew: 0,
@@ -162,7 +169,7 @@ export class BotClient {
           playerTime: this.player.getPlayerTime(),
           playerState: this.player.getLifecycle(),
           timeline: this.timeline,
-          fractionalRateOK: false,
+          fractionalRateOK: this.cfg.controller !== undefined,
         });
         this.execute(action, tBot);
 
@@ -209,9 +216,13 @@ export class BotClient {
       case 'pause':
         this.player.pause(tBot);
         break;
-      case 'set-rate':
-        this.player.setRate(action.rate);
+      case 'set-rate': {
+        const applied = this.player.setRate(action.rate);
+        if (this.controller instanceof DisciplineController) {
+          this.controller.onRateApplied(applied);
+        }
         break;
+      }
       case 'clear-rate':
         this.player.setRate(1);
         break;
