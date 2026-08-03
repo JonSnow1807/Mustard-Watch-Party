@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from '../contexts/SocketContext';
-import { useAuth } from '../contexts/AuthContext';
 import styled from '@emotion/styled';
 import { toast } from 'react-hot-toast';
 
@@ -279,7 +278,6 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   allowGuestControl = false
 }) => {
   const { socket, connected } = useSocket();
-  const { user } = useAuth();
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -332,6 +330,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => {
       playerRef.current?.destroy?.();
     };
+    // intentional: the player re-initializes only when the video changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoUrl]);
 
   const initializePlayer = (videoId: string) => {

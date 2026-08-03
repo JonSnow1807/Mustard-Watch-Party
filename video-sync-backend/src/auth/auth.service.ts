@@ -1,5 +1,9 @@
 // src/auth/auth.service.ts
-import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import * as bcrypt from 'bcrypt';
 

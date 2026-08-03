@@ -42,17 +42,17 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private database: DatabaseService) {}
 
-  async handleConnection(client: Socket) {
+  handleConnection(client: Socket) {
     console.log(`Client connected: ${client.id}`);
-    client.emit('connected', { 
+    client.emit('connected', {
       id: client.id,
-      timestamp: Date.now() 
+      timestamp: Date.now(),
     });
   }
 
   async handleDisconnect(client: Socket) {
     console.log(`Client disconnected: ${client.id}`);
-    
+
     const roomCode = this.userRooms.get(client.id);
     if (roomCode) {
       await this.handleLeaveRoom(client, roomCode);
@@ -67,7 +67,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const joinStartTime = Date.now();
       console.log(`User ${data.userId} joining room ${data.roomCode}`);
-      
+
       const room = await this.database.room.findUnique({
         where: { code: data.roomCode },
         include: {
@@ -90,10 +90,22 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
+      // Enforce room capacity; a returning participant re-activating never counts
+      // against the limit because their slot is already excluded here
+      if (room.maxUsers) {
+        const otherActive = room.participants.filter(
+          (p) => p.user.id !== data.userId,
+        ).length;
+        if (otherActive >= room.maxUsers) {
+          client.emit('error', { message: 'Room is full' });
+          return;
+        }
+      }
+
       await client.join(data.roomCode);
       this.userRooms.set(client.id, data.roomCode);
       this.socketToUser.set(client.id, data.userId);
-      
+
       // Set room host if first user
       if (!this.roomHosts.has(data.roomCode)) {
         this.roomHosts.set(data.roomCode, data.userId);
@@ -162,7 +174,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
           creatorId: room.creatorId,
         },
         state: currentState,
-        participants: updatedParticipants.map(p => ({
+        participants: updatedParticipants.map((p) => ({
           id: p.user.id,
           username: p.user.username,
         })),
@@ -171,7 +183,9 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Log latency for monitoring
       if (joinLatency > 500) {
-        console.warn(`⚠️ High join latency: ${joinLatency}ms for user ${data.userId}`);
+        console.warn(
+          `⚠️ High join latency: ${joinLatency}ms for user ${data.userId}`,
+        );
       }
 
       // Notify others with updated participant info
@@ -179,18 +193,17 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
         userId: participant.user.id,
         username: participant.user.username,
       });
-      
+
       // Send updated participants list to all users in room (except the joining user)
       client.to(data.roomCode).emit('participants-update', {
-        participants: updatedParticipants.map(p => ({
+        participants: updatedParticipants.map((p) => ({
           id: p.user.id,
           username: p.user.username,
         })),
       });
-      
-      // Send chat history to the joining user
-      this.handleGetMessageHistory(client, { roomCode: data.roomCode });
 
+      // Send chat history to the joining user
+      await this.handleGetMessageHistory(client, { roomCode: data.roomCode });
     } catch (error) {
       console.error('Error joining room:', error);
       client.emit('error', { message: 'Failed to join room' });
@@ -226,7 +239,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
 
       client.emit('participants-update', {
-        participants: participants.map(p => ({
+        participants: participants.map((p) => ({
           id: p.user.id,
           username: p.user.username,
         })),
@@ -239,7 +252,8 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('video-state')
   async handleVideoState(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       roomCode: string;
       state: VideoState;
       action?: string;
@@ -247,10 +261,9 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     },
   ) {
     try {
-      const syncStartTime = Date.now();
       const { roomCode, state, action, clientTimestamp } = data;
       const userId = this.socketToUser.get(client.id);
-      
+
       // Check if user is the host (creator) of the room or if guest control is allowed
       const room = await this.database.room.findUnique({
         where: { code: roomCode },
@@ -264,31 +277,40 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Check permissions
       if (!room.allowGuestControl && room.creatorId !== userId) {
-        client.emit('error', { message: 'Only the host can control video playback' });
+        client.emit('error', {
+          message: 'Only the host can control video playback',
+        });
         return;
       }
-      
-      console.log(`Video ${action || 'state'} update in room ${roomCode}:`, state);
-      
+
+      console.log(
+        `Video ${action || 'state'} update in room ${roomCode}:`,
+        state,
+      );
+
       // Update stored state
       this.roomStates.set(roomCode, state);
-      
+
       // Calculate sync latency if client timestamp provided
-      const syncLatency = clientTimestamp ? Date.now() - clientTimestamp : undefined;
+      const syncLatency = clientTimestamp
+        ? Date.now() - clientTimestamp
+        : undefined;
 
       // Broadcast to other users with action type and latency
       client.to(roomCode).emit('video-state-update', {
         ...state,
         action,
         latency: syncLatency,
-        serverTimestamp: Date.now()
+        serverTimestamp: Date.now(),
       });
 
       // Log high latency
       if (syncLatency && syncLatency > 500) {
-        console.warn(`⚠️ High sync latency: ${syncLatency}ms for room ${roomCode}`);
+        console.warn(
+          `⚠️ High sync latency: ${syncLatency}ms for room ${roomCode}`,
+        );
       }
-      
+
       // Schedule database update (debounced)
       this.scheduleDatabaseUpdate(roomCode, state);
     } catch (error) {
@@ -297,7 +319,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('ping')
-  async handlePing(
+  handlePing(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { timestamp: number },
   ) {
@@ -309,9 +331,10 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('sync-check')
-  async handleSyncCheck(
+  handleSyncCheck(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       roomCode: string;
       currentTime: number;
       isPlaying: boolean;
@@ -326,12 +349,14 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const timeDiff = Math.abs(roomState.currentTime - data.currentTime);
         if (timeDiff > 3) {
           // Only sync if difference is more than 3 seconds
-          const latency = data.clientTimestamp ? Date.now() - data.clientTimestamp : undefined;
+          const latency = data.clientTimestamp
+            ? Date.now() - data.clientTimestamp
+            : undefined;
           client.emit('video-state-update', {
             ...roomState,
             action: 'sync-check',
             latency,
-            serverTimestamp: Date.now()
+            serverTimestamp: Date.now(),
           });
         }
       }
@@ -347,7 +372,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       const userId = this.socketToUser.get(client.id);
-      
+
       // Check if user is the host (creator) of the room or if guest control is allowed
       const room = await this.database.room.findUnique({
         where: { code: data.roomCode },
@@ -361,22 +386,24 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Check permissions
       if (!room.allowGuestControl && room.creatorId !== userId) {
-        client.emit('error', { message: 'Only the host can control video playback' });
+        client.emit('error', {
+          message: 'Only the host can control video playback',
+        });
         return;
       }
-      
+
       const state: VideoState = {
         currentTime: data.time || 0,
         isPlaying: true,
         timestamp: Date.now(),
       };
-      
+
       this.roomStates.set(data.roomCode, state);
       client.to(data.roomCode).emit('video-state-update', {
         ...state,
-        action: 'play'
+        action: 'play',
       });
-      
+
       console.log(`Play video in room ${data.roomCode} at ${data.time}s`);
     } catch (error) {
       console.error('Error handling play video:', error);
@@ -390,7 +417,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       const userId = this.socketToUser.get(client.id);
-      
+
       // Check if user is the host (creator) of the room or if guest control is allowed
       const room = await this.database.room.findUnique({
         where: { code: data.roomCode },
@@ -404,22 +431,24 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Check permissions
       if (!room.allowGuestControl && room.creatorId !== userId) {
-        client.emit('error', { message: 'Only the host can control video playback' });
+        client.emit('error', {
+          message: 'Only the host can control video playback',
+        });
         return;
       }
-      
+
       const state: VideoState = {
         currentTime: data.time || 0,
         isPlaying: false,
         timestamp: Date.now(),
       };
-      
+
       this.roomStates.set(data.roomCode, state);
       client.to(data.roomCode).emit('video-state-update', {
         ...state,
-        action: 'pause'
+        action: 'pause',
       });
-      
+
       console.log(`Pause video in room ${data.roomCode} at ${data.time}s`);
     } catch (error) {
       console.error('Error handling pause video:', error);
@@ -433,7 +462,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       const userId = this.socketToUser.get(client.id);
-      
+
       // Check if user is the host (creator) of the room or if guest control is allowed
       const room = await this.database.room.findUnique({
         where: { code: data.roomCode },
@@ -447,23 +476,25 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Check permissions
       if (!room.allowGuestControl && room.creatorId !== userId) {
-        client.emit('error', { message: 'Only the host can control video playback' });
+        client.emit('error', {
+          message: 'Only the host can control video playback',
+        });
         return;
       }
-      
+
       const roomState = this.roomStates.get(data.roomCode);
       const state: VideoState = {
         currentTime: data.time,
         isPlaying: roomState?.isPlaying || false,
         timestamp: Date.now(),
       };
-      
+
       this.roomStates.set(data.roomCode, state);
       client.to(data.roomCode).emit('video-state-update', {
         ...state,
-        action: 'seek'
+        action: 'seek',
       });
-      
+
       console.log(`Seek video in room ${data.roomCode} to ${data.time}s`);
     } catch (error) {
       console.error('Error handling seek video:', error);
@@ -473,7 +504,8 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('send-message')
   async handleChatMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       roomCode: string;
       message: {
         userId: string;
@@ -485,17 +517,17 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const { roomCode, message } = data;
       console.log(`Chat message in room ${roomCode} from ${message.username}`);
-      
+
       const room = await this.database.room.findUnique({
         where: { code: roomCode },
         select: { id: true },
       });
-      
+
       if (!room) {
         client.emit('error', { message: 'Room not found' });
         return;
       }
-      
+
       const savedMessage = await this.database.chatMessage.create({
         data: {
           content: message.message,
@@ -511,7 +543,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
           },
         },
       });
-      
+
       this.server.to(roomCode).emit('chat-message', {
         id: savedMessage.id,
         userId: savedMessage.user.id,
@@ -535,9 +567,9 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
         where: { code: data.roomCode },
         select: { id: true },
       });
-      
+
       if (!room) return;
-      
+
       const messages = await this.database.chatMessage.findMany({
         where: { roomId: room.id },
         orderBy: { createdAt: 'desc' },
@@ -551,137 +583,25 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
           },
         },
       });
-      
-      const formattedMessages = messages.reverse().map(msg => ({
+
+      const formattedMessages = messages.reverse().map((msg) => ({
         id: msg.id,
         userId: msg.user.id,
         username: msg.user.username,
         message: msg.content,
         timestamp: msg.createdAt,
       }));
-      
+
       client.emit('message-history', formattedMessages);
     } catch (error) {
       console.error('Error getting message history:', error);
     }
   }
 
-  // Voice chat handlers
-  @SubscribeMessage('join-voice')
-  async handleJoinVoice(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      userId: string;
-      username: string;
-    },
-  ) {
-    try {
-      console.log(`${data.username} joined voice in room ${data.roomCode}`);
-      
-      await client.join(`voice-${data.roomCode}`);
-      
-      client.to(data.roomCode).emit('voice-user-joined', {
-        userId: data.userId,
-        username: data.username,
-        peerId: client.id,
-      });
-    } catch (error) {
-      console.error('Error joining voice:', error);
-    }
-  }
-
-  @SubscribeMessage('leave-voice')
-  async handleLeaveVoice(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      userId: string;
-    },
-  ) {
-    try {
-      console.log(`User ${data.userId} left voice in room ${data.roomCode}`);
-      
-      await client.leave(`voice-${data.roomCode}`);
-      
-      client.to(data.roomCode).emit('voice-user-left', {
-        userId: data.userId,
-      });
-    } catch (error) {
-      console.error('Error leaving voice:', error);
-    }
-  }
-
-  @SubscribeMessage('voice-signal')
-  async handleVoiceSignal(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      targetUserId: string;
-      signal: any;
-    },
-  ) {
-    try {
-      const targetSocket = [...this.server.sockets.sockets.values()]
-        .find(socket => this.userRooms.get(socket.id) === data.roomCode);
-      
-      if (targetSocket) {
-        targetSocket.emit('voice-signal', {
-          userId: data.targetUserId,
-          username: 'User',
-          signal: data.signal,
-        });
-      }
-    } catch (error) {
-      console.error('Error handling voice signal:', error);
-    }
-  }
-
-  @SubscribeMessage('voice-mute')
-  async handleVoiceMute(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      userId: string;
-      isMuted: boolean;
-    },
-  ) {
-    try {
-      client.to(data.roomCode).emit('voice-mute-status', {
-        userId: data.userId,
-        isMuted: data.isMuted,
-      });
-    } catch (error) {
-      console.error('Error handling mute status:', error);
-    }
-  }
-
-  @SubscribeMessage('user-activity')
-  async handleUserActivity(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      userId: string;
-      activity: string;
-    },
-  ) {
-    try {
-      // Broadcast activity to other users in the room
-      client.to(data.roomCode).emit('user-activity', {
-        userId: data.userId,
-        activity: data.activity,
-      });
-      
-      console.log(`User ${data.userId} is ${data.activity} in room ${data.roomCode}`);
-    } catch (error) {
-      console.error('Error handling user activity:', error);
-    }
-  }
-
   private async handleLeaveRoom(client: Socket, roomCode: string) {
     try {
       const userId = this.socketToUser.get(client.id);
-      
+
       await client.leave(roomCode);
       this.userRooms.delete(client.id);
       this.socketToUser.delete(client.id);
@@ -745,7 +665,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
         // Send updated participants list
         this.server.to(roomCode).emit('participants-update', {
-          participants: remainingParticipants.map(p => ({
+          participants: remainingParticipants.map((p) => ({
             id: p.user.id,
             username: p.user.username,
           })),
@@ -770,20 +690,18 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       clearTimeout(existingTimer);
     }
 
-    const timer = setTimeout(async () => {
-      try {
-        await this.database.room.update({
+    const timer = setTimeout(() => {
+      this.updateTimers.delete(roomCode);
+      this.database.room
+        .update({
           where: { code: roomCode },
           data: {
             currentTime: state.currentTime,
             isPlaying: state.isPlaying,
             lastSyncAt: new Date(),
           },
-        });
-        this.updateTimers.delete(roomCode);
-      } catch (error) {
-        console.error('Error updating room state:', error);
-      }
+        })
+        .catch((error) => console.error('Error updating room state:', error));
     }, 5000); // Update database every 5 seconds
 
     this.updateTimers.set(roomCode, timer);

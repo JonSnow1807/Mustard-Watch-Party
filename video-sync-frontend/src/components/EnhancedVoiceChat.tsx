@@ -333,6 +333,8 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
         voiceSocket.disconnect();
       };
     }
+    // intentional: reconnecting voice on every render of createPeerConnection would churn peers
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, user, roomCode]);
 
   const createPeerConnection = (targetSocketId: string, initiator: boolean) => {
