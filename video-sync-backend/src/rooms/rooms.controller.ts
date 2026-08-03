@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Param, Patch, Query, Delete, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Patch,
+  Query,
+  Delete,
+} from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 
 @Controller('rooms')
@@ -7,7 +16,8 @@ export class RoomsController {
 
   @Post()
   async createRoom(
-    @Body() createRoomDto: {
+    @Body()
+    createRoomDto: {
       name: string;
       videoUrl?: string;
       userId: string;
@@ -27,7 +37,7 @@ export class RoomsController {
       createRoomDto.allowGuestControl,
     );
   }
-  
+
   // IMPORTANT: This route must come BEFORE the :code route
   @Get('public')
   async getPublicRooms(@Query('filter') filter?: string) {
@@ -47,7 +57,8 @@ export class RoomsController {
   @Patch(':code')
   async updateRoom(
     @Param('code') code: string,
-    @Body() updateRoomDto: { name?: string; videoUrl?: string; userId?: string },
+    @Body()
+    updateRoomDto: { name?: string; videoUrl?: string; userId?: string },
   ) {
     // Get room by code first to get the ID
     const room = await this.roomsService.getRoomByCode(code);

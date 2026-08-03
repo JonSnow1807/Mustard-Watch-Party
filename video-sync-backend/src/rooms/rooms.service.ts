@@ -1,5 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class RoomsService {
@@ -12,7 +17,7 @@ export class RoomsService {
     isPublic?: boolean,
     description?: string,
     tags?: string[],
-    allowGuestControl?: boolean
+    allowGuestControl?: boolean,
   ) {
     const room = await this.database.room.create({
       data: {
@@ -94,7 +99,9 @@ export class RoomsService {
 
     // Check if the user is the creator of the room
     if (room.creatorId !== userId) {
-      throw new ForbiddenException('Only the room creator can delete this room');
+      throw new ForbiddenException(
+        'Only the room creator can delete this room',
+      );
     }
 
     // Delete all related data first (due to foreign key constraints)
@@ -131,17 +138,17 @@ export class RoomsService {
   }
 
   async getPublicRooms(filter?: string) {
-    const where: any = {
+    const where: Prisma.RoomWhereInput = {
       isPublic: true,
       isActive: true,
     };
-    
+
     if (filter && filter !== 'all') {
       where.tags = {
         has: filter,
       };
     }
-    
+
     const rooms = await this.database.room.findMany({
       where,
       include: {
@@ -165,7 +172,7 @@ export class RoomsService {
       ],
       take: 20,
     });
-    
+
     return rooms;
   }
 

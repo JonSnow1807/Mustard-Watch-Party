@@ -14,11 +14,14 @@ export class SyncService {
         lastSyncAt: true,
       },
     });
-    
+
     return room;
   }
 
-  async updateRoomState(roomCode: string, state: { currentTime: number; isPlaying: boolean }) {
+  async updateRoomState(
+    roomCode: string,
+    state: { currentTime: number; isPlaying: boolean },
+  ) {
     return await this.database.room.update({
       where: { code: roomCode },
       data: {

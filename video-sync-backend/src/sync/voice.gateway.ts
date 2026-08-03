@@ -21,7 +21,7 @@ interface VoiceUser {
 interface SignalData {
   to: string;
   from: string;
-  signal: any;
+  signal: unknown;
   username: string;
   userId: string;
 }
@@ -41,7 +41,7 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private voiceUsers: Map<string, VoiceUser> = new Map();
   private roomVoiceUsers: Map<string, Set<string>> = new Map();
 
-  async handleConnection(client: Socket) {
+  handleConnection(client: Socket) {
     console.log(`Voice client connected: ${client.id}`);
   }
 
@@ -50,21 +50,27 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const user = this.voiceUsers.get(client.id);
 
     if (user) {
-      await this.handleLeaveVoice(client, { roomCode: user.roomCode, userId: user.userId });
+      await this.handleLeaveVoice(client, {
+        roomCode: user.roomCode,
+        userId: user.userId,
+      });
     }
   }
 
   @SubscribeMessage('join-voice-chat')
   async handleJoinVoiceChat(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       roomCode: string;
       userId: string;
       username: string;
     },
   ) {
     try {
-      console.log(`${data.username} joining voice chat in room ${data.roomCode}`);
+      console.log(
+        `${data.username} joining voice chat in room ${data.roomCode}`,
+      );
 
       // Store user info
       const voiceUser: VoiceUser = {
@@ -88,14 +94,16 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await client.join(`voice-${data.roomCode}`);
 
       // Get existing users in the room
-      const existingUsers = Array.from(this.roomVoiceUsers.get(data.roomCode) || [])
-        .filter(id => id !== client.id)
-        .map(id => this.voiceUsers.get(id))
+      const existingUsers = Array.from(
+        this.roomVoiceUsers.get(data.roomCode) || [],
+      )
+        .filter((id) => id !== client.id)
+        .map((id) => this.voiceUsers.get(id))
         .filter(Boolean) as VoiceUser[];
 
       // Send existing users to the new user
       client.emit('voice-users-list', {
-        users: existingUsers.map(u => ({
+        users: existingUsers.map((u) => ({
           userId: u.userId,
           username: u.username,
           socketId: u.socketId,
@@ -110,7 +118,6 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
         username: data.username,
         socketId: client.id,
       });
-
     } catch (error) {
       console.error('Error joining voice chat:', error);
       client.emit('voice-error', { message: 'Failed to join voice chat' });
@@ -120,13 +127,16 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('leave-voice-chat')
   async handleLeaveVoice(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       roomCode: string;
       userId: string;
     },
   ) {
     try {
-      console.log(`User ${data.userId} leaving voice chat in room ${data.roomCode}`);
+      console.log(
+        `User ${data.userId} leaving voice chat in room ${data.roomCode}`,
+      );
 
       // Remove from maps
       this.voiceUsers.delete(client.id);
@@ -147,21 +157,21 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
         userId: data.userId,
         socketId: client.id,
       });
-
     } catch (error) {
       console.error('Error leaving voice chat:', error);
     }
   }
 
   @SubscribeMessage('voice-signal')
-  async handleVoiceSignal(
+  handleVoiceSignal(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: SignalData,
   ) {
     try {
       // Find target socket
-      const targetSocket = [...this.server.sockets.sockets.values()]
-        .find(s => s.id === data.to);
+      const targetSocket = [...this.server.sockets.sockets.values()].find(
+        (s) => s.id === data.to,
+      );
 
       if (targetSocket) {
         targetSocket.emit('voice-signal', {
@@ -177,9 +187,10 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('voice-mute-toggle')
-  async handleMuteToggle(
+  handleMuteToggle(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       roomCode: string;
       userId: string;
       isMuted: boolean;
@@ -197,16 +208,16 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
         socketId: client.id,
         isMuted: data.isMuted,
       });
-
     } catch (error) {
       console.error('Error handling mute toggle:', error);
     }
   }
 
   @SubscribeMessage('voice-deafen-toggle')
-  async handleDeafenToggle(
+  handleDeafenToggle(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       roomCode: string;
       userId: string;
       isDeafened: boolean;
@@ -229,16 +240,16 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
         isDeafened: data.isDeafened,
         isMuted: user?.isMuted || false,
       });
-
     } catch (error) {
       console.error('Error handling deafen toggle:', error);
     }
   }
 
   @SubscribeMessage('voice-speaking')
-  async handleSpeaking(
+  handleSpeaking(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       roomCode: string;
       userId: string;
       isSpeaking: boolean;
@@ -257,17 +268,19 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('request-voice-offer')
-  async handleRequestOffer(
+  handleRequestOffer(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       to: string;
       from: string;
       roomCode: string;
     },
   ) {
     try {
-      const targetSocket = [...this.server.sockets.sockets.values()]
-        .find(s => s.id === data.to);
+      const targetSocket = [...this.server.sockets.sockets.values()].find(
+        (s) => s.id === data.to,
+      );
 
       if (targetSocket) {
         targetSocket.emit('voice-offer-request', {
