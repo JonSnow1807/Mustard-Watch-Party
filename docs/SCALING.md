@@ -69,9 +69,10 @@ against 1 instance vs 3 instances behind nginx; each cell 120s with
 scripted control events; per-instance `/metrics` scraped every 5s
 (event-loop lag p99, CPU, RSS, connected clients); load-generator host load
 recorded per cell and cells above 0.7 load/core flagged self-skewed. SLOs:
-bot P95 vs-timeline drift ≤ 100ms; event-loop lag p99 ≤ 100ms. The knee is
-the smallest N breaching an SLO, attributed via the correlated server
-metric.
+bot P95 vs-timeline drift ≤ 250ms (calibrated above the fleet's
+load-independent ~165ms simulation floor — see below); event-loop lag p99
+≤ 100ms. The knee is the smallest N breaching an SLO, attributed via the
+correlated server metric.
 
 Sweep `sweep-mscpz6fr+mscql2az` · 10 cores (Apple M2 Pro) · 120s cells · SHA `60dbb0ba5d`
 
