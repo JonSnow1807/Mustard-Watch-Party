@@ -97,13 +97,13 @@ describe('DriftController — SEEK mode (default)', () => {
     expect(seeks).toBeGreaterThan(0);
   });
 
-  it('tolerates drift between deadband and threshold without rate support', () => {
+  it('tolerates drift between deadband and seek threshold without rate support', () => {
     const ctrl = new DriftController();
     const actions = drive(ctrl, [
-      { driftS: 0.2 },
-      { driftS: 0.2 },
-      { driftS: 0.2 },
-      { driftS: 0.2 },
+      { driftS: 0.13 },
+      { driftS: 0.13 },
+      { driftS: 0.13 },
+      { driftS: 0.13 },
     ]);
     expect(types(actions)).toEqual(['none', 'none', 'none', 'none']);
   });
@@ -148,6 +148,29 @@ describe('DriftController — RATE mode (probe-gated)', () => {
     const actions = drive(ctrl, steps);
     expect(types(actions)).not.toContain('set-rate');
     expect(types(actions)).toContain('seek');
+  });
+});
+
+describe('DriftController — seek-lead learning', () => {
+  it('re-seeks with an adapted lead when a seek lands in the tolerated gap', () => {
+    // regression: a seek that settles at ~200ms behind (deadband < |drift| <
+    // seekThreshold) used to strand the controller in SEEKING forever
+    const ctrl = new DriftController();
+    const first = drive(ctrl, [
+      { driftS: -3 },
+      { driftS: -3 }, // sustained -> seek #1
+    ]);
+    expect(types(first)).toContain('seek');
+    // seek "lands" 200ms behind and stays there through cooldown + spacing:
+    // 14 evals * 250ms = 3.5s > seekSpacing
+    const after = drive(
+      ctrl,
+      Array.from({ length: 14 }, () => ({ driftS: -0.2 as number })),
+      101_000,
+    );
+    const seeks = after.filter((a) => a.type === 'seek');
+    expect(seeks.length).toBeGreaterThan(0); // corrects instead of tolerating
+    expect(ctrl.getStatus().seekLeadS).toBeGreaterThan(0.3); // lead learned
   });
 });
 
@@ -212,10 +235,12 @@ describe('DriftController — lifecycle', () => {
     expect(action).toEqual({ type: 'seek', toMediaTime: 100 });
   });
 
-  it('starts a paused player when the room is playing', () => {
+  it('starts a paused player when the room is playing, as a correction', () => {
     const ctrl = new DriftController();
     const a = drive(ctrl, [{ playerState: 'paused', driftS: 0 }]);
     expect(types(a)).toEqual(['play']);
+    // the start enters SEEKING so its landing error is learned + corrected
+    expect(ctrl.getStatus().state).toBe('SEEKING');
   });
 
   it('does nothing while suspended and acts fast after resume', () => {

@@ -53,7 +53,11 @@ export type ControllerState =
 export interface ControllerTuning {
   /** |drift| below this is noise, not error (floored at 2× measured noise σ) */
   deadbandS: number;
-  /** SEEK mode: correct when |drift| exceeds this for `sustainEvals` evals */
+  /**
+   * SEEK mode: correct when |drift| exceeds this for `sustainEvals` evals.
+   * Kept close to the deadband: the bot fleet showed play-start errors park
+   * in any wider tolerated gap and never get corrected.
+   */
   seekThresholdS: number;
   sustainEvals: number;
   /** single-reading drift beyond this seeks immediately (post-sleep etc.) */
@@ -80,7 +84,7 @@ export interface ControllerTuning {
 
 export const DEFAULT_CONTROLLER_TUNING: ControllerTuning = {
   deadbandS: 0.12,
-  seekThresholdS: 0.3,
+  seekThresholdS: 0.15,
   sustainEvals: 2,
   instantSeekS: 2.5,
   seekSpacingMs: 3000,
@@ -151,7 +155,11 @@ export class DriftController {
 
     // ---- lifecycle reconciliation before drift logic ----
     if (input.playerState === 'buffering') {
-      this.state = 'BUFFERING';
+      // post-seek settle is part of the seek: preserving SEEKING here is
+      // what lets the lead-learning loop see the settle residual (entering
+      // BUFFERING would re-emerge as LOCKED with the residual tolerated
+      // forever - the ~200ms plateau the bot fleet exposed)
+      if (this.state !== 'SEEKING') this.state = 'BUFFERING';
       if (this.rateApplied) {
         this.rateApplied = false;
         this.nudgeSince = null;
@@ -176,8 +184,16 @@ export class DriftController {
       return { type: 'none' };
     }
 
-    // room is playing
+    // room is playing; a commanded start is itself a correction: enter
+    // SEEKING so the landing error is measured, corrected and lead-learned
+    // (play-starts land late by the command latency - measured as a parked
+    // ~275ms mode across the whole bot fleet before this)
     if (input.playerState === 'paused' || input.playerState === 'cued') {
+      this.state = 'SEEKING';
+      this.lastSeekAt = input.tLocal;
+      this.seekTargetS = projectMediaTime(timeline, input.serverNow);
+      this.stableEvals = 0;
+      this.driftWindow = [];
       return { type: 'play' };
     }
     if (input.playerState !== 'playing') return { type: 'none' };
@@ -220,7 +236,18 @@ export class DriftController {
       }
       this.stableEvals = 0;
       if (sinceSeek < this.tuning.seekSpacingMs) return { type: 'none' };
-      // fall through: still out of band after full spacing → act again
+      // The seek missed (landed outside the deadband but maybe below the
+      // seek threshold — without this branch the controller would sit in
+      // that gap forever, never re-locking and never learning). Learn from
+      // the residual and correct again; the loop converges geometrically.
+      if (this.seekTargetS !== null) {
+        this.seekLead = Math.min(
+          this.tuning.seekLeadMaxS,
+          Math.max(0, this.seekLead - drift * 0.5),
+        );
+        this.seekTargetS = null;
+      }
+      return this.issueSeek(input, timeline);
     }
 
     // instant path for gross desync (single reading, no filtering)
@@ -248,11 +275,8 @@ export class DriftController {
 
     // RATE mode: only when the probe proved fractional rates stick and the
     // error is small enough that a nudge closes it in reasonable time
-    if (
-      input.fractionalRateOK &&
-      absDrift <= this.tuning.rateZoneMaxS &&
-      this.state !== 'SEEKING'
-    ) {
+    // (state cannot be SEEKING here - that branch always returns above)
+    if (input.fractionalRateOK && absDrift <= this.tuning.rateZoneMaxS) {
       if (this.state !== 'NUDGING') {
         this.state = 'NUDGING';
         this.nudgeSince = input.tLocal;
@@ -285,6 +309,7 @@ export class DriftController {
 
     // between deadband and seek threshold without rate support: tolerated
     // (documented: the SEEK-mode effective deadband is seekThresholdS)
+    if (this.state !== 'NUDGING') this.state = 'LOCKED';
     return { type: 'none' };
   }
 

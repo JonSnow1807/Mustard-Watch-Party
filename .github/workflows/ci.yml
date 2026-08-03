@@ -59,3 +59,52 @@ jobs:
       - run: npm run build
         env:
           CI: "true"
+
+  sync-regression:
+    # protocol-level tripwire, not a benchmark: 10 bots on a 2-vCPU shared
+    # runner with deliberately loose gates; headline numbers come from local
+    # hardware-documented runs committed under docs/measurements/
+    name: sync regression (synthetic bots)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: videouser
+          POSTGRES_PASSWORD: videopass
+          POSTGRES_DB: videosync
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U videouser -d videosync"
+          --health-interval 2s --health-timeout 2s --health-retries 15
+    env:
+      DATABASE_URL: postgresql://videouser:videopass@localhost:5432/videosync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: video-sync-backend/package-lock.json
+      - run: npm ci
+        working-directory: video-sync-backend
+      - run: npx prisma migrate deploy
+        working-directory: video-sync-backend
+      - run: npm run build
+        working-directory: video-sync-backend
+      - name: boot backend
+        run: |
+          node dist/main.js &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health && break
+            sleep 1
+          done
+        working-directory: video-sync-backend
+        env:
+          PORT: "3000"
+          JWT_SECRET: ci-secret
+      - run: npm ci
+        working-directory: sync-harness
+      - run: npx tsx src/bots/run-bots.ts --n 10 --duration 90 --gate
+        working-directory: sync-harness
