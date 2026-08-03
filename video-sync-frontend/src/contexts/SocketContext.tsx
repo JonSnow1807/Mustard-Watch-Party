@@ -48,8 +48,10 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       transports: ['websocket', 'polling'],
       auth: { token },
       reconnection: true,
-      reconnectionAttempts: 5,
+      // never give up: a >30s outage used to permanently kill the session
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
     });
 
     socketInstance.on('connect', () => {

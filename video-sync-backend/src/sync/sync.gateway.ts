@@ -21,13 +21,6 @@ import {
 import { TimelineService } from './timeline.service';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
 
-interface VideoState {
-  currentTime: number;
-  isPlaying: boolean;
-  timestamp?: number;
-  latency?: number; // Track sync latency
-}
-
 interface RoomData {
   roomCode: string;
   userId: string;
@@ -48,7 +41,6 @@ export class SyncGateway
   @WebSocketServer()
   server: Server;
 
-  private roomStates: Map<string, VideoState> = new Map();
   private userRooms: Map<string, string> = new Map();
   private roomHosts: Map<string, string> = new Map(); // Track room hosts
   private socketToUser: Map<string, string> = new Map(); // Map socket.id to userId
@@ -195,12 +187,6 @@ export class SyncGateway
         },
       });
 
-      const currentState = this.roomStates.get(data.roomCode) || {
-        currentTime: room.currentTime,
-        isPlaying: room.isPlaying,
-        timestamp: Date.now(),
-      };
-
       // Calculate join latency
       const joinLatency = Date.now() - joinStartTime;
 
@@ -213,7 +199,6 @@ export class SyncGateway
           videoUrl: room.videoUrl,
           creatorId: room.creatorId,
         },
-        state: currentState,
         timeline,
         participants: updatedParticipants.map((p) => ({
           id: p.user.id,
@@ -290,87 +275,6 @@ export class SyncGateway
     }
   }
 
-  @SubscribeMessage('video-state')
-  async handleVideoState(
-    @ConnectedSocket() client: Socket,
-    @MessageBody()
-    data: {
-      roomCode: string;
-      state: VideoState;
-      action?: string;
-      clientTimestamp?: number;
-    },
-  ) {
-    try {
-      const { roomCode, state, action, clientTimestamp } = data;
-      const userId = this.socketToUser.get(client.id);
-
-      // Check if user is the host (creator) of the room or if guest control is allowed
-      const room = await this.database.room.findUnique({
-        where: { code: roomCode },
-        select: { creatorId: true, allowGuestControl: true },
-      });
-
-      if (!room) {
-        client.emit('error', { message: 'Room not found' });
-        return;
-      }
-
-      // Check permissions
-      if (!room.allowGuestControl && room.creatorId !== userId) {
-        client.emit('error', {
-          message: 'Only the host can control video playback',
-        });
-        return;
-      }
-
-      console.log(
-        `Video ${action || 'state'} update in room ${roomCode}:`,
-        state,
-      );
-
-      // Update stored state
-      this.roomStates.set(roomCode, state);
-
-      // Calculate sync latency if client timestamp provided
-      const syncLatency = clientTimestamp
-        ? Date.now() - clientTimestamp
-        : undefined;
-
-      // Broadcast to other users with action type and latency
-      client.to(roomCode).emit('video-state-update', {
-        ...state,
-        action,
-        latency: syncLatency,
-        serverTimestamp: Date.now(),
-      });
-
-      // Log high latency
-      if (syncLatency && syncLatency > 500) {
-        console.warn(
-          `⚠️ High sync latency: ${syncLatency}ms for room ${roomCode}`,
-        );
-      }
-
-      // Schedule database update (debounced)
-      this.scheduleDatabaseUpdate(roomCode, state);
-    } catch (error) {
-      console.error('Error syncing video state:', error);
-    }
-  }
-
-  @SubscribeMessage('ping')
-  handlePing(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { timestamp: number },
-  ) {
-    // Immediately respond with pong for latency measurement
-    client.emit('pong', {
-      clientTimestamp: data.timestamp,
-      serverTimestamp: Date.now(),
-    });
-  }
-
   @SubscribeMessage(SYNC_EVENTS.clock)
   handleSyncClock(@MessageBody() data: ClockPing): ClockPong {
     // ack fast-path: stamp immediately, no awaits before t1/t2
@@ -423,177 +327,6 @@ export class SyncGateway
       } catch (error) {
         console.error(`sweep failed for ${roomCode}:`, error);
       }
-    }
-  }
-
-  @SubscribeMessage('sync-check')
-  handleSyncCheck(
-    @ConnectedSocket() client: Socket,
-    @MessageBody()
-    data: {
-      roomCode: string;
-      currentTime: number;
-      isPlaying: boolean;
-      clientTimestamp?: number;
-    },
-  ) {
-    try {
-      // This is for periodic sync checks
-      // Only update if there's a significant difference
-      const roomState = this.roomStates.get(data.roomCode);
-      if (roomState) {
-        const timeDiff = Math.abs(roomState.currentTime - data.currentTime);
-        if (timeDiff > 3) {
-          // Only sync if difference is more than 3 seconds
-          const latency = data.clientTimestamp
-            ? Date.now() - data.clientTimestamp
-            : undefined;
-          client.emit('video-state-update', {
-            ...roomState,
-            action: 'sync-check',
-            latency,
-            serverTimestamp: Date.now(),
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Error handling sync check:', error);
-    }
-  }
-
-  @SubscribeMessage('play-video')
-  async handlePlayVideo(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomCode: string; time?: number },
-  ) {
-    try {
-      const userId = this.socketToUser.get(client.id);
-
-      // Check if user is the host (creator) of the room or if guest control is allowed
-      const room = await this.database.room.findUnique({
-        where: { code: data.roomCode },
-        select: { creatorId: true, allowGuestControl: true },
-      });
-
-      if (!room) {
-        client.emit('error', { message: 'Room not found' });
-        return;
-      }
-
-      // Check permissions
-      if (!room.allowGuestControl && room.creatorId !== userId) {
-        client.emit('error', {
-          message: 'Only the host can control video playback',
-        });
-        return;
-      }
-
-      const state: VideoState = {
-        currentTime: data.time || 0,
-        isPlaying: true,
-        timestamp: Date.now(),
-      };
-
-      this.roomStates.set(data.roomCode, state);
-      client.to(data.roomCode).emit('video-state-update', {
-        ...state,
-        action: 'play',
-      });
-
-      console.log(`Play video in room ${data.roomCode} at ${data.time}s`);
-    } catch (error) {
-      console.error('Error handling play video:', error);
-    }
-  }
-
-  @SubscribeMessage('pause-video')
-  async handlePauseVideo(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomCode: string; time?: number },
-  ) {
-    try {
-      const userId = this.socketToUser.get(client.id);
-
-      // Check if user is the host (creator) of the room or if guest control is allowed
-      const room = await this.database.room.findUnique({
-        where: { code: data.roomCode },
-        select: { creatorId: true, allowGuestControl: true },
-      });
-
-      if (!room) {
-        client.emit('error', { message: 'Room not found' });
-        return;
-      }
-
-      // Check permissions
-      if (!room.allowGuestControl && room.creatorId !== userId) {
-        client.emit('error', {
-          message: 'Only the host can control video playback',
-        });
-        return;
-      }
-
-      const state: VideoState = {
-        currentTime: data.time || 0,
-        isPlaying: false,
-        timestamp: Date.now(),
-      };
-
-      this.roomStates.set(data.roomCode, state);
-      client.to(data.roomCode).emit('video-state-update', {
-        ...state,
-        action: 'pause',
-      });
-
-      console.log(`Pause video in room ${data.roomCode} at ${data.time}s`);
-    } catch (error) {
-      console.error('Error handling pause video:', error);
-    }
-  }
-
-  @SubscribeMessage('seek-video')
-  async handleSeekVideo(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomCode: string; time: number },
-  ) {
-    try {
-      const userId = this.socketToUser.get(client.id);
-
-      // Check if user is the host (creator) of the room or if guest control is allowed
-      const room = await this.database.room.findUnique({
-        where: { code: data.roomCode },
-        select: { creatorId: true, allowGuestControl: true },
-      });
-
-      if (!room) {
-        client.emit('error', { message: 'Room not found' });
-        return;
-      }
-
-      // Check permissions
-      if (!room.allowGuestControl && room.creatorId !== userId) {
-        client.emit('error', {
-          message: 'Only the host can control video playback',
-        });
-        return;
-      }
-
-      const roomState = this.roomStates.get(data.roomCode);
-      const state: VideoState = {
-        currentTime: data.time,
-        isPlaying: roomState?.isPlaying || false,
-        timestamp: Date.now(),
-      };
-
-      this.roomStates.set(data.roomCode, state);
-      client.to(data.roomCode).emit('video-state-update', {
-        ...state,
-        action: 'seek',
-      });
-
-      console.log(`Seek video in room ${data.roomCode} to ${data.time}s`);
-    } catch (error) {
-      console.error('Error handling seek video:', error);
     }
   }
 
@@ -707,7 +440,6 @@ export class SyncGateway
       const roomSockets = await this.server.in(roomCode).fetchSockets();
       if (roomSockets.length === 0) {
         this.roomHosts.delete(roomCode);
-        this.roomStates.delete(roomCode);
         await this.timeline.releaseRoom(roomCode);
       } else if (userId) {
         // P3: if a controller left, promote the longest-connected participant
@@ -790,30 +522,5 @@ export class SyncGateway
     } catch (error) {
       console.error('Error handling leave room:', error);
     }
-  }
-
-  private updateTimers: Map<string, NodeJS.Timeout> = new Map();
-
-  private scheduleDatabaseUpdate(roomCode: string, state: VideoState) {
-    const existingTimer = this.updateTimers.get(roomCode);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
-
-    const timer = setTimeout(() => {
-      this.updateTimers.delete(roomCode);
-      this.database.room
-        .update({
-          where: { code: roomCode },
-          data: {
-            currentTime: state.currentTime,
-            isPlaying: state.isPlaying,
-            lastSyncAt: new Date(),
-          },
-        })
-        .catch((error) => console.error('Error updating room state:', error));
-    }, 5000); // Update database every 5 seconds
-
-    this.updateTimers.set(roomCode, timer);
   }
 }
