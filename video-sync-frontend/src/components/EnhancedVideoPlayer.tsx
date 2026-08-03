@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from '../contexts/SocketContext';
 import styled from '@emotion/styled';
 import { toast } from 'react-hot-toast';
+import { SyncEngine, type EngineStatus } from '../sync/SyncEngine';
+import { YouTubeAdapter } from '../sync/YouTubeAdapter';
+import { SYNC_EVENTS } from '../shared/sync-protocol';
+import { SyncHud } from './SyncHud';
 
 const PlayerContainer = styled.div`
   width: 100%;
@@ -29,32 +33,26 @@ const PlayerDiv = styled.div`
   height: 100%;
 `;
 
-const LatencyBadge = styled.div<{ latency: number }>`
+const GestureChip = styled.button`
   position: absolute;
-  top: 20px;
-  right: 20px;
-  background: ${props =>
-    props.latency < 100 ? '#10b981' :
-    props.latency < 300 ? '#f59e0b' :
-    props.latency < 500 ? '#f97316' :
-    '#f87171'
-  };
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 105;
+  background: rgba(15, 23, 42, 0.9);
   color: white;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 12px;
+  border: none;
+  padding: 14px 28px;
+  border-radius: 24px;
+  font-size: 15px;
   font-weight: 600;
-  backdrop-filter: blur(10px);
-  z-index: 100;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
-  animation: fadeIn 0.3s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  gap: 8px;
 
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
+  &:hover {
+    background: rgba(15, 23, 42, 1);
   }
 `;
 
@@ -208,18 +206,12 @@ const StatusDot = styled.div<{ color: string }>`
   }
 `;
 
-const ControlButton = styled.button<{ active?: boolean; variant?: 'primary' | 'secondary' }>`
-  background: ${props =>
-    props.variant === 'primary'
-      ? '#6366f1'
-      : props.active
-        ? 'rgba(99, 102, 241, 0.1)'
-        : '#ffffff'
-  };
+const ControlButton = styled.button<{ active?: boolean }>`
+  background: ${props => props.active ? 'rgba(99, 102, 241, 0.1)' : '#ffffff'};
   border: 1px solid ${props =>
     props.active ? 'rgba(99, 102, 241, 0.3)' : '#e2e8f0'
   };
-  color: ${props => props.variant === 'primary' ? 'white' : '#2d3748'};
+  color: #2d3748;
   padding: 8px 16px;
   border-radius: 8px;
   cursor: pointer;
@@ -233,12 +225,7 @@ const ControlButton = styled.button<{ active?: boolean; variant?: 'primary' | 's
 
   &:hover {
     background: ${props =>
-      props.variant === 'primary'
-        ? '#5558e3'
-        : props.active
-          ? 'rgba(99, 102, 241, 0.15)'
-          : '#f8fafc'
-    };
+      props.active ? 'rgba(99, 102, 241, 0.15)' : '#f8fafc'};
     transform: translateY(-1px);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   }
@@ -271,6 +258,22 @@ interface VideoPlayerProps {
   allowGuestControl?: boolean;
 }
 
+const EMPTY_STATUS: EngineStatus = {
+  timeline: null,
+  roomPlaying: false,
+  projectedS: 0,
+  durationS: 0,
+  driftMs: 0,
+  offsetMs: 0,
+  uncertaintyMs: Infinity,
+  rttMs: NaN,
+  ctrlState: 'LOCKED',
+  seq: -1,
+  fractionalRateOK: false,
+  needsGesture: false,
+  seeksIssued: 0,
+};
+
 export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   videoUrl,
   roomCode,
@@ -278,73 +281,18 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   allowGuestControl = false
 }) => {
   const { socket, connected } = useSocket();
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isReady, setIsReady] = useState(false);
   const [videoId, setVideoId] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(true);
-  const [latency, setLatency] = useState(0);
-  const [showLatency, setShowLatency] = useState(false);
+  const [status, setStatus] = useState<EngineStatus>(EMPTY_STATUS);
+  const [showHud, setShowHud] = useState(
+    () => new URLSearchParams(window.location.search).get('debug') === '1',
+  );
 
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<YTPlayer | null>(null);
+  const engineRef = useRef<SyncEngine | null>(null);
+  const adapterRef = useRef<YouTubeAdapter | null>(null);
   const canControl = isHost || allowGuestControl;
-
-  const latencyRef = useRef(0);
-  useEffect(() => {
-    latencyRef.current = latency;
-  }, [latency]);
-
-  // The YT player registers onStateChange once at init, freezing whatever
-  // render's closures it saw. Reading socket/connected through refs keeps
-  // broadcasts working when the socket connects (or reconnects) after the
-  // player initialized - the baseline's silent-drop bug.
-  const socketRef = useRef(socket);
-  const connectedRef = useRef(connected);
-  useEffect(() => {
-    socketRef.current = socket;
-    connectedRef.current = connected;
-  }, [socket, connected]);
-
-  // Baseline telemetry shim: a read-only observer polled by sync-harness via
-  // window.__mustardSync. Samples the player at 20Hz; never calls a mutating
-  // player API, so measured runs exercise the app exactly as shipped.
-  useEffect(() => {
-    if (!isReady) return;
-    let base = 0;
-    const MAX = 6000;
-    const buf: Array<{
-      tLocal: number;
-      playerTime: number;
-      playerState: number;
-      rtt: number;
-    }> = [];
-    const iv = setInterval(() => {
-      const p = playerRef.current;
-      if (!p?.getCurrentTime) return;
-      buf.push({
-        tLocal: Date.now(),
-        playerTime: p.getCurrentTime(),
-        playerState: p.getPlayerState ? p.getPlayerState() : -1,
-        rtt: latencyRef.current,
-      });
-      if (buf.length > MAX) {
-        base += buf.length - MAX;
-        buf.splice(0, buf.length - MAX);
-      }
-    }, 50);
-    (window as any).__mustardSync = {
-      version: 'baseline-1',
-      getSamplesSince: (abs: number) => {
-        const start = Math.max(0, abs - base);
-        return { next: base + buf.length, samples: buf.slice(start) };
-      },
-    };
-    return () => {
-      clearInterval(iv);
-      delete (window as any).__mustardSync;
-    };
-  }, [isReady]);
 
   // Extract YouTube video ID
   const getYouTubeId = useCallback((url: string): string | null => {
@@ -361,241 +309,136 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       const match = url.match(pattern);
       if (match?.[1]) return match[1];
     }
-
     return null;
   }, []);
 
-  // Load YouTube IFrame API
+  // Engine lifecycle: starts with the socket (before the player is ready, so
+  // no room-joined timeline is ever missed) and adopts the adapter later.
+  useEffect(() => {
+    if (!socket) return;
+    const engine = new SyncEngine(socket, roomCode);
+    engineRef.current = engine;
+    engine.start();
+    const unsubscribe = engine.onStatus(setStatus);
+
+    const onRejected = (r: { reason: string }) => {
+      if (r.reason === 'not-controller') {
+        toast.error('Only the host can control video playback', {
+          icon: '👑',
+          duration: 2000,
+        });
+      }
+    };
+    socket.on(SYNC_EVENTS.controlRejected, onRejected);
+
+    return () => {
+      socket.off(SYNC_EVENTS.controlRejected, onRejected);
+      unsubscribe();
+      engine.dispose();
+      engineRef.current = null;
+      adapterRef.current = null;
+    };
+  }, [socket, roomCode]);
+
+  // HUD toggle on backtick
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '`') setShowHud((v) => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Player bootstrap
   useEffect(() => {
     const id = getYouTubeId(videoUrl);
     setVideoId(id);
-
     if (!id) return;
+
+    const initializePlayer = (vid: string) => {
+      playerRef.current = new window.YT.Player('youtube-player', {
+        videoId: vid,
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          disablekb: 1,
+          modestbranding: 1,
+          rel: 0,
+          iv_load_policy: 3,
+          enablejsapi: 1,
+          origin: window.location.origin,
+          playsinline: 1,
+        },
+        events: {
+          onReady: (event) => {
+            playerRef.current = event.target;
+            setIsReady(true);
+            const adapter = new YouTubeAdapter(event.target);
+            adapterRef.current = adapter;
+            engineRef.current?.attachAdapter(adapter);
+          },
+        },
+      });
+    };
 
     if (window.YT?.Player) {
       initializePlayer(id);
-      return;
+    } else {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(tag);
+      window.onYouTubeIframeAPIReady = () => initializePlayer(id);
     }
-
-    const tag = document.createElement('script');
-    tag.src = 'https://www.youtube.com/iframe_api';
-    document.head.appendChild(tag);
-
-    window.onYouTubeIframeAPIReady = () => initializePlayer(id);
 
     return () => {
       playerRef.current?.destroy?.();
+      setIsReady(false);
     };
     // intentional: the player re-initializes only when the video changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoUrl]);
 
-  const initializePlayer = (videoId: string) => {
-    new window.YT.Player('youtube-player', {
-      height: '100%',
-      width: '100%',
-      videoId,
-      playerVars: {
-        autoplay: 0,
-        controls: 0,
-        disablekb: 1,
-        modestbranding: 1,
-        rel: 0,
-        showinfo: 0,
-        iv_load_policy: 3,
-        enablejsapi: 1,
-        origin: window.location.origin,
-        playsinline: 1
-      },
-      events: {
-        onReady: (event: any) => {
-          playerRef.current = event.target;
-          setIsReady(true);
-          setDuration(event.target.getDuration());
-        },
-        onStateChange: (event: any) => {
-          if (event.data === window.YT.PlayerState.PLAYING) {
-            setIsPlaying(true);
-            if (canControl) {
-              broadcastState('play');
-            }
-          } else if (event.data === window.YT.PlayerState.PAUSED) {
-            setIsPlaying(false);
-            if (canControl) {
-              broadcastState('pause');
-            }
-          }
-        }
-      }
-    });
-  };
-
-  const broadcastState = useCallback((action: string) => {
-    const liveSocket = socketRef.current;
-    if (!liveSocket || !connectedRef.current || !canControl) return;
-
-    const state = {
-      currentTime: playerRef.current?.getCurrentTime() || 0,
-      isPlaying: action === 'play',
-      clientTimestamp: Date.now()
-    };
-
-    liveSocket.emit('video-state', {
-      roomCode,
-      state,
-      action,
-      clientTimestamp: Date.now()
-    });
-  }, [canControl, roomCode]);
-
-  // Socket event listeners
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleRoomJoined = (data: any) => {
-      if (data.latency) {
-        setLatency(data.latency);
-        setShowLatency(true);
-        setTimeout(() => setShowLatency(false), 3000);
-      }
-
-      if (data.state && playerRef.current) {
-        const { currentTime, isPlaying } = data.state;
-        playerRef.current.seekTo(currentTime, true);
-        if (isPlaying) {
-          playerRef.current.playVideo();
-        } else {
-          playerRef.current.pauseVideo();
-        }
-      }
-    };
-
-    const handleVideoStateUpdate = (data: any) => {
-      if (!syncEnabled || !playerRef.current) return;
-
-      if (data.latency) {
-        setLatency(data.latency);
-        setShowLatency(true);
-        setTimeout(() => setShowLatency(false), 3000);
-      }
-
-      const { currentTime, isPlaying, action } = data;
-
-      if (action === 'seek') {
-        playerRef.current.seekTo(currentTime, true);
-      }
-
-      if (isPlaying && playerRef.current.getPlayerState() !== window.YT.PlayerState.PLAYING) {
-        playerRef.current.playVideo();
-      } else if (!isPlaying && playerRef.current.getPlayerState() === window.YT.PlayerState.PLAYING) {
-        playerRef.current.pauseVideo();
-      }
-    };
-
-    const handleError = (data: { message: string }) => {
-      if (data.message.includes('Only the host')) {
-        toast.error(data.message, {
-          icon: '🔒',
-          duration: 3000
-        });
-      }
-    };
-
-    socket.on('room-joined', handleRoomJoined);
-    socket.on('video-state-update', handleVideoStateUpdate);
-    socket.on('error', handleError);
-
-    return () => {
-      socket.off('room-joined', handleRoomJoined);
-      socket.off('video-state-update', handleVideoStateUpdate);
-      socket.off('error', handleError);
-    };
-  }, [socket, syncEnabled]);
-
-  // Update current time
-  useEffect(() => {
-    if (!playerRef.current || !isReady) return;
-
-    const interval = setInterval(() => {
-      if (playerRef.current?.getCurrentTime) {
-        setCurrentTime(playerRef.current.getCurrentTime());
-      }
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [isReady]);
-
-  // Periodic latency measurement
-  useEffect(() => {
-    if (!socket || !roomCode) return;
-
-    const measureLatency = () => {
-      const timestamp = Date.now();
-      socket.emit('ping', { timestamp });
-    };
-
-    // Measure latency every 5 seconds
-    const latencyInterval = setInterval(measureLatency, 5000);
-
-    // Initial measurement
-    measureLatency();
-
-    // Handle pong response
-    const handlePong = (data: { clientTimestamp: number; serverTimestamp: number }) => {
-      const roundTripTime = Date.now() - data.clientTimestamp;
-      const estimatedLatency = Math.round(roundTripTime / 2);
-      setLatency(estimatedLatency);
-      setShowLatency(true);
-
-      // Always show latency badge, but auto-hide if very good
-      if (estimatedLatency < 50) {
-        setTimeout(() => setShowLatency(false), 3000);
-      }
-    };
-
-    socket.on('pong', handlePong);
-
-    return () => {
-      clearInterval(latencyInterval);
-      socket.off('pong', handlePong);
-    };
-  }, [socket, roomCode]);
-
+  // ---- gesture-only intents (wait-for-broadcast: the player is never
+  // touched here; everyone converges from the sync:timeline broadcast) ----
   const handlePlayPause = () => {
-    if (!playerRef.current || !canControl) {
-      if (!canControl) {
-        toast.error('Only the host can control video playback', {
-          icon: '👑',
-          duration: 2000
-        });
-      }
+    if (!canControl) {
+      toast.error('Only the host can control video playback', {
+        icon: '👑',
+        duration: 2000
+      });
       return;
     }
-
-    if (isPlaying) {
-      playerRef.current.pauseVideo();
+    const engine = engineRef.current;
+    const adapter = adapterRef.current;
+    if (!engine || !adapter) return;
+    if (status.roomPlaying) {
+      // P4: pause freezes at the frame the presser saw
+      engine.sendIntent('pause', adapter.getPlayerTime());
     } else {
-      playerRef.current.playVideo();
+      const from = status.timeline ? status.projectedS : adapter.getPlayerTime();
+      engine.sendIntent('play', from);
     }
   };
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!playerRef.current || !duration || !canControl) {
-      if (!canControl) {
-        toast.error('Only the host can seek the video', {
-          icon: '👑',
-          duration: 2000
-        });
-      }
+    if (!canControl) {
+      toast.error('Only the host can seek the video', {
+        icon: '👑',
+        duration: 2000
+      });
       return;
     }
-
+    const engine = engineRef.current;
+    if (!engine || !status.durationS) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const clickedTime = (x / rect.width) * duration;
+    const fraction = (e.clientX - rect.left) / rect.width;
+    engine.sendIntent('seek', fraction * status.durationS);
+  };
 
-    playerRef.current.seekTo(clickedTime, true);
-    broadcastState('seek');
+  const handleSyncToggle = () => {
+    const next = !syncEnabled;
+    setSyncEnabled(next);
+    engineRef.current?.setEnabled(next);
   };
 
   const formatTime = (seconds: number) => {
@@ -617,16 +460,20 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     );
   }
 
+  const shownTime = status.roomPlaying
+    ? status.projectedS
+    : status.timeline?.mediaTime ?? 0;
+
   return (
     <PlayerContainer>
       <VideoWrapper>
         <PlayerDiv id="youtube-player" />
-        {showLatency && (
-          <LatencyBadge latency={latency}>
-            <span>⚡</span>
-            <span>{latency}ms</span>
-          </LatencyBadge>
+        {status.needsGesture && (
+          <GestureChip onClick={() => engineRef.current?.resumeFromGesture()}>
+            ▶ Click to join playback
+          </GestureChip>
         )}
+        {showHud && <SyncHud status={status} />}
       </VideoWrapper>
 
       <Controls>
@@ -637,8 +484,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
             canControl={canControl}
             disabled={!isReady}
           >
-            {isPlaying ? '⏸' : '▶'}
-            {isPlaying ? 'Pause' : 'Play'}
+            {status.roomPlaying ? '⏸' : '▶'}
+            {status.roomPlaying ? 'Pause' : 'Play'}
           </PlayButton>
 
           <ProgressContainer>
@@ -647,12 +494,18 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
               onClick={handleProgressClick}
               canControl={canControl}
             >
-              <ProgressFill progress={duration > 0 ? (currentTime / duration) * 100 : 0} />
+              <ProgressFill
+                progress={
+                  status.durationS > 0
+                    ? Math.min(100, (shownTime / status.durationS) * 100)
+                    : 0
+                }
+              />
             </ProgressBar>
           </ProgressContainer>
 
           <TimeDisplay>
-            {formatTime(currentTime)} / {formatTime(duration)}
+            {formatTime(shownTime)} / {formatTime(status.durationS)}
           </TimeDisplay>
         </ControlRow>
 
@@ -669,21 +522,12 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
           </StatusGroup>
 
           <StatusGroup>
-            <ControlButton
-              active={syncEnabled}
-              onClick={() => setSyncEnabled(!syncEnabled)}
-            >
+            <StatusItem type="info">
+              {Number.isFinite(status.rttMs) ? `${Math.round(status.rttMs)}ms` : '—'}
+            </StatusItem>
+            <ControlButton active={syncEnabled} onClick={handleSyncToggle}>
               🔗 Sync {syncEnabled ? 'ON' : 'OFF'}
             </ControlButton>
-
-            {isHost && (
-              <ControlButton
-                variant="primary"
-                onClick={() => broadcastState('force-sync')}
-              >
-                ⚡ Force Sync
-              </ControlButton>
-            )}
           </StatusGroup>
         </StatusRow>
       </Controls>
