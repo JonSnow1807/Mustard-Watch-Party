@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
@@ -6,11 +7,15 @@ import { RedisIoAdapter } from './adapters/redis-io.adapter';
 import { redisEnabled } from './redis/redis.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(Logger));
 
-  // Enable CORS
+  // Enable CORS; FRONTEND_URL is a comma-separated allowlist so prod can
+  // cover the Vercel domain plus preview deployments
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+    origin: (process.env.FRONTEND_URL || 'http://localhost:3001')
+      .split(',')
+      .map((o) => o.trim()),
     credentials: true,
   });
 

@@ -32,7 +32,9 @@ interface SignalData {
 @WebSocketGateway({
   namespace: '/voice',
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+    origin: (process.env.FRONTEND_URL || 'http://localhost:3001')
+      .split(',')
+      .map((o) => o.trim()),
     credentials: true,
   },
   transports: ['websocket', 'polling'],

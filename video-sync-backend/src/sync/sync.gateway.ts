@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -30,7 +31,9 @@ interface RoomData {
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+    origin: (process.env.FRONTEND_URL || 'http://localhost:3001')
+      .split(',')
+      .map((o) => o.trim()),
     credentials: true,
   },
   transports: ['websocket', 'polling'],
@@ -43,6 +46,7 @@ export class SyncGateway
   @WebSocketServer()
   server: Server;
 
+  private readonly logger = new Logger(SyncGateway.name);
   private userRooms: Map<string, string> = new Map();
   private roomHosts: Map<string, string> = new Map(); // Track room hosts
   private socketToUser: Map<string, string> = new Map(); // Map socket.id to userId
@@ -85,7 +89,7 @@ export class SyncGateway
     try {
       const joinStartTime = Date.now();
       const userId = (client.data as AuthedSocketData).userId;
-      console.log(`User ${userId} joining room ${data.roomCode}`);
+      this.logger.log({ userId, roomCode: data.roomCode }, 'join');
 
       const room = await this.database.room.findUnique({
         where: { code: data.roomCode },
@@ -212,9 +216,7 @@ export class SyncGateway
 
       // Log latency for monitoring
       if (joinLatency > 500) {
-        console.warn(
-          `⚠️ High join latency: ${joinLatency}ms for user ${userId}`,
-        );
+        this.logger.warn({ joinLatency, userId }, 'high join latency');
       }
 
       // Notify others with updated participant info
@@ -234,7 +236,7 @@ export class SyncGateway
       // Send chat history to the joining user
       await this.handleGetMessageHistory(client, { roomCode: data.roomCode });
     } catch (error) {
-      console.error('Error joining room:', error);
+      this.logger.error({ err: String(error) }, 'join failed');
       client.emit('error', { message: 'Failed to join room' });
     }
   }
@@ -348,7 +350,7 @@ export class SyncGateway
           this.server.to(roomCode).emit(SYNC_EVENTS.timeline, snap);
         }
       } catch (error) {
-        console.error(`sweep failed for ${roomCode}:`, error);
+        this.logger.error({ err: String(error), roomCode }, 'sweep failed');
       }
     }
   }
@@ -543,7 +545,7 @@ export class SyncGateway
         });
       }
     } catch (error) {
-      console.error('Error handling leave room:', error);
+      this.logger.error({ err: String(error) }, 'leave failed');
     }
   }
 }

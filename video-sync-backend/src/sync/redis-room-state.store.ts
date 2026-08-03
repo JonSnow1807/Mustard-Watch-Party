@@ -163,7 +163,6 @@ export class RedisRoomStateStore implements RoomStateStore {
     roomCode: string,
     intent: ControlIntent,
     mediaTime: number,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _serverNow: number, // stamping happens inside Lua from redis TIME (D6)
     by: string,
   ): Promise<Timeline | null> {

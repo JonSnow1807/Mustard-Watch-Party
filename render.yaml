@@ -5,25 +5,24 @@ services:
     plan: starter
     rootDir: video-sync-backend
     buildCommand: npm ci && npm run build
-    startCommand: npm run start:prod
+    startCommand: npx prisma migrate deploy && npm run start:prod
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      # Neon Postgres (free tier) - set in the Render dashboard
       - key: DATABASE_URL
-        fromDatabase:
-          name: mustard-watch-party-db
-          property: connectionString
+        sync: false
+      # Render Key Value (free tier) internal URL - set in the dashboard.
+      # No persistence needed: the store rehydrates from Postgres under a
+      # fresh storeEpoch by design (docs/SCALING.md section 3).
+      - key: REDIS_URL
+        sync: false
       - key: JWT_SECRET
         generateValue: true
+      # comma-separated allowlist: production domain + optional previews
       - key: FRONTEND_URL
-        value: https://your-frontend-domain.vercel.app
+        sync: false
     # main.ts excludes 'health' from the global /api prefix, so the route is /health
     healthCheckPath: /health
-
-databases:
-  - name: mustard-watch-party-db
-    databaseName: mustardwatchparty
-    user: mustardwatchparty
-    plan: starter
