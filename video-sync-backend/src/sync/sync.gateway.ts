@@ -90,6 +90,18 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
+      // Enforce room capacity; a returning participant re-activating never counts
+      // against the limit because their slot is already excluded here
+      if (room.maxUsers) {
+        const otherActive = room.participants.filter(
+          p => p.user.id !== data.userId,
+        ).length;
+        if (otherActive >= room.maxUsers) {
+          client.emit('error', { message: 'Room is full' });
+          return;
+        }
+      }
+
       await client.join(data.roomCode);
       this.userRooms.set(client.id, data.roomCode);
       this.socketToUser.set(client.id, data.userId);
@@ -563,118 +575,6 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('message-history', formattedMessages);
     } catch (error) {
       console.error('Error getting message history:', error);
-    }
-  }
-
-  // Voice chat handlers
-  @SubscribeMessage('join-voice')
-  async handleJoinVoice(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      userId: string;
-      username: string;
-    },
-  ) {
-    try {
-      console.log(`${data.username} joined voice in room ${data.roomCode}`);
-      
-      await client.join(`voice-${data.roomCode}`);
-      
-      client.to(data.roomCode).emit('voice-user-joined', {
-        userId: data.userId,
-        username: data.username,
-        peerId: client.id,
-      });
-    } catch (error) {
-      console.error('Error joining voice:', error);
-    }
-  }
-
-  @SubscribeMessage('leave-voice')
-  async handleLeaveVoice(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      userId: string;
-    },
-  ) {
-    try {
-      console.log(`User ${data.userId} left voice in room ${data.roomCode}`);
-      
-      await client.leave(`voice-${data.roomCode}`);
-      
-      client.to(data.roomCode).emit('voice-user-left', {
-        userId: data.userId,
-      });
-    } catch (error) {
-      console.error('Error leaving voice:', error);
-    }
-  }
-
-  @SubscribeMessage('voice-signal')
-  async handleVoiceSignal(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      targetUserId: string;
-      signal: any;
-    },
-  ) {
-    try {
-      const targetSocket = [...this.server.sockets.sockets.values()]
-        .find(socket => this.userRooms.get(socket.id) === data.roomCode);
-      
-      if (targetSocket) {
-        targetSocket.emit('voice-signal', {
-          userId: data.targetUserId,
-          username: 'User',
-          signal: data.signal,
-        });
-      }
-    } catch (error) {
-      console.error('Error handling voice signal:', error);
-    }
-  }
-
-  @SubscribeMessage('voice-mute')
-  async handleVoiceMute(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      userId: string;
-      isMuted: boolean;
-    },
-  ) {
-    try {
-      client.to(data.roomCode).emit('voice-mute-status', {
-        userId: data.userId,
-        isMuted: data.isMuted,
-      });
-    } catch (error) {
-      console.error('Error handling mute status:', error);
-    }
-  }
-
-  @SubscribeMessage('user-activity')
-  async handleUserActivity(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: {
-      roomCode: string;
-      userId: string;
-      activity: string;
-    },
-  ) {
-    try {
-      // Broadcast activity to other users in the room
-      client.to(data.roomCode).emit('user-activity', {
-        userId: data.userId,
-        activity: data.activity,
-      });
-      
-      console.log(`User ${data.userId} is ${data.activity} in room ${data.roomCode}`);
-    } catch (error) {
-      console.error('Error handling user activity:', error);
     }
   }
 
