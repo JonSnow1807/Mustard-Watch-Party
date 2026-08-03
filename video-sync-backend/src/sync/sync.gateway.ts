@@ -18,6 +18,8 @@ import {
   SYNC_EVENTS,
   SyncControl,
 } from '../shared/sync-protocol';
+import { ClockDomainService } from '../redis/clock-domain.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { TimelineService } from './timeline.service';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
 
@@ -49,6 +51,8 @@ export class SyncGateway
     private database: DatabaseService,
     private jwt: JwtService,
     private timeline: TimelineService,
+    private clock: ClockDomainService,
+    private metrics: MetricsService,
   ) {}
 
   afterInit(server: Server): void {
@@ -58,7 +62,7 @@ export class SyncGateway
   }
 
   handleConnection(client: Socket) {
-    console.log(`Client connected: ${client.id}`);
+    this.metrics.wsConnectedClients.inc({ namespace: '/' });
     client.emit('connected', {
       id: client.id,
       timestamp: Date.now(),
@@ -66,8 +70,7 @@ export class SyncGateway
   }
 
   async handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
-
+    this.metrics.wsConnectedClients.dec({ namespace: '/' });
     const roomCode = this.userRooms.get(client.id);
     if (roomCode) {
       await this.handleLeaveRoom(client, roomCode);
@@ -132,7 +135,7 @@ export class SyncGateway
       const timeline = await this.timeline.ensureRoom(
         data.roomCode,
         room,
-        Date.now(),
+        this.clock.now(),
       );
 
       // P3: the creator returning reclaims control from a promoted stand-in
@@ -277,9 +280,11 @@ export class SyncGateway
 
   @SubscribeMessage(SYNC_EVENTS.clock)
   handleSyncClock(@MessageBody() data: ClockPing): ClockPong {
-    // ack fast-path: stamp immediately, no awaits before t1/t2
-    const t1 = Date.now();
-    return { t0: data.t0, t1, t2: Date.now() };
+    // ack fast-path, stamped in the store clock domain (D6): with Redis the
+    // timeline is stamped from redis TIME, and t1/t2 must live in that same
+    // domain or inter-instance wall-clock skew becomes phantom drift
+    const t1 = this.clock.now();
+    return { t0: data.t0, t1, t2: this.clock.now() };
   }
 
   @SubscribeMessage(SYNC_EVENTS.control)
@@ -287,6 +292,10 @@ export class SyncGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: SyncControl,
   ) {
+    const stop = this.metrics.wsHandlerDuration.startTimer({
+      event: 'sync:control',
+    });
+    this.metrics.wsEventsReceived.inc({ event: 'sync:control' });
     const userId = (client.data as AuthedSocketData).userId;
     const result = await this.timeline.handleControl(
       data.roomCode,
@@ -294,20 +303,30 @@ export class SyncGateway
       userId,
       data.intent,
       data.mediaTime,
-      Date.now(),
+      this.clock.now(),
     );
     if (!result.ok) {
+      this.metrics.controlEvents.inc({
+        type: data.intent,
+        result: `rejected_${result.reason.replace(/-/g, '_')}`,
+      });
       client.emit(SYNC_EVENTS.controlRejected, {
         v: 1,
         roomCode: data.roomCode,
         intent: data.intent,
         reason: result.reason,
       });
+      stop();
       return;
     }
+    this.metrics.controlEvents.inc({ type: data.intent, result: 'accepted' });
+    const fanout =
+      this.server.sockets.adapter.rooms.get(data.roomCode)?.size ?? 0;
+    this.metrics.wsBroadcastFanout.observe(fanout);
     // wait-for-broadcast semantics: the commander applies its own intent
     // from this same message, so every client converges on identical state
     this.server.to(data.roomCode).emit(SYNC_EVENTS.timeline, result.timeline);
+    stop();
   }
 
   /**
@@ -318,9 +337,13 @@ export class SyncGateway
   @Interval(10_000)
   async sweepTimelines() {
     const activeRooms = new Set(this.userRooms.values());
+    this.metrics.wsRoomsActive.set(activeRooms.size);
     for (const roomCode of activeRooms) {
       try {
-        const snap = await this.timeline.sweepSnapshot(roomCode, Date.now());
+        const snap = await this.timeline.sweepSnapshot(
+          roomCode,
+          this.clock.now(),
+        );
         if (snap) {
           this.server.to(roomCode).emit(SYNC_EVENTS.timeline, snap);
         }

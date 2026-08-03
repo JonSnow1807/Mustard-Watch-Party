@@ -6,6 +6,8 @@ import { VoiceGateway } from './voice.gateway';
 import { SyncService } from './sync.service';
 import { TimelineService } from './timeline.service';
 import { InMemoryRoomStateStore, ROOM_STATE_STORE } from './room-state.store';
+import { RedisRoomStateStore } from './redis-room-state.store';
+import { redisEnabled } from '../redis/redis.module';
 
 @Module({
   imports: [AuthModule],
@@ -14,8 +16,12 @@ import { InMemoryRoomStateStore, ROOM_STATE_STORE } from './room-state.store';
     VoiceGateway,
     SyncService,
     TimelineService,
-    // M6 swaps this provider for the Redis/Lua implementation
-    { provide: ROOM_STATE_STORE, useClass: InMemoryRoomStateStore },
+    // Redis/Lua store when REDIS_URL is set (multi-instance correctness);
+    // in-memory otherwise (single instance, CI protocol-only mode)
+    {
+      provide: ROOM_STATE_STORE,
+      useClass: redisEnabled() ? RedisRoomStateStore : InMemoryRoomStateStore,
+    },
   ],
   exports: [SyncService],
 })

@@ -14,6 +14,8 @@ export default () => ({
     origin: process.env.FRONTEND_URL || 'http://localhost:3001',
   },
   redis: {
+    // set REDIS_URL to enable the multi-instance plane (adapter + Lua store)
+    url: process.env.REDIS_URL,
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
   },
