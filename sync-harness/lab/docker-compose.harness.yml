@@ -1,0 +1,55 @@
+# Impairment lab for measurement runs.
+#   docker compose -f sync-harness/lab/docker-compose.harness.yml up -d
+#
+# The backend runs on the host (port 3000); both proxies reach it through
+# host.docker.internal. Browser clients choose their path via the app's
+# ?ws= override:
+#   direct    ws://localhost:3000
+#   toxiproxy ws://localhost:3101   (latency/jitter, per-direction, incl. asymmetric)
+#   netem     ws://localhost:3102   (true packet loss; Linux qdisc inside the proxy)
+#
+# netem semantics: a single root qdisc on the proxy's eth0 impairs BOTH legs
+# of every round trip (each direction crosses the container's egress once),
+# so `delay X` adds 2X to RTT. Loss applies to each traversal independently.
+# Only app traffic traverses the proxy; YouTube CDN traffic never enters it.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: videouser
+      POSTGRES_PASSWORD: videopass
+      POSTGRES_DB: videosync
+    ports:
+      - "5432:5432"
+    volumes:
+      - harness-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U videouser -d videosync"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.11.0
+    ports:
+      - "8474:8474"
+      - "3101:3101"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  netem:
+    build: ./netem
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "3102:3102"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # replaced per scenario via:
+      #   docker compose ... exec netem apply-netem "delay 25ms loss 5%"
+      NETEM_SPEC: ""
+
+volumes:
+  harness-pgdata:

@@ -1,0 +1,19 @@
+#!/bin/sh
+# Apply (or clear) a netem qdisc on the proxy's egress interface.
+#   apply-netem "delay 25ms loss 5%"   -> impair
+#   apply-netem ""                     -> clear
+set -e
+
+IFACE="${NETEM_IFACE:-eth0}"
+
+tc qdisc del dev "$IFACE" root 2>/dev/null || true
+
+if [ -n "$1" ]; then
+  # shellcheck disable=SC2086 -- the spec is intentionally word-split
+  tc qdisc add dev "$IFACE" root netem $1
+  echo "netem applied on $IFACE: $1"
+else
+  echo "netem cleared on $IFACE"
+fi
+
+tc qdisc show dev "$IFACE"
