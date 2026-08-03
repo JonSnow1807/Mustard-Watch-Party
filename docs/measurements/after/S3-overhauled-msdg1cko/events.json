@@ -1,0 +1,49 @@
+[
+  {
+    "tHost": 1785774513046,
+    "client": -1,
+    "kind": "scenario-start",
+    "detail": "S3"
+  },
+  {
+    "tHost": 1785774513375,
+    "client": 0,
+    "kind": "join"
+  },
+  {
+    "tHost": 1785774518283,
+    "client": 1,
+    "kind": "join"
+  },
+  {
+    "tHost": 1785774523274,
+    "client": 2,
+    "kind": "join"
+  },
+  {
+    "tHost": 1785774543103,
+    "client": 0,
+    "kind": "play"
+  },
+  {
+    "tHost": 1785774603060,
+    "client": 0,
+    "kind": "seek",
+    "detail": "fraction=0.5"
+  },
+  {
+    "tHost": 1785774663074,
+    "client": 0,
+    "kind": "pause"
+  },
+  {
+    "tHost": 1785774668076,
+    "client": 0,
+    "kind": "play"
+  },
+  {
+    "tHost": 1785774753050,
+    "client": -1,
+    "kind": "scenario-end"
+  }
+]

@@ -1,3 +1,6 @@
 .DS_Store
 *.log
 node_modules/
+formal/*_TTrace_*.tla
+formal/states/
+formal/tools/

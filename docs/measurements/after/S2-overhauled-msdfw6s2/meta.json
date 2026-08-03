@@ -1,0 +1,21 @@
+{
+  "runId": "S2-overhauled-msdfw6s2",
+  "scenario": {
+    "id": "S2",
+    "title": "+150ms each way (~300ms RTT), symmetric — intercontinental",
+    "must": true,
+    "impairment": {
+      "tool": "toxiproxy",
+      "upLatencyMs": 150,
+      "downLatencyMs": 150
+    },
+    "durationS": 240
+  },
+  "gitSha": "57b730a8610d96f23b248a2286f27ef4ced167e6",
+  "startedAt": "2026-08-03T16:24:32.271Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3101",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled"
+}

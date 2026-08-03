@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { LoggerModule } from 'nestjs-pino';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -20,6 +21,20 @@ import configuration from './config/configuration';
     }),
     // Enable scheduled tasks
     ScheduleModule.forRoot(),
+    // Structured logging: JSON in prod (Render log tail parses it),
+    // pretty-printed in dev; health/metrics scrapes stay out of the logs
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.LOG_LEVEL ?? 'info',
+        autoLogging: {
+          ignore: (req) => req.url === '/health' || req.url === '/metrics',
+        },
+        transport:
+          process.env.NODE_ENV === 'production'
+            ? undefined
+            : { target: 'pino-pretty', options: { singleLine: true } },
+      },
+    }),
     // Our custom modules
     RedisModule,
     MetricsModule,
