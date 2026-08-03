@@ -4,12 +4,20 @@ import {
   ConflictException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../database/database.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
-  constructor(private database: DatabaseService) {}
+  constructor(
+    private database: DatabaseService,
+    private jwt: JwtService,
+  ) {}
+
+  private issueToken(user: { id: string; username: string }): string {
+    return this.jwt.sign({ sub: user.id, name: user.username });
+  }
 
   async register(username: string, email: string, password: string) {
     // Check if user exists
@@ -41,7 +49,7 @@ export class AuthService {
       },
     });
 
-    return user;
+    return { ...user, token: this.issueToken(user) };
   }
 
   async login(username: string, password: string) {
@@ -64,6 +72,7 @@ export class AuthService {
       id: user.id,
       username: user.username,
       email: user.email,
+      token: this.issueToken(user),
     };
   }
 }

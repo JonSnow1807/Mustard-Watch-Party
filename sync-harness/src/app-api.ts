@@ -6,6 +6,8 @@ export interface HarnessUser {
   id: string;
   username: string;
   email: string;
+  /** JWT for the socket handshake (issued at register/login) */
+  token?: string;
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {

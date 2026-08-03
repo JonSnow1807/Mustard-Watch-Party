@@ -1,0 +1,102 @@
+import { Injectable } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+import { ControlIntent, Timeline } from '../shared/sync-protocol';
+import { applyControl, snapshot } from '../shared/sync-core/timeline';
+
+/**
+ * The authority seam for room playback state. The engine only speaks this
+ * interface; M6 swaps in a Redis/Lua implementation for multi-instance
+ * correctness without touching engine logic. apply() must assign seq
+ * atomically with the state write.
+ */
+export interface RoomStateStore {
+  get(roomCode: string): Promise<Timeline | null>;
+  /** Restamp a control intent and commit it with the next seq. */
+  applyControl(
+    roomCode: string,
+    intent: ControlIntent,
+    mediaTime: number,
+    serverNow: number,
+    by: string,
+  ): Promise<Timeline | null>;
+  /** Re-anchor the projection (periodic sweep); returns the committed state. */
+  applySnapshot(roomCode: string, serverNow: number): Promise<Timeline | null>;
+  /**
+   * First-writer-wins rehydration from persistence. Always restored paused
+   * (P5): a stale epoch must not fast-forward a room that was "playing"
+   * days ago.
+   */
+  init(
+    roomCode: string,
+    videoId: string | null,
+    mediaTime: number,
+    serverNow: number,
+  ): Promise<Timeline>;
+  clear(roomCode: string): Promise<void>;
+}
+
+export const ROOM_STATE_STORE = Symbol('ROOM_STATE_STORE');
+
+@Injectable()
+export class InMemoryRoomStateStore implements RoomStateStore {
+  private rooms = new Map<string, Timeline>();
+
+  // Single-process: JS execution is the serializer, so plain sync mutation
+  // inside async methods is atomic per call.
+  get(roomCode: string): Promise<Timeline | null> {
+    return Promise.resolve(this.rooms.get(roomCode) ?? null);
+  }
+
+  applyControl(
+    roomCode: string,
+    intent: ControlIntent,
+    mediaTime: number,
+    serverNow: number,
+    by: string,
+  ): Promise<Timeline | null> {
+    const prev = this.rooms.get(roomCode);
+    if (!prev) return Promise.resolve(null);
+    const next: Timeline = {
+      ...applyControl(prev, intent, mediaTime, serverNow, by),
+      seq: prev.seq + 1,
+    };
+    this.rooms.set(roomCode, next);
+    return Promise.resolve(next);
+  }
+
+  applySnapshot(roomCode: string, serverNow: number): Promise<Timeline | null> {
+    const prev = this.rooms.get(roomCode);
+    if (!prev) return Promise.resolve(null);
+    const next: Timeline = { ...snapshot(prev, serverNow), seq: prev.seq + 1 };
+    this.rooms.set(roomCode, next);
+    return Promise.resolve(next);
+  }
+
+  init(
+    roomCode: string,
+    videoId: string | null,
+    mediaTime: number,
+    serverNow: number,
+  ): Promise<Timeline> {
+    const existing = this.rooms.get(roomCode);
+    if (existing) return Promise.resolve(existing);
+    const created: Timeline = {
+      v: 1,
+      seq: 0,
+      storeEpoch: randomBytes(6).toString('hex'),
+      videoId,
+      isPlaying: false,
+      mediaTime,
+      stampedAt: serverNow,
+      rate: 1,
+      reason: 'join',
+    };
+    this.rooms.set(roomCode, created);
+    return Promise.resolve(created);
+  }
+
+  clear(roomCode: string): Promise<void> {
+    this.rooms.delete(roomCode);
+    return Promise.resolve();
+  }
+}

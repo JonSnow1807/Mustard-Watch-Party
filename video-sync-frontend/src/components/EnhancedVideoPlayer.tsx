@@ -295,6 +295,17 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     latencyRef.current = latency;
   }, [latency]);
 
+  // The YT player registers onStateChange once at init, freezing whatever
+  // render's closures it saw. Reading socket/connected through refs keeps
+  // broadcasts working when the socket connects (or reconnects) after the
+  // player initialized - the baseline's silent-drop bug.
+  const socketRef = useRef(socket);
+  const connectedRef = useRef(connected);
+  useEffect(() => {
+    socketRef.current = socket;
+    connectedRef.current = connected;
+  }, [socket, connected]);
+
   // Baseline telemetry shim: a read-only observer polled by sync-harness via
   // window.__mustardSync. Samples the player at 20Hz; never calls a mutating
   // player API, so measured runs exercise the app exactly as shipped.
@@ -420,7 +431,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const broadcastState = useCallback((action: string) => {
-    if (!socket || !connected || !canControl) return;
+    const liveSocket = socketRef.current;
+    if (!liveSocket || !connectedRef.current || !canControl) return;
 
     const state = {
       currentTime: playerRef.current?.getCurrentTime() || 0,
@@ -428,13 +440,13 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       clientTimestamp: Date.now()
     };
 
-    socket.emit('video-state', {
+    liveSocket.emit('video-state', {
       roomCode,
       state,
       action,
       clientTimestamp: Date.now()
     });
-  }, [socket, connected, canControl, roomCode]);
+  }, [canControl, roomCode]);
 
   // Socket event listeners
   useEffect(() => {

@@ -4,10 +4,13 @@ import {
   SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
+import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
+import { wsAuthMiddleware } from './ws-auth';
 
 interface VoiceUser {
   userId: string;
@@ -34,12 +37,20 @@ interface SignalData {
   },
   transports: ['websocket', 'polling'],
 })
-export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class VoiceGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
 
   private voiceUsers: Map<string, VoiceUser> = new Map();
   private roomVoiceUsers: Map<string, Set<string>> = new Map();
+
+  constructor(private jwt: JwtService) {}
+
+  afterInit(server: Server): void {
+    server.use(wsAuthMiddleware(this.jwt));
+  }
 
   handleConnection(client: Socket) {
     console.log(`Voice client connected: ${client.id}`);

@@ -4,11 +4,22 @@ import {
   SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
+import { Interval } from '@nestjs/schedule';
+import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { DatabaseService } from '../database/database.service';
+import {
+  ClockPing,
+  ClockPong,
+  SYNC_EVENTS,
+  SyncControl,
+} from '../shared/sync-protocol';
+import { TimelineService } from './timeline.service';
+import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
 
 interface VideoState {
   currentTime: number;
@@ -31,7 +42,9 @@ interface RoomData {
   pingInterval: 10000,
   pingTimeout: 5000,
 })
-export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class SyncGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
 
@@ -40,7 +53,17 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private roomHosts: Map<string, string> = new Map(); // Track room hosts
   private socketToUser: Map<string, string> = new Map(); // Map socket.id to userId
 
-  constructor(private database: DatabaseService) {}
+  constructor(
+    private database: DatabaseService,
+    private jwt: JwtService,
+    private timeline: TimelineService,
+  ) {}
+
+  afterInit(server: Server): void {
+    // identity is derived server-side at connect; client-asserted userIds
+    // in payloads are ignored by every handler below
+    server.use(wsAuthMiddleware(this.jwt));
+  }
 
   handleConnection(client: Socket) {
     console.log(`Client connected: ${client.id}`);
@@ -66,7 +89,8 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       const joinStartTime = Date.now();
-      console.log(`User ${data.userId} joining room ${data.roomCode}`);
+      const userId = (client.data as AuthedSocketData).userId;
+      console.log(`User ${userId} joining room ${data.roomCode}`);
 
       const room = await this.database.room.findUnique({
         where: { code: data.roomCode },
@@ -94,7 +118,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // against the limit because their slot is already excluded here
       if (room.maxUsers) {
         const otherActive = room.participants.filter(
-          (p) => p.user.id !== data.userId,
+          (p) => p.user.id !== userId,
         ).length;
         if (otherActive >= room.maxUsers) {
           client.emit('error', { message: 'Room is full' });
@@ -104,18 +128,36 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       await client.join(data.roomCode);
       this.userRooms.set(client.id, data.roomCode);
-      this.socketToUser.set(client.id, data.userId);
+      this.socketToUser.set(client.id, userId);
 
       // Set room host if first user
       if (!this.roomHosts.has(data.roomCode)) {
-        this.roomHosts.set(data.roomCode, data.userId);
+        this.roomHosts.set(data.roomCode, userId);
+      }
+
+      // Authoritative timeline: hydrate on first touch (paused, P5) and
+      // hand the joiner a projectable state instead of a frozen scalar
+      const timeline = await this.timeline.ensureRoom(
+        data.roomCode,
+        room,
+        Date.now(),
+      );
+
+      // P3: the creator returning reclaims control from a promoted stand-in
+      const reclaim = this.timeline.reclaim(data.roomCode, userId);
+      if (reclaim) {
+        this.server.to(data.roomCode).emit(SYNC_EVENTS.controller, {
+          v: 1,
+          roomCode: data.roomCode,
+          ...reclaim,
+        });
       }
 
       // Upsert participant
       const participant = await this.database.participant.upsert({
         where: {
           userId_roomId: {
-            userId: data.userId,
+            userId,
             roomId: room.id,
           },
         },
@@ -124,7 +166,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
           lastPingAt: new Date(),
         },
         create: {
-          userId: data.userId,
+          userId,
           roomId: room.id,
         },
         include: {
@@ -159,8 +201,6 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
         timestamp: Date.now(),
       };
 
-      console.log(`Sending room state to ${data.userId}:`, currentState);
-
       // Calculate join latency
       const joinLatency = Date.now() - joinStartTime;
 
@@ -174,6 +214,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
           creatorId: room.creatorId,
         },
         state: currentState,
+        timeline,
         participants: updatedParticipants.map((p) => ({
           id: p.user.id,
           username: p.user.username,
@@ -184,7 +225,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Log latency for monitoring
       if (joinLatency > 500) {
         console.warn(
-          `⚠️ High join latency: ${joinLatency}ms for user ${data.userId}`,
+          `⚠️ High join latency: ${joinLatency}ms for user ${userId}`,
         );
       }
 
@@ -328,6 +369,61 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       clientTimestamp: data.timestamp,
       serverTimestamp: Date.now(),
     });
+  }
+
+  @SubscribeMessage(SYNC_EVENTS.clock)
+  handleSyncClock(@MessageBody() data: ClockPing): ClockPong {
+    // ack fast-path: stamp immediately, no awaits before t1/t2
+    const t1 = Date.now();
+    return { t0: data.t0, t1, t2: Date.now() };
+  }
+
+  @SubscribeMessage(SYNC_EVENTS.control)
+  async handleSyncControl(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: SyncControl,
+  ) {
+    const userId = (client.data as AuthedSocketData).userId;
+    const result = await this.timeline.handleControl(
+      data.roomCode,
+      client.id,
+      userId,
+      data.intent,
+      data.mediaTime,
+      Date.now(),
+    );
+    if (!result.ok) {
+      client.emit(SYNC_EVENTS.controlRejected, {
+        v: 1,
+        roomCode: data.roomCode,
+        intent: data.intent,
+        reason: result.reason,
+      });
+      return;
+    }
+    // wait-for-broadcast semantics: the commander applies its own intent
+    // from this same message, so every client converges on identical state
+    this.server.to(data.roomCode).emit(SYNC_EVENTS.timeline, result.timeline);
+  }
+
+  /**
+   * Repair channel: a periodic re-anchored snapshot per playing room. Late
+   * or lossy deliveries self-heal within one sweep period; clients drop
+   * stale (storeEpoch, seq) so redundancy is harmless.
+   */
+  @Interval(10_000)
+  async sweepTimelines() {
+    const activeRooms = new Set(this.userRooms.values());
+    for (const roomCode of activeRooms) {
+      try {
+        const snap = await this.timeline.sweepSnapshot(roomCode, Date.now());
+        if (snap) {
+          this.server.to(roomCode).emit(SYNC_EVENTS.timeline, snap);
+        }
+      } catch (error) {
+        console.error(`sweep failed for ${roomCode}:`, error);
+      }
+    }
   }
 
   @SubscribeMessage('sync-check')
@@ -606,21 +702,41 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.userRooms.delete(client.id);
       this.socketToUser.delete(client.id);
 
-      // Clean up room host if leaving
-      const hostId = this.roomHosts.get(roomCode);
-      if (hostId === userId) {
-        const roomSockets = await this.server.in(roomCode).fetchSockets();
-        if (roomSockets.length > 0) {
-          // Assign new host to next user
-          const newHostSocket = roomSockets[0];
-          const newHostId = this.socketToUser.get(newHostSocket.id);
-          if (newHostId) {
-            this.roomHosts.set(roomCode, newHostId);
-          }
-        } else {
-          // Room is empty, clean up
-          this.roomHosts.delete(roomCode);
-          this.roomStates.delete(roomCode);
+      this.timeline.dropSocket(client.id);
+
+      const roomSockets = await this.server.in(roomCode).fetchSockets();
+      if (roomSockets.length === 0) {
+        this.roomHosts.delete(roomCode);
+        this.roomStates.delete(roomCode);
+        await this.timeline.releaseRoom(roomCode);
+      } else if (userId) {
+        // P3: if a controller left, promote the longest-connected participant
+        // (server-derived connect times; the timeline keeps running either way)
+        const candidate = roomSockets
+          .map((sock) => {
+            const sockData = sock.data as Partial<AuthedSocketData>;
+            return {
+              userId: sockData.userId,
+              connectedAt: sockData.connectedAt ?? Infinity,
+            };
+          })
+          .filter((x) => x.userId)
+          .sort((a, b) => a.connectedAt - b.connectedAt)[0];
+        const change = this.timeline.succession(
+          roomCode,
+          userId,
+          candidate?.userId ?? null,
+        );
+        if (change) {
+          this.server.to(roomCode).emit(SYNC_EVENTS.controller, {
+            v: 1,
+            roomCode,
+            ...change,
+          });
+        }
+        // legacy map bookkeeping
+        if (this.roomHosts.get(roomCode) === userId && candidate?.userId) {
+          this.roomHosts.set(roomCode, candidate.userId);
         }
       }
 
@@ -670,12 +786,6 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
             username: p.user.username,
           })),
         });
-      }
-
-      // Clean up room state if empty
-      const roomSockets = await this.server.in(roomCode).fetchSockets();
-      if (roomSockets.length === 0) {
-        this.roomStates.delete(roomCode);
       }
     } catch (error) {
       console.error('Error handling leave room:', error);
