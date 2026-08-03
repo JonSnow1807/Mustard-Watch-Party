@@ -3,6 +3,7 @@ services:
     name: mustard-watch-party-backend
     env: node
     plan: starter
+    rootDir: video-sync-backend
     buildCommand: npm ci && npm run build
     startCommand: npm run start:prod
     envVars:
@@ -18,7 +19,8 @@ services:
         generateValue: true
       - key: FRONTEND_URL
         value: https://your-frontend-domain.vercel.app
-    healthCheckPath: /api/health
+    # main.ts excludes 'health' from the global /api prefix, so the route is /health
+    healthCheckPath: /health
 
 databases:
   - name: mustard-watch-party-db
