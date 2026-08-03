@@ -1,14 +1,10 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
 
 interface SocketContextType {
   socket: Socket | null;
   connected: boolean;
-  joinRoom: (roomCode: string, userId: string) => void;
-  leaveRoom: () => void;
-  sendVideoAction: (action: 'play' | 'pause' | 'seek', currentTime: number) => void;
-  currentRoom: string | null;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -28,7 +24,6 @@ interface SocketProviderProps {
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
-  const [currentRoom, setCurrentRoom] = useState<string | null>(null);
 
   useEffect(() => {
     const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:3000';
@@ -65,42 +60,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     };
   }, []);
 
-  const joinRoom = useCallback((roomCode: string, userId: string) => {
-    if (socket && connected) {
-      console.log('Joining room:', roomCode);
-      socket.emit('join-room', { roomCode, userId });
-      setCurrentRoom(roomCode);
-    }
-  }, [socket, connected]);
-
-  const leaveRoom = useCallback(() => {
-    if (socket && currentRoom) {
-      socket.emit('leave-room', { roomCode: currentRoom });
-      setCurrentRoom(null);
-    }
-  }, [socket, currentRoom]);
-
-  const sendVideoAction = useCallback((action: 'play' | 'pause' | 'seek', currentTime: number) => {
-    if (socket && currentRoom) {
-      socket.emit('video-action', {
-        roomCode: currentRoom,
-        action,
-        currentTime,
-      });
-    }
-  }, [socket, currentRoom]);
-
-  const value: SocketContextType = {
-    socket,
-    connected,
-    joinRoom,
-    leaveRoom,
-    sendVideoAction,
-    currentRoom,
-  };
-
   return (
-    <SocketContext.Provider value={value}>
+    <SocketContext.Provider value={{ socket, connected }}>
       {children}
     </SocketContext.Provider>
   );
