@@ -2,6 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
+import { RedisIoAdapter } from './adapters/redis-io.adapter';
+import { redisEnabled } from './redis/redis.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,8 +17,13 @@ async function bootstrap() {
   // Enable validation
   app.useGlobalPipes(new ValidationPipe());
 
+  // Multi-instance plane: Redis pub/sub fanout when REDIS_URL is set
+  if (redisEnabled()) {
+    app.useWebSocketAdapter(new RedisIoAdapter(app));
+  }
+
   // Set global prefix
-  app.setGlobalPrefix('api', { exclude: ['', 'health'] });
+  app.setGlobalPrefix('api', { exclude: ['', 'health', 'metrics'] });
 
   // Performance monitoring middleware
   app.use((req: Request, res: Response, next: NextFunction) => {

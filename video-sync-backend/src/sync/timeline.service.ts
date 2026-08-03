@@ -1,5 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { ClockDomainService } from '../redis/clock-domain.service';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
 import { projectMediaTime } from '../shared/sync-core/timeline';
 import { ROOM_STATE_STORE, RoomStateStore } from './room-state.store';
@@ -34,6 +35,7 @@ export class TimelineService {
   constructor(
     @Inject(ROOM_STATE_STORE) private store: RoomStateStore,
     private database: DatabaseService,
+    @Optional() private clock?: ClockDomainService,
   ) {}
 
   /**
@@ -192,7 +194,7 @@ export class TimelineService {
     }
     const tl = await this.store.get(roomCode);
     if (!tl) return;
-    const now = Date.now();
+    const now = this.clock ? this.clock.now() : Date.now();
     try {
       await this.database.room.update({
         where: { code: roomCode },
