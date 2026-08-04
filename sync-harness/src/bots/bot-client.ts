@@ -54,10 +54,15 @@ export interface BotReport {
   samples: BotSample[];
   /** seqs this bot NEVER received on an epoch it was following (true loss) */
   seqGaps: number[];
-  /** timelines that arrived after a higher seq on the same epoch: reordered,
-   *  not lost. Harmless by design - `isNewer` drops them - but counted so a
-   *  reorder can never be mistaken for a gap. */
+  /** strictly LOWER seq arriving after a higher one on the same epoch: a
+   *  genuine out-of-order delivery. Harmless by design - `isNewer` drops it -
+   *  but counted so a reorder can never be mistaken for a gap. */
   seqReorders: number;
+  /** the SAME seq delivered more than once. Not a reorder and not a loss:
+   *  redundant repair is the sweep working as designed, and applying a
+   *  timeline twice is idempotent. Counted apart from reorders so the two
+   *  are never conflated. */
+  seqDuplicates: number;
   handlerErrors: string[];
   rejected: number;
 }
@@ -76,6 +81,7 @@ export class BotClient {
    *  low seq retracts the gap its successor would otherwise imply */
   private seqsByEpoch = new Map<string, Set<number>>();
   private seqReorders = 0;
+  private seqDuplicates = 0;
   private handlerErrors: string[] = [];
   private rejected = 0;
   private timers: Array<ReturnType<typeof setInterval>> = [];
@@ -116,10 +122,11 @@ export class BotClient {
       if (isNewer(tl, this.timeline)) {
         this.timeline = tl;
       } else if (this.timeline && tl.storeEpoch === this.timeline.storeEpoch) {
-        // same epoch, not newer: it arrived out of order behind a higher
-        // seq. The protocol is built to tolerate this; count it separately
-        // so it is never reported as a lost message.
-        this.seqReorders += 1;
+        // `isNewer` is false for an EQUAL seq as well as a lower one, so these
+        // two cases have to be split or a duplicate reads as a reorder - the
+        // same conflation that made reordering read as loss.
+        if (tl.seq === this.timeline.seq) this.seqDuplicates += 1;
+        else this.seqReorders += 1;
       }
     });
     this.transport.onRejected(() => {
@@ -262,6 +269,7 @@ export class BotClient {
       samples: this.samples,
       seqGaps: gaps,
       seqReorders: this.seqReorders,
+      seqDuplicates: this.seqDuplicates,
       handlerErrors: this.handlerErrors,
       rejected: this.rejected,
     };

@@ -172,6 +172,7 @@ async function main(): Promise<void> {
 
   const seqGaps = reports.flatMap((r) => r.seqGaps);
   const seqReorders = reports.reduce((sum, r) => sum + r.seqReorders, 0);
+  const seqDuplicates = reports.reduce((sum, r) => sum + r.seqDuplicates, 0);
   const handlerErrors = reports.flatMap((r) => r.handlerErrors);
   const thetaP95 = percentile(
     [...thetaErrors].sort((a, b) => a - b),
@@ -193,6 +194,9 @@ async function main(): Promise<void> {
     // dropped by the client's (storeEpoch, seq) ordering; reported so they
     // are visible without being mistaken for loss
     seqReorders,
+    // duplicates are the repair sweep doing its job (or a join racing a
+    // broadcast); idempotent, and deliberately not lumped in with reorders
+    seqDuplicates,
     handlerErrors: handlerErrors.length,
     rejectedControls: reports.reduce((s, r) => s + r.rejected, 0),
   };
