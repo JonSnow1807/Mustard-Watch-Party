@@ -14,11 +14,13 @@ explicitly in the table below rather than quietly folded in.
 |----------|--------|----------|
 | S0 clean loopback | P50 pairwise drift **363ms**, P95 **255.3s**, no control event ever converged | `S0-baseline-mscjatn1/` |
 | S2 +150ms each way | **Total failure** — the host plays; followers never start | `S2-baseline-mscjtbgk/` (exhibit) |
-| S3 jitter / S5 loss / S6 asym | Aborted before measurement: the player-health gate FAILED both attempts, the same signature as S2 (followers never started) | **none** — the run aborts before writing a directory |
+| S3 jitter / S5 loss / S6 asym | Discarded: the player-health gate FAILED both attempts, the same signature as S2 (followers never started) | **none** — the run is abandoned without writing a directory |
 
-The S3/S5/S6 row is an observation, not a measurement. The harness aborts a
-run whose players fail the health check, so nothing was written and there is
-nothing to cite; `compare.ts`, which reads only committed directories,
+The S3/S5/S6 row is an observation, not a measurement. The harness retries a
+run whose players fail the health check and then aborts it, so nothing was
+written and there is nothing to cite (S2 exists only because it was re-run
+with `HARNESS_ALLOW_UNHEALTHY=1`, which captures a failing run as a labeled
+exhibit instead of discarding it); `compare.ts`, which reads only committed directories,
 correctly reports those scenarios as "not measured". They are listed here
 because what happened is informative, and omitted from any published number
 because an uncommitted observation is not evidence. The overhaul's numbers
