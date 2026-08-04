@@ -82,9 +82,24 @@ type server struct {
 }
 
 type conn struct {
-	ws   *websocket.Conn
-	send chan []byte
-	room string
+	ws     *websocket.Conn
+	send   chan []byte
+	room   string
+	closed chan struct{}
+}
+
+// trySend never blocks the read loop: a dead writer or a full buffer means
+// this connection is gone, and blocking here would wedge the goroutine
+// forever (the reader would stop draining and the socket would never close).
+func (c *conn) trySend(frame []byte) bool {
+	select {
+	case c.send <- frame:
+		return true
+	case <-c.closed:
+		return false
+	default:
+		return false // slow consumer: drop, the 10s sweep repairs
+	}
 }
 
 func loadLua(dir string) (control, init_ *redis.Script, err error) {
@@ -164,10 +179,7 @@ func (s *server) leave(c *conn) {
 func (s *server) broadcast(room string, frame []byte) {
 	s.mu.RLock()
 	for peer := range s.rooms[room] {
-		select {
-		case peer.send <- frame:
-		default: // slow consumer: drop; the sweep repairs
-		}
+		peer.trySend(frame)
 	}
 	s.mu.RUnlock()
 }
@@ -181,10 +193,11 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	c := &conn{ws: ws, send: make(chan []byte, 256)}
+	c := &conn{ws: ws, send: make(chan []byte, 256), closed: make(chan struct{})}
 	ctx := r.Context()
 
 	go func() { // writer goroutine
+		defer close(c.closed) // unblocks trySend once writing is impossible
 		for frame := range c.send {
 			if err := ws.Write(ctx, websocket.MessageBinary, frame); err != nil {
 				return
@@ -217,7 +230,9 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 			copy(pong[1:9], data[1:9])
 			binary.LittleEndian.PutUint64(pong[9:], math.Float64bits(t1))
 			binary.LittleEndian.PutUint64(pong[17:], math.Float64bits(nowMs()))
-			c.send <- pong
+			if !c.trySend(pong) {
+				return
+			}
 
 		case 0x05: // Join
 			if len(data) < 2 {
@@ -237,15 +252,25 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			var tl luaTimeline
 			if json.Unmarshal([]byte(res.(string)), &tl) == nil {
-				c.send <- encodeTimeline(0x06, tl.toWire())
+				if !c.trySend(encodeTimeline(0x06, tl.toWire())) {
+					return
+				}
 			}
 
 		case 0x03: // Control
 			if len(data) < 11 {
 				continue
 			}
-			intent := []string{"play", "pause", "seek"}[data[1]%3]
+			// validate rather than coerce: %3 turned any garbage byte into a
+			// valid intent, and a NaN/Inf mediaTime would poison the timeline
+			if data[1] > 2 {
+				continue
+			}
+			intent := []string{"play", "pause", "seek"}[data[1]]
 			mediaTime := math.Float64frombits(binary.LittleEndian.Uint64(data[2:10]))
+			if math.IsNaN(mediaTime) || math.IsInf(mediaTime, 0) || mediaTime < 0 {
+				continue
+			}
 			n := int(data[10])
 			if len(data) < 11+n {
 				continue
@@ -255,7 +280,9 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 				[]string{"room:" + room + ":tl"}, intent,
 				strconv.FormatFloat(mediaTime, 'f', -1, 64), "relay").Result()
 			if err != nil || res == nil {
-				c.send <- []byte{0x07, 0}
+				if !c.trySend([]byte{0x07, 0}) {
+					return
+				}
 				continue
 			}
 			var tl luaTimeline
@@ -277,6 +304,11 @@ func main() {
 	opts, err := redis.ParseURL(*redisURL)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *secret == "" {
+		// an empty HMAC key verifies any token an attacker signs with the
+		// same empty key - refuse to start rather than accept forgeries
+		log.Fatal("JWT_SECRET (or -jwt-secret) is required")
 	}
 	s := &server{
 		rdb:       redis.NewClient(opts),

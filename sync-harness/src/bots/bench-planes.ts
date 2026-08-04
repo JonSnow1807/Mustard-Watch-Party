@@ -12,21 +12,33 @@ const GAP_MS = 2;
 async function bench(name: string, transport: SyncTransport, token: string): Promise<void> {
   await transport.connect(token);
   const rtts: number[] = [];
+  let timedOut = 0;
   for (let i = 0; i < PINGS; i++) {
     await new Promise<void>((resolve) => {
       const t0 = performance.now();
+      let settled = false;
+      const timer = setTimeout(() => {
+        // the callback stays registered on the transport; without this guard
+        // a late pong would append a bogus RTT AND (on the raw-WS plane,
+        // where pongs are matched FIFO) shift every later measurement
+        settled = true;
+        timedOut += 1;
+        resolve();
+      }, 1000);
       transport.sendClock(Date.now(), () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         rtts.push(performance.now() - t0);
         resolve();
       });
-      setTimeout(resolve, 1000);
     });
     await new Promise((r) => setTimeout(r, GAP_MS));
   }
   transport.disconnect();
   const sorted = [...rtts].sort((a, b) => a - b);
   console.log(
-    `${name}: n=${sorted.length} ` +
+    `${name}: n=${sorted.length}${timedOut ? ` (${timedOut} timed out)` : ''} ` +
       `P50=${percentile(sorted, 50).toFixed(2)}ms ` +
       `P95=${percentile(sorted, 95).toFixed(2)}ms ` +
       `P99=${percentile(sorted, 99).toFixed(2)}ms`,

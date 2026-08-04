@@ -99,6 +99,10 @@ export class Collector {
   private samples: CollectedSample[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private failures = 0;
+  /** guards against overlapping drains: cursors advance only after the
+   * awaited page.evaluate returns, so a second concurrent drain would
+   * re-read the same window and duplicate samples in the published data */
+  private draining = false;
 
   constructor(private clients: HarnessClient[]) {
     this.cursors = clients.map(() => 0);
@@ -110,7 +114,18 @@ export class Collector {
     }, intervalMs);
   }
 
-  private async drainAll(): Promise<void> {
+  private inFlight: Promise<void> | null = null;
+
+  private drainAll(): Promise<void> {
+    if (this.inFlight) return this.inFlight;
+    const run = this.drainOnce().finally(() => {
+      this.inFlight = null;
+    });
+    this.inFlight = run;
+    return run;
+  }
+
+  private async drainOnce(): Promise<void> {
     await Promise.all(
       this.clients.map(async (c, i) => {
         try {
@@ -132,6 +147,9 @@ export class Collector {
 
   async stop(): Promise<{ samples: CollectedSample[]; pollFailures: number }> {
     if (this.timer) clearInterval(this.timer);
+    // wait out any in-flight drain, THEN drain once more, so the tail of the
+    // run is never lost to the overlap guard
+    await this.drainAll();
     await this.drainAll();
     return { samples: this.samples, pollFailures: this.failures };
   }

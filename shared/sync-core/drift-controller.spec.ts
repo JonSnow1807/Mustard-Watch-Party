@@ -172,6 +172,62 @@ describe('DriftController — seek-lead learning', () => {
   });
 });
 
+describe('DriftController — nudge direction', () => {
+  it('re-aims immediately when drift flips sign without passing the deadband', () => {
+    const ctrl = new DriftController();
+    // enter NUDGING while ahead -> commands a slow-down (rate < 1)
+    const entering = drive(ctrl, [
+      { driftS: 0.3, fractionalRateOK: true },
+      { driftS: 0.3, fractionalRateOK: true },
+    ]);
+    const first = entering.find((a) => a.type === 'set-rate') as {
+      type: 'set-rate';
+      rate: number;
+    };
+    expect(first.rate).toBeLessThan(1);
+    // a seek flips the error to 'behind' without ever entering the deadband.
+    // The median-of-3 guard accepts the flip on the second sample - that is
+    // noise-rejection latency, not the 15s stuck timer this regression is
+    // about (before the fix, no re-aim happened until that timer fired).
+    const flipped = drive(
+      ctrl,
+      [
+        { driftS: -0.5, fractionalRateOK: true },
+        { driftS: -0.5, fractionalRateOK: true },
+        { driftS: -0.5, fractionalRateOK: true },
+      ],
+      101_000,
+    );
+    const reaimed = flipped.find((a) => a.type === 'set-rate') as {
+      type: 'set-rate';
+      rate: number;
+    };
+    expect(reaimed).toBeDefined();
+    expect(reaimed.rate).toBeGreaterThan(1); // now speeding up, not slowing
+  });
+});
+
+describe('DriftController — suspend hygiene', () => {
+  it('suspend clears applied-rate state so a resumed controller cannot leak it', () => {
+    const ctrl = new DriftController();
+    const entering = drive(ctrl, [
+      { driftS: 0.3, fractionalRateOK: true },
+      { driftS: 0.3, fractionalRateOK: true },
+    ]);
+    expect(types(entering)).toContain('set-rate');
+    ctrl.suspend();
+    ctrl.resume();
+    // the executor restored rate 1 on suspend; a later buffering event must
+    // NOT emit a stale clear-rate, which would prove leftover state
+    const buffering = drive(
+      ctrl,
+      [{ driftS: 0, playerState: 'buffering' }],
+      102_000,
+    );
+    expect(types(buffering)).toEqual(['none']);
+  });
+});
+
 describe('DriftController — lifecycle', () => {
   it('suspends corrections while buffering and clears any applied rate', () => {
     const ctrl = new DriftController();
@@ -197,7 +253,10 @@ describe('DriftController — lifecycle', () => {
     drive(ctrl, [{ driftS: 0, playerState: 'buffering' }]);
     const actions = drive(
       ctrl,
-      [{ driftS: -4 }], // fell 4s behind while buffering
+      // 1s behind: ABOVE seekThresholdS but BELOW instantSeekS, so only the
+      // wasBuffering waiver can produce a seek on the first eval (with -4s
+      // the instant path fired and the test passed even without the waiver)
+      [{ driftS: -1 }],
       110_000,
     );
     expect(types(actions)[0]).toBe('seek');
@@ -237,8 +296,22 @@ describe('DriftController — lifecycle', () => {
     const ctrl = new DriftController();
     const a = drive(ctrl, [{ playerState: 'paused', driftS: 0 }]);
     expect(types(a)).toEqual(['play']);
-    // the start enters SEEKING so its landing error is learned + corrected
+    // the start enters SEEKING so its landing error is corrected
     expect(ctrl.getStatus().state).toBe('SEEKING');
+  });
+
+  it('a play-start does not poison the seek-lead learner', () => {
+    // a joiner starts minutes away from the room position; that gross error
+    // is NOT a seek settle residual and must not move the lead EMA
+    const ctrl = new DriftController();
+    const leadBefore = ctrl.getStatus().seekLeadS;
+    drive(ctrl, [{ playerState: 'paused', driftS: -300 }]);
+    drive(
+      ctrl,
+      [{ driftS: 0.0 }, { driftS: 0.0 }, { driftS: 0.0 }, { driftS: 0.0 }],
+      120_000,
+    );
+    expect(ctrl.getStatus().seekLeadS).toBeCloseTo(leadBefore, 9);
   });
 
   it('does nothing while suspended and acts fast after resume', () => {

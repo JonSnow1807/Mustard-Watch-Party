@@ -192,6 +192,11 @@ export class BotClient {
   private execute(action: ControllerAction, tBot: number): void {
     switch (action.type) {
       case 'seek':
+        // same executor contract as the browser engine: a seek restores rate 1
+        this.player.setRate(1);
+        if (this.controller instanceof DisciplineController) {
+          this.controller.onRateApplied(1);
+        }
         this.player.seekTo(tBot, action.toMediaTime);
         break;
       case 'play':
@@ -207,9 +212,13 @@ export class BotClient {
         }
         break;
       }
-      case 'clear-rate':
-        this.player.setRate(1);
+      case 'clear-rate': {
+        const applied = this.player.setRate(1);
+        if (this.controller instanceof DisciplineController) {
+          this.controller.onRateApplied(applied);
+        }
         break;
+      }
       case 'none':
         break;
     }

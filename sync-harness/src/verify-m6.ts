@@ -145,9 +145,16 @@ const epoch0 = joinedB.timeline.storeEpoch;
   for (const [i, base] of B.entries()) {
     const s = i === 0 ? sockA : i === 1 ? sockB : await connect(B[2], users[2]);
     const t0 = Date.now();
-    const pong = await new Promise<ClockPong>((resolve) =>
-      s.emit(SYNC_EVENTS.clock, { t0 }, resolve),
-    );
+    const pong = await new Promise<ClockPong>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`clock ack timeout from instance ${i}`)),
+        5000,
+      );
+      s.emit(SYNC_EVENTS.clock, { t0 }, (p: ClockPong) => {
+        clearTimeout(timer);
+        resolve(p);
+      });
+    });
     const t3 = Date.now();
     offsets.push((pong.t1 - t0 + (pong.t2 - t3)) / 2);
     if (i === 2) s.disconnect();

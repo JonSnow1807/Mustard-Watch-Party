@@ -116,6 +116,8 @@ export class DriftController {
   private stableEvals = 0;
   private nudgeSince: number | null = null;
   private rateApplied = false;
+  /** direction of the applied nudge: +1 slowing down (ahead), -1 speeding up */
+  private nudgeSign: 1 | -1 | 0 = 0;
   private seekLead: number;
   private seeksIssued = 0;
   private nudgesIssued = 0;
@@ -125,10 +127,22 @@ export class DriftController {
     this.seekLead = tuning.seekLeadS;
   }
 
+  /**
+   * Stand down (tab hidden, sync toggled off). The caller is responsible for
+   * restoring playback rate 1 on the player - evaluate() returns exactly one
+   * action per call and suspend() returns none, so the controller cannot
+   * emit the clear itself. Everything it CAN own is reset here so a resumed
+   * controller never acts on pre-suspend state.
+   */
   suspend(): void {
     this.state = 'SUSPENDED';
     this.driftWindow = [];
     this.outOfBandCount = 0;
+    this.rateApplied = false;
+    this.nudgeSign = 0;
+    this.nudgeSince = null;
+    this.seekTargetS = null;
+    this.stableEvals = 0;
   }
 
   /** visibility restore / reconnect: evaluate immediately, hysteresis dropped */
@@ -162,6 +176,7 @@ export class DriftController {
       if (this.state !== 'SEEKING') this.state = 'BUFFERING';
       if (this.rateApplied) {
         this.rateApplied = false;
+        this.nudgeSign = 0;
         this.nudgeSince = null;
         return { type: 'clear-rate' };
       }
@@ -191,7 +206,11 @@ export class DriftController {
     if (input.playerState === 'paused' || input.playerState === 'cued') {
       this.state = 'SEEKING';
       this.lastSeekAt = input.tLocal;
-      this.seekTargetS = projectMediaTime(timeline, input.serverNow);
+      // deliberately NOT arming seekTargetS: a start's landing error is a
+      // gross position error (a joiner can be minutes off), not a seek
+      // settle residual - feeding it to the lead learner would poison the
+      // EMA that corrects real seeks
+      this.seekTargetS = null;
       this.stableEvals = 0;
       this.driftWindow = [];
       return { type: 'play' };
@@ -261,6 +280,7 @@ export class DriftController {
         this.state = 'LOCKED';
         this.nudgeSince = null;
         this.rateApplied = false;
+        this.nudgeSign = 0;
         return { type: 'clear-rate' };
       }
       if (this.state !== 'NUDGING') this.state = 'LOCKED';
@@ -277,14 +297,36 @@ export class DriftController {
     // error is small enough that a nudge closes it in reasonable time
     // (state cannot be SEEKING here - that branch always returns above)
     if (input.fractionalRateOK && absDrift <= this.tuning.rateZoneMaxS) {
+      const wantSign: 1 | -1 = drift > 0 ? 1 : -1;
       if (this.state !== 'NUDGING') {
         this.state = 'NUDGING';
         this.nudgeSince = input.tLocal;
         this.rateApplied = true;
+        this.nudgeSign = wantSign;
         this.nudgesIssued += 1;
-        const rate =
-          drift > 0 ? 1 - this.tuning.nudgeRate : 1 + this.tuning.nudgeRate;
-        return { type: 'set-rate', rate };
+        return {
+          type: 'set-rate',
+          rate:
+            wantSign > 0
+              ? 1 - this.tuning.nudgeRate
+              : 1 + this.tuning.nudgeRate,
+        };
+      }
+      if (wantSign !== this.nudgeSign) {
+        // The error changed sign without passing through the deadband (a
+        // seek or a stall can do that), so the applied nudge is now pushing
+        // the wrong way. Re-aim immediately instead of waiting out the
+        // stuck timer, which would make the error worse for up to 15s.
+        this.nudgeSign = wantSign;
+        this.nudgeSince = input.tLocal;
+        this.nudgesIssued += 1;
+        return {
+          type: 'set-rate',
+          rate:
+            wantSign > 0
+              ? 1 - this.tuning.nudgeRate
+              : 1 + this.tuning.nudgeRate,
+        };
       }
       if (
         this.nudgeSince !== null &&
@@ -293,6 +335,7 @@ export class DriftController {
         // stuck (or the probe lied): escalate
         this.nudgeSince = null;
         this.rateApplied = false;
+        this.nudgeSign = 0;
         return this.issueSeek(input, timeline);
       }
       // keep the applied rate; direction flips are handled by exit+re-enter
@@ -323,7 +366,11 @@ export class DriftController {
     this.outOfBandCount = 0;
     this.driftWindow = [];
     this.seeksIssued += 1;
-    if (this.rateApplied) this.rateApplied = false;
+    // A seek implies rate 1: the executor restores it (SyncEngine/bot
+    // executors set rate 1 before seeking), so dropping the flag here is
+    // truthful rather than a leak.
+    this.rateApplied = false;
+    this.nudgeSign = 0;
     const lead = timeline.isPlaying ? this.seekLead : 0;
     const target = projectMediaTime(timeline, input.serverNow) + lead;
     this.seekTargetS = target;

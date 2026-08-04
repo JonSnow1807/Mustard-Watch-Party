@@ -109,8 +109,12 @@ export class SyncEngine {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    if (enabled) this.controller.resume();
-    else this.controller.suspend();
+    if (enabled) {
+      this.controller.resume();
+    } else {
+      this.controller.suspend();
+      if (this.adapter) this.restoreRate(this.adapter);
+    }
   }
 
   onStatus(listener: (s: EngineStatus) => void): () => void {
@@ -133,13 +137,16 @@ export class SyncEngine {
     // the room and room-joined delivers a fresh timeline
     this.estimator.reset();
     this.burst(CLOCK_BURST_COUNT);
-    this.controller.resume();
+    // `enabled` is the single source of truth - a reconnect must never
+    // silently re-enable sync the user switched off
+    if (this.enabled) this.controller.resume();
   };
 
   private onVisibility = (): void => {
     if (document.hidden) {
       // throttled timers produce garbage clock samples; stand down
       this.controller.suspend();
+      if (this.adapter) this.restoreRate(this.adapter);
     } else {
       this.burst(4);
       if (this.enabled) this.controller.resume();
@@ -207,6 +214,10 @@ export class SyncEngine {
   private execute(action: ControllerAction, adapter: YouTubeAdapter): void {
     switch (action.type) {
       case 'seek':
+        // a seek implies rate 1: the controller drops its rate bookkeeping
+        // when it seeks and cannot emit a second action, so the executor
+        // owns the restore (otherwise the player keeps running at 0.95x)
+        this.restoreRate(adapter);
         adapter.seekTo(action.toMediaTime);
         break;
       case 'play':
@@ -232,10 +243,18 @@ export class SyncEngine {
         break;
       }
       case 'clear-rate':
-        adapter.setRate(1);
+        this.restoreRate(adapter);
         break;
       case 'none':
         break;
+    }
+  }
+
+  /** Return the player to rate 1 and keep the controller's belief in sync. */
+  private restoreRate(adapter: YouTubeAdapter): void {
+    const applied = adapter.setRate(1);
+    if (this.controller instanceof DisciplineController) {
+      this.controller.onRateApplied(applied);
     }
   }
 
@@ -272,7 +291,8 @@ export class SyncEngine {
     this.socket.off('room-joined', this.onRoomJoined);
     this.socket.off('connect', this.onReconnect);
     document.removeEventListener('visibilitychange', this.onVisibility);
-    this.adapter?.dispose();
+    // NOT adapter.dispose(): the component owns the adapter's lifetime and
+    // the engine can outlive/underlive it (socket reconnects vs video change)
     this.telemetry.uninstall();
     this.listeners.clear();
   }

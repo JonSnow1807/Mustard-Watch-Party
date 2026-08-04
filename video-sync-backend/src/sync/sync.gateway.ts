@@ -24,6 +24,12 @@ import { MetricsService } from '../metrics/metrics.service';
 import { TimelineService } from './timeline.service';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
 
+const CONTROL_INTENTS: ReadonlyArray<SyncControl['intent']> = [
+  'play',
+  'pause',
+  'seek',
+];
+
 interface RoomData {
   roomCode: string;
   userId: string;
@@ -298,7 +304,40 @@ export class SyncGateway
       event: 'sync:control',
     });
     this.metrics.wsEventsReceived.inc({ event: 'sync:control' });
+    // never let an unvalidated client string reach the timeline `reason`
+    // field or a Prometheus label (unbounded label cardinality is a DoS)
+    if (
+      !CONTROL_INTENTS.includes(data?.intent) ||
+      typeof data.mediaTime !== 'number' ||
+      !Number.isFinite(data.mediaTime) ||
+      data.mediaTime < 0
+    ) {
+      client.emit(SYNC_EVENTS.controlRejected, {
+        v: 1,
+        roomCode: data?.roomCode,
+        intent: data?.intent,
+        reason: 'room-not-found',
+      });
+      stop();
+      return;
+    }
     const userId = (client.data as AuthedSocketData).userId;
+    // membership, not just authentication: without this any authenticated
+    // socket could drive a guest-control room it never joined
+    if (this.userRooms.get(client.id) !== data.roomCode) {
+      this.metrics.controlEvents.inc({
+        type: data.intent,
+        result: 'rejected_not_in_room',
+      });
+      client.emit(SYNC_EVENTS.controlRejected, {
+        v: 1,
+        roomCode: data.roomCode,
+        intent: data.intent,
+        reason: 'not-controller',
+      });
+      stop();
+      return;
+    }
     const result = await this.timeline.handleControl(
       data.roomCode,
       client.id,
