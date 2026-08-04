@@ -48,6 +48,11 @@ interface RedisWithActor extends Redis {
     instanceId: string,
     ttlMs: string,
   ): Promise<string>;
+  actorReclaim(
+    leaseKey: string,
+    observedOwner: string,
+    observedFence: string,
+  ): Promise<number>;
   actorInit(
     leaseKey: string,
     timelineKey: string,
@@ -112,6 +117,10 @@ export class ActorRoomStateStore
     kv.defineCommand('actorClaim', {
       numberOfKeys: 1,
       lua: read('actor_claim.lua'),
+    });
+    kv.defineCommand('actorReclaim', {
+      numberOfKeys: 1,
+      lua: read('actor_reclaim.lua'),
     });
     kv.defineCommand('actorInit', {
       numberOfKeys: 2,
@@ -254,6 +263,27 @@ export class ActorRoomStateStore
     return committed;
   }
 
+  /**
+   * Every local read-project-commit mutation for a room runs here, in order.
+   * Without it, two concurrent operations both read the in-memory timeline
+   * before either commit replaced it, and the later one projects from stale
+   * state - which is precisely the serialization the class doc promises.
+   */
+  private enqueue<T>(roomCode: string, op: () => Promise<T>): Promise<T> {
+    const prior = this.queues.get(roomCode) ?? Promise.resolve();
+    const next = prior.catch(() => undefined).then(op);
+    this.queues.set(roomCode, next);
+    // release the entry once settled, but only while it is still the head:
+    // a newer queued operation must not be discarded, and retaining every
+    // room's promise forever would grow without bound
+    void next
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.queues.get(roomCode) === next) this.queues.delete(roomCode);
+      });
+    return next;
+  }
+
   applyControl(
     roomCode: string,
     intent: ControlIntent,
@@ -261,15 +291,9 @@ export class ActorRoomStateStore
     serverNow: number,
     by: string,
   ): Promise<ApplyOutcome> {
-    const prior = this.queues.get(roomCode) ?? Promise.resolve();
-    const next = prior
-      .catch(() => undefined)
-      .then(() =>
-        this.applyControlSerial(roomCode, intent, mediaTime, serverNow, by),
-      );
-    this.queues.set(roomCode, next);
-    void next.catch(() => undefined); // the caller owns the rejection
-    return next;
+    return this.enqueue(roomCode, () =>
+      this.applyControlSerial(roomCode, intent, mediaTime, serverNow, by),
+    );
   }
 
   private async applyControlSerial(
@@ -298,9 +322,22 @@ export class ActorRoomStateStore
           { roomCode, owner: lease.owner },
           'actor: forward undeliverable, reclaiming',
         );
-        await this.kv.del(this.leaseKey(roomCode));
+        // compare-and-delete: revoke ONLY the lease we observed, never a
+        // newer owner's that appeared while we were publishing
+        await this.kv.actorReclaim(
+          this.leaseKey(roomCode),
+          lease.owner,
+          lease.epoch,
+        );
         const retaken = await this.claim(roomCode);
-        if (!retaken.mine) return { kind: 'forwarded' };
+        if (!retaken.mine) {
+          // P07: a live owner exists after all - forward rather than drop
+          const second = await this.pub.publish(
+            this.forwardChannel(retaken.owner),
+            JSON.stringify({ roomCode, intent, mediaTime, by }),
+          );
+          return second > 0 ? { kind: 'forwarded' } : { kind: 'missing' };
+        }
         const current = await this.get(roomCode);
         if (!current) return { kind: 'missing' };
         this.owned.set(roomCode, { fence: retaken.epoch, timeline: current });
@@ -342,16 +379,20 @@ export class ActorRoomStateStore
     return delivered > 0 ? { kind: 'forwarded' } : { kind: 'missing' };
   }
 
-  async applySnapshot(
-    roomCode: string,
-    serverNow: number,
-  ): Promise<Timeline | null> {
-    const entry = this.owned.get(roomCode);
-    // only the owner sweeps its rooms; non-owners no-op
-    if (!entry) return null;
-    if (!entry.timeline.isPlaying) return null;
-    const next = snapshot(entry.timeline, serverNow);
-    return this.commit(roomCode, entry.fence, next);
+  applySnapshot(roomCode: string, serverNow: number): Promise<Timeline | null> {
+    // shares applyControl's queue: an unserialized sweep could read the
+    // pre-control timeline and commit over the control's result
+    return this.enqueue(roomCode, () => {
+      const entry = this.owned.get(roomCode);
+      // only the owner sweeps its rooms; non-owners no-op
+      if (!entry) return Promise.resolve(null);
+      if (!entry.timeline.isPlaying) return Promise.resolve(null);
+      return this.commit(
+        roomCode,
+        entry.fence,
+        snapshot(entry.timeline, serverNow),
+      );
+    });
   }
 
   async init(

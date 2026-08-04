@@ -82,11 +82,18 @@ async function main(): Promise<void> {
     });
     const counts = byIndex.map((m) => m.size);
     const best = Math.max(...counts);
+    // Per-client counts are not enough: three clients could each hear plenty
+    // of clicks with little OVERLAP, and only shared clicks can be paired.
+    // Coverage is therefore the intersection against the richest client.
+    const shared = [...byIndex[0].keys()].filter((k) =>
+      byIndex.every((m) => m.has(k)),
+    ).length;
     const thin = counts.filter((c) => c < best * MIN_COVERAGE).length;
-    if (best === 0 || thin > 0) {
+    if (best === 0 || thin > 0 || shared < best * MIN_COVERAGE) {
       console.error(
-        `[audio] INVALID: click coverage ${counts.join('/')} - a client was ` +
-          `not playing steadily. Refusing to publish a sync number from it.`,
+        `[audio] INVALID: per-client coverage ${counts.join('/')}, shared ` +
+          `${shared} - clients were not playing the same steady stretch. ` +
+          `Refusing to publish a sync number from it.`,
       );
       process.exitCode = 2;
     }
@@ -118,7 +125,8 @@ async function main(): Promise<void> {
       durationS: RUN_S,
       warmupExcludedS: WARMUP_S,
       clickCoverage: counts,
-      valid: best > 0 && thin === 0,
+      sharedClicks: shared,
+      valid: best > 0 && thin === 0 && shared >= best * MIN_COVERAGE,
       pairedClicks: paired.length,
       audioTruthMs: {
         p50: percentile(sortedA, 50),

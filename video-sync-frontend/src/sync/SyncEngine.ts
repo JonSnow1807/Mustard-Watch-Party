@@ -102,6 +102,9 @@ export class SyncEngine {
   attachAdapter(adapter: EngineAdapter): void {
     this.adapter = adapter;
     void adapter.probeFractionalRate().then((ok) => {
+      // a probe from an adapter that has since been replaced (video change,
+      // reconnect) must not decide anything for the current one
+      if (this.adapter !== adapter || this.disposed) return;
       this.fractionalRateOK = ok;
       if (!ok) this.fallBackToSeekFirst('probe failed');
     });
@@ -121,7 +124,10 @@ export class SyncEngine {
     console.warn(`[sync] fractional rate unsupported (${reason}); using SEEK-first controller`);
     if (this.adapter) this.adapter.setRate(1);
     this.controller = new DriftController();
-    if (!this.enabled) this.controller.suspend();
+    // the replacement inherits the current stand-down state: `enabled` stays
+    // true while a tab is hidden, so checking it alone would let a hidden
+    // tab resume issuing playback actions through the new controller
+    if (!this.enabled || document.hidden) this.controller.suspend();
   }
 
   /** Explicit user gesture: play/pause/scrub. Wait-for-broadcast — the

@@ -86,7 +86,9 @@ them:
 ```bash
 # 1. the PID listening on :3000 must be the one you just started
 lsof -nP -iTCP:3000 -sTCP:LISTEN
-# 2. the responding instance names itself, and only plane B holds leases
+# 2. the responding instance names itself. NOTE: instance_id is an env var,
+#    so it identifies the PROCESS, not the build - set it per launch (e.g.
+#    INSTANCE_ID=$MODE-$(git rev-parse --short HEAD)) if you need both.
 curl -s localhost:3000/metrics | grep -m1 instance_id
 docker exec <redis> redis-cli --scan --pattern 'room:*:lease'   # mid-run
 ```
