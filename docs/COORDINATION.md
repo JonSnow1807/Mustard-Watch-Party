@@ -1,0 +1,83 @@
+# Coordination planes: shared-store vs room actors
+
+Two ways to keep N server instances agreeing on one room's timeline, both
+implemented, both model-checked, measured head to head. `STORE_MODE`
+selects: `lua` (default) or `actor`.
+
+## Plane A — shared store, Lua-serialized (`STORE_MODE=lua`)
+
+The room timeline is a Redis hash; every mutation is one Lua script
+(read → validate → `seq+1` → HSET → return committed state). Redis's
+single-threaded script execution *is* the serializer: concurrent control
+events from different instances commit as `(seq n, n+1)` with no locks and
+no ownership concept. Verified in `formal/SyncTimeline.tla`.
+
+## Plane B — single-owner room actors with lease fencing (`STORE_MODE=actor`)
+
+One instance owns a room under a lease; the owner holds the timeline **in
+memory**, serializes control events locally, and commits under its **fence**
+(the lease epoch). Non-owners never touch state — they forward the intent
+over pub/sub and the owner commits and broadcasts. Lease expiry lets any
+instance claim with a fresh, higher fence; a revived instance that still
+believes it owns the room is a **zombie**, and its commit is rejected by the
+Lua fence check.
+
+Specified **before implementation** in `formal/SyncActor.tla` and verified by
+TLC: at most one current owner, no stale-fence write accepted, commit
+monotonicity, client no-regress under ownership churn, and convergence
+despite crash/revive ([docs/FORMAL.md](FORMAL.md)).
+
+Epochs do double duty: the zombie fence **is** the client ordering rule from
+plane A, so plane B needs no new client-side concept.
+
+## The A/B
+
+25 bots, one room, 120s, identical scripted control events, same machine,
+same Redis, single instance per arm:
+
+| | plane A (lua) | plane B (actor) |
+|---|---|---|
+| client drift P50 | 66.4ms | 65.5ms |
+| client drift P95 | 119.1ms | 119.8ms |
+| client drift P99 | 265.0ms | 264.2ms |
+| seq gaps | 0 | 0 |
+| server control handler, mean | **4.2ms** | **7.2ms** |
+
+**Honest conclusion: at this scale the actor plane costs more than it
+saves.** Client-visible sync quality is statistically indistinguishable —
+coordination is sub-millisecond either way, which is noise against the 250ms
+control loop and the network RTTs that actually bound drift. Server-side, the
+actor plane is *slower* per control, because a first control on a room pays a
+lease claim before its commit, where plane A pays one script call. (Small
+sample: 4 control events per arm; the direction is clear, the magnitude is
+not.)
+
+**What the measurement cannot show** is where plane B actually pays: room
+locality (an owner's in-memory timeline needs no store read), blast radius (a
+Redis stall stops every room in plane A), and the scale-out shape — rooms
+shard across instances instead of funnelling through one Redis. None of that
+appears in a single-instance, one-room, 25-client test. Plane A remains the
+default because it is simpler and, *by measurement*, not worse for this
+product's shape.
+
+## Two bugs the implementation surfaced
+
+1. **Non-atomic init.** 25 concurrent joins each passed a "no state yet"
+   check and each committed a seq, so joiners recorded phantom gaps. Fixed
+   by moving create-if-absent *inside* the fenced Lua script — the same
+   atomicity plane A always had.
+2. **Publish-before-commit.** The in-memory authority was seeded before the
+   store accepted it, exposing a seq the room never broadcast. The actor now
+   publishes ownership only after an accepted commit.
+
+## A measurement trap worth recording
+
+Three "actor plane" runs were served by a **stale backend**: `pkill -f "node
+dist/main"` did not kill the npm-wrapped process, the new one failed to bind
+with `EADDRINUSE`, and the harness happily measured the old one. The runs
+looked plausible — sensible drift, alarming seq gaps — and were entirely
+meaningless. The gaps only vanished once the port owner was killed by PID.
+
+The lesson is in the runbook now: **prove which build answered.** Plane B is
+confirmed by scanning for `room:*:lease` keys mid-run (only plane B creates
+them) and by `instance_id` on the scraped metrics.

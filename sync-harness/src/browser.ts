@@ -36,6 +36,7 @@ export async function openClient(
   user: HarnessUser,
   roomCode: string,
   wsUrl: string,
+  controller: 'reactive' | 'predictive' = 'reactive',
 ): Promise<HarnessClient> {
   const context = await browser.newContext({ viewport: { width: 500, height: 400 } });
   // AuthContext reads localStorage.user; seeding it skips the login UI so
@@ -44,7 +45,8 @@ export async function openClient(
     window.localStorage.setItem('user', JSON.stringify(u));
   }, user);
   const page = await context.newPage();
-  const url = `${FRONTEND}/room/${roomCode}?ws=${encodeURIComponent(wsUrl)}`;
+  const arm = controller === 'predictive' ? '&controller=P' : '';
+  const url = `${FRONTEND}/room/${roomCode}?ws=${encodeURIComponent(wsUrl)}${arm}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   return { index, user, context, page };
 }

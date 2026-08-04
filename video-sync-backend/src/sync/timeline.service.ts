@@ -7,6 +7,8 @@ import { ROOM_STATE_STORE, RoomStateStore } from './room-state.store';
 
 export type ControlResult =
   | { ok: true; timeline: Timeline }
+  /** the actor plane forwarded this intent; the room's owner broadcasts it */
+  | { ok: true; timeline: null; forwarded: true }
   | { ok: false; reason: 'not-controller' | 'rate-limited' | 'room-not-found' };
 
 interface RoomMeta {
@@ -111,16 +113,20 @@ export class TimelineService {
     if (!this.takeToken(socketId, now)) {
       return { ok: false, reason: 'rate-limited' };
     }
-    const timeline = await this.store.applyControl(
+    const outcome = await this.store.applyControl(
       roomCode,
       intent,
       mediaTime,
       now,
       userId,
     );
-    if (!timeline) return { ok: false, reason: 'room-not-found' };
+    if (outcome.kind === 'missing')
+      return { ok: false, reason: 'room-not-found' };
+    if (outcome.kind === 'forwarded') {
+      return { ok: true, timeline: null, forwarded: true };
+    }
     this.schedulePersist(roomCode);
-    return { ok: true, timeline };
+    return { ok: true, timeline: outcome.timeline };
   }
 
   /** Periodic re-anchor; null when the room has no state (nothing to sweep). */
