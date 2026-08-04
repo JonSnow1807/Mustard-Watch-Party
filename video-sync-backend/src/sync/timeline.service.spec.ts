@@ -44,7 +44,9 @@ describe('TimelineService', () => {
       100,
       6_000,
     );
-    if (!a.ok || !b.ok) throw new Error('controls rejected');
+    if (!a.ok || !b.ok || !a.timeline || !b.timeline) {
+      throw new Error('controls rejected or forwarded');
+    }
     expect(a.timeline.seq).toBe(1);
     expect(b.timeline.seq).toBe(2);
     expect(b.timeline.mediaTime).toBe(100);

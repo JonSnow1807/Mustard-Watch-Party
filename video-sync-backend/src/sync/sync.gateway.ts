@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -22,6 +23,8 @@ import {
 import { ClockDomainService } from '../redis/clock-domain.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { TimelineService } from './timeline.service';
+import { ActorRoomStateStore } from './actor-room-state.store';
+import { ROOM_STATE_STORE, RoomStateStore } from './room-state.store';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
 
 const CONTROL_INTENTS: ReadonlyArray<SyncControl['intent']> = [
@@ -63,7 +66,29 @@ export class SyncGateway
     private timeline: TimelineService,
     private clock: ClockDomainService,
     private metrics: MetricsService,
-  ) {}
+    @Inject(ROOM_STATE_STORE) private store: RoomStateStore,
+  ) {
+    if (this.store instanceof ActorRoomStateStore) {
+      // actor plane: intents forwarded by non-owners execute HERE, on the
+      // room's owner, and the resulting timeline fans out to every instance
+      // through the socket.io adapter
+      this.store.setForwardHandler(async (c) => {
+        const result = await this.timeline.handleControl(
+          c.roomCode,
+          `forward:${c.by}`,
+          c.by,
+          c.intent,
+          c.mediaTime,
+          this.clock.now(),
+        );
+        if (result.ok && result.timeline) {
+          this.server
+            .to(c.roomCode)
+            .emit(SYNC_EVENTS.timeline, result.timeline);
+        }
+      });
+    }
+  }
 
   afterInit(server: Server): void {
     // identity is derived server-side at connect; client-asserted userIds
@@ -356,6 +381,15 @@ export class SyncGateway
         roomCode: data.roomCode,
         intent: data.intent,
         reason: result.reason,
+      });
+      stop();
+      return;
+    }
+    if (result.timeline === null) {
+      // actor plane: the room's owner instance commits and broadcasts
+      this.metrics.controlEvents.inc({
+        type: data.intent,
+        result: 'forwarded',
       });
       stop();
       return;

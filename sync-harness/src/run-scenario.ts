@@ -21,6 +21,9 @@ import type { RunMeta, ScenarioSpec } from './types.js';
 
 const N_CLIENTS = 3;
 const ENGINE = (process.env.HARNESS_ENGINE ?? 'baseline') as RunMeta['engine'];
+const CONTROLLER = (process.env.HARNESS_CONTROLLER ?? 'reactive') as
+  | 'reactive'
+  | 'predictive';
 const OUT_ROOT = process.env.HARNESS_OUT ?? join(process.cwd(), 'runs');
 const COMPOSE = 'docker compose -f lab/docker-compose.harness.yml';
 
@@ -60,7 +63,8 @@ async function clearImpairment(s: ScenarioSpec): Promise<void> {
 }
 
 async function runScenario(s: ScenarioSpec, attempt = 1): Promise<boolean> {
-  const runId = `${s.id}-${ENGINE}-${Date.now().toString(36)}`;
+  const armTag = CONTROLLER === 'predictive' ? '-servo' : '';
+  const runId = `${s.id}-${ENGINE}${armTag}-${Date.now().toString(36)}`;
   console.log(`\n=== ${s.id} (${s.title}) — run ${runId}, attempt ${attempt} ===`);
 
   if (!(await backendHealthy())) {
@@ -86,7 +90,14 @@ async function runScenario(s: ScenarioSpec, attempt = 1): Promise<boolean> {
     for (let i = 0; i < N_CLIENTS; i++) {
       const waitS = TIMELINE.joinAtS[i] - (Date.now() - scenarioStart) / 1000;
       if (waitS > 0) await sleep(waitS * 1000);
-      const c = await openClient(browser, i, users[i], room.code, wsUrl);
+      const c = await openClient(
+        browser,
+        i,
+        users[i],
+        room.code,
+        wsUrl,
+        CONTROLLER,
+      );
       clients.push(c);
       log.record('join', i);
       await waitForShim(c);
@@ -154,7 +165,9 @@ async function runScenario(s: ScenarioSpec, attempt = 1): Promise<boolean> {
       wsUrl,
       hardware: `${hostname()} · ${process.arch} · node ${process.version}`,
       engine: ENGINE,
-      notes: healthNote,
+      notes: [healthNote, `controller=${CONTROLLER}`]
+        .filter(Boolean)
+        .join(' | '),
     };
     const dir = join(OUT_ROOT, runId);
     await writeRun(dir, meta, samples, log.events, stats, pairwiseSeries);

@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_KV } from '../redis/redis.module';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
-import { RoomStateStore } from './room-state.store';
+import { ApplyOutcome, RoomStateStore } from './room-state.store';
 
 // Redis hash per room is the source of truth; ONE Lua script per mutation is
 // the serializer - Redis's single-threaded execution orders concurrent
@@ -89,14 +89,15 @@ export class RedisRoomStateStore implements RoomStateStore {
     mediaTime: number,
     _serverNow: number, // stamping happens inside Lua from redis TIME (D6)
     by: string,
-  ): Promise<Timeline | null> {
+  ): Promise<ApplyOutcome> {
     const result = await this.redis.mustardApplyControl(
       this.key(roomCode),
       intent,
       String(mediaTime),
       by,
     );
-    return this.parse(result);
+    const timeline = this.parse(result);
+    return timeline ? { kind: 'committed', timeline } : { kind: 'missing' };
   }
 
   async applySnapshot(
