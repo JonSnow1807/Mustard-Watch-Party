@@ -167,9 +167,20 @@ mid-run Redis restart) measured 2–4× worse tails and were superseded by
 these controlled re-runs; both sets exist in history, and conditions are
 recorded per run.
 
-Protocol-level (bot fleet, local): 10 bots × 150s — P50 71ms / P95 112ms /
-P99 195ms, growth +5.6ms/min (bounded); 100 bots, one room, one instance —
-P50 77ms / P95 170ms. Multi-instance: see `docs/SCALING.md` for the
+Protocol-level (bot fleet, local, reactive controller): 10 bots × 150s —
+P50 74ms / P95 113ms / P99 255ms, growth +1.7ms/min (bounded); 100 bots, one
+room, one instance — P50 68ms / P95 147ms, growth −1.3ms/min, zero seq gaps.
+With the predictive servo (M9) the same 10-bot cell reports P50 **7.3ms** /
+P95 83ms — the servo cancels steady-state drift outright, and transients
+(joins, seeks, stalls) set the shared P99.
+
+> **Protocol-level numbers were re-measured on 2026-08-04.** A defect in the
+> bot fleet's simulated player (it discarded up to one 250ms tick of playback
+> per drain/stall event) had *inflated* every protocol-level drift figure.
+> The figures below are post-fix. **Real-browser measurements are unaffected**
+> - those drive actual YouTube players, not the simulator - so the before/after
+> matrix above is unchanged.
+ Multi-instance: see `docs/SCALING.md` for the
 1-vs-3-instance comparison, the knee, and its attribution.
 
 ## 9. Known limitations

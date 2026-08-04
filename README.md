@@ -41,7 +41,7 @@ measured), and no correction mechanism existed
 ([baseline findings](docs/measurements/baseline/README.md)).
 
 Protocol-level, on the production multi-instance plane: 100 clients in one
-room hold P95 ≈ 170ms; a 10-cell load sweep (10→250 clients × 1/3 instances)
+room hold P95 ≈ 147ms (P50 68ms); a 10-cell load sweep (10→250 clients × 1/3 instances)
 found **no SLO breach within the load generator's valid range**, with the
 trend lines and the extrapolated knee stated honestly
 ([scaling results](docs/SCALING.md#5-load-characterization)).

@@ -13,10 +13,13 @@ The identical bot suite (shared estimator + controller + SimPlayer, real
 JWT auth) runs against either plane via a transport abstraction
 (`sync-harness/src/bots/transport.ts`), gates included:
 
-| plane | drift P50 | P95 | slope | seq gaps | gate |
-|---|---|---|---|---|---|
-| node / Socket.IO / JSON | 79ms | 165ms | −4ms/min | 0 | pass |
-| relay-go / raw WS / binary | 80ms | 164ms | +2ms/min | 0 | pass |
+| plane | drift P50 | P95 | seq gaps | gate |
+|---|---|---|---|---|
+| node / Socket.IO / JSON | 73ms | 115ms | 0 | pass |
+| relay-go / raw WS / binary | 75ms | 116ms | 0 | pass |
+
+*(10 bots × 120s each, re-measured after the simulated-player fix described
+in `docs/SYNC_DESIGN.md` §8.)*
 
 Same protocol, same convergence, cross-language — which is the point.
 

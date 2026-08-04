@@ -109,6 +109,15 @@ attest ([full run](measurements/sweep/), charts:
 [drift](measurements/sweep/charts/sweep-drift.svg) ·
 [lag](measurements/sweep/charts/sweep-lag.svg)).
 
+> **Sweep provenance.** This sweep predates the 2026-08-04 fix to the
+> simulated player (it discarded up to one 250ms tick per drain/stall event,
+> inflating drift). Post-fix spot checks put the same cells ~30% lower
+> (10 bots: P95 115ms vs 167ms). The *shape* of the result — a flat,
+> load-independent drift floor with the load signal in the server metrics —
+> is unchanged, and so is the conclusion; the absolute floor is lower than
+> the table states. The sweep is re-run before any of these figures is
+> quoted as a headline.
+
 ## 6. Production topology and cost
 
 Render Starter backend (~$7/mo, always-on WebSockets) running the Redis
