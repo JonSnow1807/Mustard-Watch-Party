@@ -29,6 +29,14 @@ followers never started playing at all. Runs:
 [`docs/measurements/`](docs/measurements/) — baseline, after (reactive),
 servo (predictive).*
 
+**Validated against the signal, not the clock.** Player-API drift is the
+instrument grading itself, so a separate track measures the *physical* output:
+three browsers play a click track, an AudioWorklet timestamps each burst on the
+audio thread, and the same click is differenced across clients. Truth: **P50
+13.2ms / P95 64.0ms** where the player API claimed 7.9 / 19.0ms — the API-based
+numbers are **optimistic by ~45ms at P95**, and that gap is now measured rather
+than assumed ([docs/AUDIO_TRUTH.md](docs/AUDIO_TRUTH.md)).
+
 Clock-sync theory, validated in vivo: under the asymmetric path (S6) the
 clients' own offset estimates carry a **+50.5ms** bias against a **+50.0ms**
 prediction (asym/2), with the symmetric control at 0.0ms — the irreducible
@@ -85,7 +93,9 @@ flowchart LR
   live instances). Kill -9 an instance mid-playback and the room carries on.
 
 Full design: [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md) ·
-[docs/SCALING.md](docs/SCALING.md)
+[scaling & coordination](docs/SCALING.md) · [two coordination planes, measured](docs/COORDINATION.md) ·
+[formal verification](docs/FORMAL.md) · [audio ground truth](docs/AUDIO_TRUTH.md) ·
+[Go relay](docs/RELAY.md)
 
 ## Honest limits
 

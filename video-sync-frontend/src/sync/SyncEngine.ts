@@ -13,7 +13,22 @@ import {
 } from '../shared/sync-core/drift-controller';
 import { isNewer, projectMediaTime } from '../shared/sync-core/timeline';
 import { TelemetryRing } from './telemetry';
-import type { YouTubeAdapter } from './YouTubeAdapter';
+import type { PlayerAdapter } from '../shared/sync-core/player-adapter';
+
+/**
+ * What the engine needs from a player, beyond the shared PlayerAdapter
+ * surface. Deliberately structural: the engine drives YouTube and a plain
+ * <video> element through the same code path, which is what makes the sync
+ * core player-agnostic rather than YouTube-shaped.
+ */
+export interface EngineAdapter extends PlayerAdapter {
+  /** numeric player state for the harness telemetry contract */
+  getRawState(): number;
+  getDuration(): number;
+  /** does this player honour fractional playback rates? (per video) */
+  probeFractionalRate(): Promise<boolean>;
+  dispose(): void;
+}
 
 export interface EngineStatus {
   timeline: Timeline | null;
@@ -53,7 +68,7 @@ export class SyncEngine {
       : new DisciplineController();
   private telemetry = new TelemetryRing();
   private timeline: Timeline | null = null;
-  private adapter: YouTubeAdapter | null = null;
+  private adapter: EngineAdapter | null = null;
   private fractionalRateOK = false;
   private enabled = true;
   private needsGesture = false;
@@ -84,7 +99,7 @@ export class SyncEngine {
     this.ctrlTimer = setInterval(() => this.tick(), CTRL_TICK_MS);
   }
 
-  attachAdapter(adapter: YouTubeAdapter): void {
+  attachAdapter(adapter: EngineAdapter): void {
     this.adapter = adapter;
     void adapter.probeFractionalRate().then((ok) => {
       this.fractionalRateOK = ok;
@@ -213,7 +228,7 @@ export class SyncEngine {
     this.emitStatus(tLocal);
   }
 
-  private execute(action: ControllerAction, adapter: YouTubeAdapter): void {
+  private execute(action: ControllerAction, adapter: EngineAdapter): void {
     switch (action.type) {
       case 'seek':
         // a seek implies rate 1: the controller drops its rate bookkeeping
@@ -253,7 +268,7 @@ export class SyncEngine {
   }
 
   /** Return the player to rate 1 and keep the controller's belief in sync. */
-  private restoreRate(adapter: YouTubeAdapter): void {
+  private restoreRate(adapter: EngineAdapter): void {
     const applied = adapter.setRate(1);
     if (this.controller instanceof DisciplineController) {
       this.controller.onRateApplied(applied);
