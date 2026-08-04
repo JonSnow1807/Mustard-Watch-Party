@@ -21,6 +21,7 @@ interface Args {
   durationS: number;
   gate: boolean;
   wsUrl: string;
+  controller: 'reactive' | 'predictive';
 }
 
 function parseArgs(): Args {
@@ -33,6 +34,7 @@ function parseArgs(): Args {
     durationS: parseInt(get('--duration') ?? '90', 10),
     gate: process.argv.includes('--gate'),
     wsUrl: get('--ws') ?? 'http://localhost:3000',
+    controller: (get('--controller') ?? 'reactive') as 'reactive' | 'predictive',
   };
 }
 
@@ -59,9 +61,12 @@ async function main(): Promise<void> {
         clockOffsetMs: (rng() - 0.5) * 2000, // ±1s injected offsets
         clockSkew: (rng() - 0.5) * 160e-6, // ±80ppm
         seed: 1000 + i,
+        controller: args.controller,
         player: {
           playbackSkew: (rng() - 0.5) * 160e-6,
-          fractionalRateOK: i % 4 === 0, // a quarter of the fleet has RATE mode
+          // A/B fairness: both controller arms face fractional-capable
+          // players (measured reality: the probe passes on real YouTube)
+          fractionalRateOK: true,
         },
       }),
     );
@@ -168,6 +173,7 @@ async function main(): Promise<void> {
 
   const summary = {
     runId,
+    controller: args.controller,
     n: args.n,
     durationS: args.durationS,
     steadySamples: steadyDrifts.length,
