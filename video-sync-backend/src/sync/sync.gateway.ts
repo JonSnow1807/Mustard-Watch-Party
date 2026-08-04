@@ -23,7 +23,11 @@ import { ClockDomainService } from '../redis/clock-domain.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { TimelineService } from './timeline.service';
 import { ActorRoomStateStore } from './actor-room-state.store';
-import { ROOM_STATE_STORE, RoomStateStore } from './room-state.store';
+import {
+  ROOM_STATE_STORE,
+  RoomStateStore,
+  SWEEP_INTERVAL_MS,
+} from './room-state.store';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
 
 const CONTROL_INTENTS: ReadonlyArray<SyncControl['intent']> = [
@@ -408,7 +412,7 @@ export class SyncGateway
    * or lossy deliveries self-heal within one sweep period; clients drop
    * stale (storeEpoch, seq) so redundancy is harmless.
    */
-  @Interval(10_000)
+  @Interval(SWEEP_INTERVAL_MS)
   async sweepTimelines() {
     const activeRooms = new Set(this.userRooms.values());
     this.metrics.wsRoomsActive.set(activeRooms.size);

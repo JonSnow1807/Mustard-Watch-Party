@@ -344,6 +344,7 @@ func main() {
 
 	// 10s snapshot sweep (the repair channel), same semantics as the Node plane
 	go func() {
+		const sweepMinIntervalMS = 9000
 		common, errC := os.ReadFile(filepath.Join(*luaDir, "common.lua"))
 		snap, errS := os.ReadFile(filepath.Join(*luaDir, "apply_snapshot.lua"))
 		if errC != nil || errS != nil {
@@ -360,8 +361,11 @@ func main() {
 			}
 			s.mu.RUnlock()
 			for _, room := range rooms {
+				// same dedup contract as the Node plane: the script commits at
+				// most one sweep per room per period no matter how many
+				// instances call it, and returns nil to the losers
 				raw, ok := luaString(snapshotScript.Run(context.Background(), s.rdb,
-					[]string{"room:" + room + ":tl"}).Result())
+					[]string{"room:" + room + ":tl"}, sweepMinIntervalMS).Result())
 				if !ok {
 					continue
 				}

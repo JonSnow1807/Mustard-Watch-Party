@@ -52,7 +52,12 @@ export interface BotSample {
 export interface BotReport {
   bot: number;
   samples: BotSample[];
+  /** seqs this bot NEVER received on an epoch it was following (true loss) */
   seqGaps: number[];
+  /** timelines that arrived after a higher seq on the same epoch: reordered,
+   *  not lost. Harmless by design - `isNewer` drops them - but counted so a
+   *  reorder can never be mistaken for a gap. */
+  seqReorders: number;
   handlerErrors: string[];
   rejected: number;
 }
@@ -66,7 +71,11 @@ export class BotClient {
   private rng: () => number;
   private epoch = Date.now();
   private samples: BotSample[] = [];
-  private seenSeqs: number[] = [];
+  /** every seq received per epoch, whether or not `isNewer` applied it -
+   *  a gap is decided at report time from the complete set, so a late
+   *  low seq retracts the gap its successor would otherwise imply */
+  private seqsByEpoch = new Map<string, Set<number>>();
+  private seqReorders = 0;
   private handlerErrors: string[] = [];
   private rejected = 0;
   private timers: Array<ReturnType<typeof setInterval>> = [];
@@ -103,19 +112,14 @@ export class BotClient {
         ? new RawWSBinaryTransport(this.cfg.wsUrl)
         : new SocketIOTransport(this.cfg.wsUrl);
     this.transport.onTimeline((tl: Timeline) => {
+      this.recordSeq(tl);
       if (isNewer(tl, this.timeline)) {
-        if (
-          this.timeline &&
-          tl.storeEpoch === this.timeline.storeEpoch &&
-          tl.seq > this.timeline.seq + 1
-        ) {
-          for (let missing = this.timeline.seq + 1; missing < tl.seq; missing++) {
-            // gaps are repaired by the sweep, but we count them honestly
-            this.seenSeqs.push(-missing);
-          }
-        }
         this.timeline = tl;
-        this.seenSeqs.push(tl.seq);
+      } else if (this.timeline && tl.storeEpoch === this.timeline.storeEpoch) {
+        // same epoch, not newer: it arrived out of order behind a higher
+        // seq. The protocol is built to tolerate this; count it separately
+        // so it is never reported as a lost message.
+        this.seqReorders += 1;
       }
     });
     this.transport.onRejected(() => {
@@ -129,10 +133,19 @@ export class BotClient {
 
   async join(roomCode: string): Promise<void> {
     const tl = await this.transport.join(roomCode, this.user.id);
+    if (tl) this.recordSeq(tl);
     if (tl && isNewer(tl, this.timeline)) {
       this.timeline = tl;
-      this.seenSeqs.push(tl.seq);
     }
+  }
+
+  private recordSeq(tl: Timeline): void {
+    let seen = this.seqsByEpoch.get(tl.storeEpoch);
+    if (!seen) {
+      seen = new Set();
+      this.seqsByEpoch.set(tl.storeEpoch, seen);
+    }
+    seen.add(tl.seq);
   }
 
   start(): void {
@@ -233,11 +246,22 @@ export class BotClient {
   }
 
   report(): BotReport {
-    const gaps = this.seenSeqs.filter((x) => x < 0).map((x) => -x);
+    // A gap is a seq inside the range this bot actually observed on an epoch
+    // that never arrived at all. Deciding this from the complete set - rather
+    // than incrementally, at the moment a higher seq lands - is what stops a
+    // reordered delivery from being recorded as a permanent loss.
+    const gaps: number[] = [];
+    for (const seen of this.seqsByEpoch.values()) {
+      if (seen.size === 0) continue;
+      const lo = Math.min(...seen);
+      const hi = Math.max(...seen);
+      for (let s = lo + 1; s < hi; s++) if (!seen.has(s)) gaps.push(s);
+    }
     return {
       bot: this.cfg.index,
       samples: this.samples,
       seqGaps: gaps,
+      seqReorders: this.seqReorders,
       handlerErrors: this.handlerErrors,
       rejected: this.rejected,
     };

@@ -2,6 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
 import { applyControl, snapshot } from '../shared/sync-core/timeline';
 
+/** Repair-sweep period. Each instance runs this timer for its local rooms. */
+export const SWEEP_INTERVAL_MS = 10_000;
+/**
+ * Minimum gap between two committed sweeps for the SAME room, enforced inside
+ * apply_snapshot.lua. Every instance holding a socket in a room fires its own
+ * timer, so without this the room is swept once per instance per period. Set
+ * just under the period so the next period always qualifies while duplicates
+ * within a period never do.
+ */
+export const SWEEP_MIN_INTERVAL_MS = SWEEP_INTERVAL_MS - 1_000;
+
 /**
  * The authority seam for room playback state. The engine only speaks this
  * interface; M6 swaps in a Redis/Lua implementation for multi-instance

@@ -171,6 +171,7 @@ async function main(): Promise<void> {
   }
 
   const seqGaps = reports.flatMap((r) => r.seqGaps);
+  const seqReorders = reports.reduce((sum, r) => sum + r.seqReorders, 0);
   const handlerErrors = reports.flatMap((r) => r.handlerErrors);
   const thetaP95 = percentile(
     [...thetaErrors].sort((a, b) => a - b),
@@ -188,6 +189,10 @@ async function main(): Promise<void> {
     slopeMsPerMin,
     thetaErrorP95Ms: thetaP95,
     seqGaps: seqGaps.length,
+    // reordered deliveries are expected on a multi-instance fanout and are
+    // dropped by the client's (storeEpoch, seq) ordering; reported so they
+    // are visible without being mistaken for loss
+    seqReorders,
     handlerErrors: handlerErrors.length,
     rejectedControls: reports.reduce((s, r) => s + r.rejected, 0),
   };

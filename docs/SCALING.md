@@ -116,19 +116,70 @@ re-run after the first pass flagged them self-skewed; only the re-runs are
 published — the first-pass cell files were overwritten by the re-run and
 were not retained.
 
-**One cell reports seq gaps.** `three-25` records **59** `seqGaps`; every
-other cell records zero (`sweep-summary.json`, `botSummary.seqGaps`). Seq
-gaps are not one of the two SLOs above, so the cell is marked "ok" by the
-knee criterion and the table has no column for them — which would leave a
-non-zero integrity count invisible to anyone reading only the table. It is
-surfaced here instead. A gap is a bot observing a jump in `(storeEpoch,
-seq)`, which a dropped or reordered fanout message produces without any
-store-side defect; the store's own serialization is checked separately and
-directly (`verify-m6.ts`, and the CI gate fails on any gap). It is called
-out because a number that appears in a committed artifact and nowhere in
-the prose is exactly the kind of thing this document should not bury, and
-because it has not been root-caused — it warrants a re-run of that cell
-before the 3-instance topology is claimed clean on integrity.
+### The 59 seq gaps, root-caused
+
+An earlier sweep recorded **59 `seqGaps`** on the `three-25` cell and zero
+everywhere else. Chasing it found two separate defects — one in the metric,
+one in the server — and it is worth writing down because the metric bug was
+hiding the server bug.
+
+**The metric counted reordering as loss.** The bot recorded a gap the moment
+a timeline arrived with `seq > lastApplied + 1`, and nothing ever retracted
+it when the skipped seq turned up a moment later. `isNewer` correctly drops
+the late arrival, so the bot stayed converged the whole time — but the gap
+counter had already fired. On one instance every broadcast originates from
+one process in commit order, so this never triggered; the metric only broke
+where deliveries could interleave.
+
+Gaps are now decided at report time from the complete set of seqs a bot
+received on an epoch: a gap is a seq inside the observed range that **never
+arrived at all**. Reordered deliveries are counted separately as
+`seqReorders`. Re-running the failing cell against the same server build:
+
+| | seqGaps | seqReorders |
+|---|---|---|
+| 3 instances, 25 bots (old metric) | 59 | not measured |
+| 3 instances, 25 bots (fixed metric) | **0** | 97 |
+| 1 instance, 25 bots (control) | 0 | 0 |
+
+Nothing had ever been lost. But 97 reorders in 120s is not noise, and the
+control run isolates the cause to the multi-instance fanout.
+
+**Every instance was sweeping every room it had a socket in.** The repair
+sweep iterates `userRooms`, which is per-instance state, so with 25 bots
+spread across 3 instances all three swept the *same* room every 10s:
+`apply_snapshot.lua` bumped `seq` three times per period and fanned out three
+snapshots for one repair. The cost scaled linearly with instance count — 10
+instances would have meant 10× the snapshot writes and fanout for one room —
+and the three racing commits were exactly what the clients then received out
+of order.
+
+The dedup belongs in the Lua script rather than in a lease, because Redis's
+single-threaded execution already serializes these calls. `apply_snapshot`
+now records `lastSweepAt` and no-ops if the room was swept less than
+`SWEEP_MIN_INTERVAL_MS` (period − 1s) ago, returning null so the losing
+instances skip their broadcast entirely. The first caller of each period
+wins; if it dies, another simply wins the next period, with no ownership to
+hand over. Measured on the same 3-instance lab, 25 bots, 120s:
+
+| | commits in 120s | per 10s period | seqReorders |
+|---|---|---|---|
+| 3 instances, before | 40 | 3.3 | 97 |
+| 3 instances, after | **14** | **1.2** | **0** |
+| 1 instance (reference) | 14 | 1.2 | 0 |
+
+The three-instance plane now commits at exactly the single-instance rate:
+coordination cost no longer scales with instance count. The repair channel is
+verifiably still alive — 14 commits over 120s is the ~12 sweeps plus the
+scripted control events, not a wedged sweep — and
+`redis-room-state.store.spec.ts` pins the contract against a real Redis
+(three simultaneous callers, one commit; the next period still gets through;
+a paused room never advances).
+
+Worth noting against the A/B in [COORDINATION.md](COORDINATION.md): plane B
+never had this bug. Its sweep is owner-only by construction (`only the owner
+sweeps its rooms; non-owners no-op`), so explicit ownership had already ruled
+out a class of redundancy the shared-store plane had to be patched to avoid.
 
 Charts: [drift](measurements/sweep/charts/sweep-drift.svg) ·
 [event-loop lag](measurements/sweep/charts/sweep-lag.svg) ·
