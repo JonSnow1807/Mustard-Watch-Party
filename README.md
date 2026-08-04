@@ -52,8 +52,8 @@ measured), and no correction mechanism existed
 
 Protocol-level, on the production multi-instance plane: 100 clients in one
 room hold P95 ≈ 147ms (P50 68ms); a 10-cell load sweep (10→250 clients × 1/3 instances)
-found **no SLO breach within the load generator's valid range**, with the
-trend lines and the extrapolated knee stated honestly
+locates the knee: **one instance breaches the event-loop-lag SLO at 250
+clients in a room (130ms), where three instances hold 76ms**
 ([scaling results](docs/SCALING.md#5-load-characterization)).
 
 ## How it works
