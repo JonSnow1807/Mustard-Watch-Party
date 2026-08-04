@@ -101,7 +101,8 @@ spread across three, which is exactly the benefit the topology exists for and
 the first sweep was too coarse to show.
 
 Client-visible drift is barely affected across the whole range (P95 116 →
-156ms from 10 to 250 clients, and 1-vs-3 instances differ by ~1ms per cell):
+156ms from 10 to 250 clients; the 1-vs-3-instance difference per cell spans
+1–14ms with no consistent direction, i.e. within run-to-run noise):
 coordination and fanout are not what bounds sync quality here — the
 simulated player's own latency is. The server metrics are where load shows
 up, which is why the knee is defined on event-loop lag rather than drift.

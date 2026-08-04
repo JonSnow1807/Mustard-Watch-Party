@@ -104,8 +104,9 @@ Full design: [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md) ·
 - Path asymmetry biases the clock estimate by asym/2 — fundamental to any
   NTP-family scheme; scenario S6 measures it rather than hiding it.
 - Background tabs suspend and resync on focus.
-- The load sweep attests up to 250 clients/room on documented hardware; the
-  extrapolated single-instance knee (~400–500) is stated as extrapolation.
+- Capacity is measured, not extrapolated: a single instance breaches the
+  event-loop-lag SLO at **250 clients in one room**; three instances carry
+  that load comfortably. Beyond 250/room is untested on this hardware.
 
 ## Reproduce the numbers
 
