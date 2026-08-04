@@ -13,3 +13,8 @@ formal/tools/
 # way to lose a real source folder later.
 /states/
 /formal/states/
+
+# relay-go build output: a ~10MB platform-specific Mach-O/ELF binary. It was
+# tracked, making it the largest file in the repo and producing a 10MB diff
+# on every rebuild. Build it with `cd relay-go && go build` instead.
+/relay-go/relay-go
