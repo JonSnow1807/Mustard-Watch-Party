@@ -1,0 +1,22 @@
+{
+  "runId": "S2-overhauled-servo-mse76wbj",
+  "scenario": {
+    "id": "S2",
+    "title": "+150ms each way (~300ms RTT), symmetric — intercontinental",
+    "must": true,
+    "impairment": {
+      "tool": "toxiproxy",
+      "upLatencyMs": 150,
+      "downLatencyMs": 150
+    },
+    "durationS": 240
+  },
+  "gitSha": "84ab38682e94412769079df12db686f3f5308a57",
+  "startedAt": "2026-08-04T05:08:41.620Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3101",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled",
+  "notes": "controller=predictive"
+}

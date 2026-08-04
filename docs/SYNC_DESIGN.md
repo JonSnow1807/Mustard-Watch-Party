@@ -72,8 +72,12 @@ where `playerTime` is de-quantized by timestamping 20Hz `getCurrentTime()`
 value-change edges and extrapolating between them (the raw readout is steppy;
 its measured plateau distribution is in the baseline run).
 
-**SEEK-first, by evidence:** the IFrame API rounds unsupported playback rates
-toward 1, so fractional-rate nudging cannot be the design center. A per-video
+**Two controllers, one probe.** The IFrame API reference says unsupported
+playback rates are rounded toward 1 — but the runtime probe measured the
+modern player *accepting* fractional rates on real videos, so the engine
+defaults to the **predictive servo** (§4a) and falls back to the SEEK-first
+controller wherever the probe fails. The fallback matters: the reference's
+rounding language is still true for live streams and some videos. A per-video
 runtime probe (`setPlaybackRate(1.05)`, read back what stuck, restore) gates
 a RATE mode used only where supported; a probe that lies self-corrects when
 the applied rate is observed.
@@ -95,6 +99,21 @@ the bot fleet, and jest. Key mechanics, each traceable to a measured failure:
   sustained 2 evals; instant path >2.5s (post-tab-sleep); 3s anti-storm
   spacing; buffering = free-run then catch-up (P2); hidden tab = suspend,
   immediate re-evaluation on restore.
+
+### 4a. Predictive clock discipline (the default)
+
+`r = 1 − Kp·drift − Ki·∫drift − b̂`, where `b̂` is the player's intrinsic
+drift rate at r=1, estimated by scalar RLS with exponential forgetting from
+rate-corrected drift deltas. Anti-windup freezes the integral while the
+command is clamped to [0.95, 1.05]; 0.5% command hysteresis stops player
+churn; the SEEK-first controller retains lifecycle handling, gross errors
+and the seek machinery, with its threshold moved to the servo-zone boundary
+so the servo owns [deadband, 600ms].
+
+The servo measures better in **every** real-browser scenario (table in §8),
+most dramatically under packet loss (S5: P95 29ms vs 97ms) — it holds the
+error near zero continuously instead of letting it grow to a correction
+threshold and then seeking.
 
 ## 5. Policy decisions (and rejected alternatives)
 
@@ -146,17 +165,19 @@ numbers come from local, hardware-documented runs.
 
 See `docs/measurements/` for the run directories behind every number.
 
-| scenario (one-way impairment) | baseline P50 / P95 | overhauled P50 / P95 / P99 | convergence after seek |
+| scenario (one-way impairment) | baseline | reactive | **predictive servo (default)** |
 |---|---|---|---|
-| S0 — clean loopback (floor; loopback is unrealistically kind) | 363ms / 255.3s | 31ms / 83ms / 84ms | 0.75s |
-| S2 — +150ms each way (~300ms RTT), symmetric | **total failure** (followers never start) | 25ms / 139ms / 140ms | 1.00s |
-| S3 — 50±30ms jitter each way | **total failure** (as S2; unrecorded) | 68ms / 118ms / 119ms | 1.00s |
-| S5 — 25ms + 5% loss (netem) | **total failure** (as S2; unrecorded) | 60ms / 97ms / 136ms | 0.75s |
-| S6 — asymmetric 120ms up / 20ms down | **total failure** (as S2; unrecorded) | 47ms / 120ms / 121ms | 1.00s |
+| S0 — clean loopback | 363ms / 255.3s | 31 / 83ms | **16 / 49ms** |
+| S2 — +150ms each way (~300ms RTT) | total failure | 25 / 139ms | **19 / 48ms** |
+| S3 — 50±30ms jitter each way | total failure | 68 / 118ms | **23 / 79ms** |
+| S5 — 25ms + 5% packet loss | total failure | 60 / 97ms | **11 / 29ms** |
+| S6 — asymmetric 120/20ms | total failure | 47 / 120ms | **10 / 86ms** |
 
-Steady-state hard seeks per minute — S0: 0.00 · S2: 0.00 · S3: 0.00 · S5: 0.25 · S6: 0.00.
-
-3 real Chrome clients, deterministic 240s scenario, Chinmays-MacBook-Pro.local · arm64 · node v20.17.0; runs committed with SHA + scenario + impairment per directory.
+*Steady-state pairwise drift P50 / P95, 3 real Chrome clients, deterministic
+240s scenario, identical hardware. "Total failure" = the shipped engine's
+followers never started playing at all. Runs:
+[`docs/measurements/`](docs/measurements/) — baseline, after (reactive),
+servo (predictive).*
 
 No control event in any baseline run ever converged; every overhauled run
 converges after every event (seek ≤1s across the matrix, table above).

@@ -21,7 +21,7 @@ import type { RunMeta, ScenarioSpec } from './types.js';
 
 const N_CLIENTS = 3;
 const ENGINE = (process.env.HARNESS_ENGINE ?? 'baseline') as RunMeta['engine'];
-const CONTROLLER = (process.env.HARNESS_CONTROLLER ?? 'reactive') as
+const CONTROLLER = (process.env.HARNESS_CONTROLLER ?? 'predictive') as
   | 'reactive'
   | 'predictive';
 const OUT_ROOT = process.env.HARNESS_OUT ?? join(process.cwd(), 'runs');
@@ -63,7 +63,7 @@ async function clearImpairment(s: ScenarioSpec): Promise<void> {
 }
 
 async function runScenario(s: ScenarioSpec, attempt = 1): Promise<boolean> {
-  const armTag = CONTROLLER === 'predictive' ? '-servo' : '';
+  const armTag = CONTROLLER === 'reactive' ? '-reactive' : '';
   const runId = `${s.id}-${ENGINE}${armTag}-${Date.now().toString(36)}`;
   console.log(`\n=== ${s.id} (${s.title}) — run ${runId}, attempt ${attempt} ===`);
 
