@@ -78,6 +78,19 @@ with `EADDRINUSE`, and the harness happily measured the old one. The runs
 looked plausible — sensible drift, alarming seq gaps — and were entirely
 meaningless. The gaps only vanished once the port owner was killed by PID.
 
-The lesson is in the runbook now: **prove which build answered.** Plane B is
-confirmed by scanning for `room:*:lease` keys mid-run (only plane B creates
-them) and by `instance_id` on the scraped metrics.
+The lesson is in the runbook now: **prove which build answered, by binding
+the check to the process that served the run.** Both signals below are
+emitted by the responding instance itself, so a stale process cannot fake
+them:
+
+```bash
+# 1. the PID listening on :3000 must be the one you just started
+lsof -nP -iTCP:3000 -sTCP:LISTEN
+# 2. the responding instance names itself, and only plane B holds leases
+curl -s localhost:3000/metrics | grep -m1 instance_id
+docker exec <redis> redis-cli --scan --pattern 'room:*:lease'   # mid-run
+```
+
+A start script that does not fail loudly on `EADDRINUSE` will hand you a
+measurement of the wrong build; `npm run start:prod` under `&` does exactly
+that, which is how this happened.

@@ -15,6 +15,13 @@ import { percentile } from './stats.js';
 const CLIENTS = 3;
 const RUN_S = 150;
 const MEDIA = '/media/clicktrack.mp4';
+/** clicks inside this window after playback starts are join/settle
+ * transients, not steady state - the same exclusion every other scenario
+ * in this harness applies (sync-harness/README.md) */
+const WARMUP_S = 15;
+/** a client that heard far fewer clicks than its peers was not really
+ * playing; reporting its pairs as sync data would be a lie */
+const MIN_COVERAGE = 0.8;
 
 interface Onset {
   index: number;
@@ -47,6 +54,7 @@ async function main(): Promise<void> {
       });
     }
     console.log('[audio] probes ready; starting playback');
+    const playAt = Date.now();
     await clickPlay(clients[0]);
     await sleep(RUN_S * 1000);
 
@@ -64,11 +72,24 @@ async function main(): Promise<void> {
     })) as Record<string, unknown>;
 
     // pair up clicks by index and diff the PHYSICAL onset instants
+    const steadyFrom = playAt + WARMUP_S * 1000;
     const byIndex: Array<Map<number, Onset>> = perClient.map((list) => {
       const m = new Map<number, Onset>();
-      for (const o of list) if (o.level > 0.08) m.set(o.index, o);
+      for (const o of list) {
+        if (o.level > 0.08 && o.tLocal >= steadyFrom) m.set(o.index, o);
+      }
       return m;
     });
+    const counts = byIndex.map((m) => m.size);
+    const best = Math.max(...counts);
+    const thin = counts.filter((c) => c < best * MIN_COVERAGE).length;
+    if (best === 0 || thin > 0) {
+      console.error(
+        `[audio] INVALID: click coverage ${counts.join('/')} - a client was ` +
+          `not playing steadily. Refusing to publish a sync number from it.`,
+      );
+      process.exitCode = 2;
+    }
     const audioSkews: number[] = [];
     const apiSkews: number[] = [];
     const paired: Array<{ index: number; pair: string; audioMs: number; apiMs: number }> = [];
@@ -95,6 +116,9 @@ async function main(): Promise<void> {
       runId,
       clients: CLIENTS,
       durationS: RUN_S,
+      warmupExcludedS: WARMUP_S,
+      clickCoverage: counts,
+      valid: best > 0 && thin === 0,
       pairedClicks: paired.length,
       audioTruthMs: {
         p50: percentile(sortedA, 50),

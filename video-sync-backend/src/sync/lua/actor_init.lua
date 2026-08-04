@@ -13,7 +13,7 @@ if m.owner ~= ARGV[1] or m.epoch ~= ARGV[2] then return false end
 local function encode(seq, videoId, isPlaying, mediaTime, stampedAt, reason)
   return cjson.encode({
     v = 1, seq = seq, storeEpoch = ARGV[2],
-    videoId = videoId ~= '' and videoId or nil,
+    videoId = videoId ~= '' and videoId or cjson.null,
     isPlaying = isPlaying == '1', mediaTime = tonumber(mediaTime),
     stampedAt = tonumber(stampedAt), rate = 1, reason = reason,
   })
@@ -23,9 +23,11 @@ local cur = redis.call('HGETALL', KEYS[2])
 if #cur > 0 then
   local c = {}
   for i = 1, #cur, 2 do c[cur[i]] = cur[i + 1] end
+  -- cjson drops nil fields, so an absent videoId would arrive as
+  -- `undefined` here and `null` from the hash read path; keep them equal
   return cjson.encode({
     v = 1, seq = tonumber(c.seq), storeEpoch = c.storeEpoch,
-    videoId = c.videoId ~= '' and c.videoId or nil,
+    videoId = c.videoId ~= '' and c.videoId or cjson.null,
     isPlaying = c.isPlaying == '1', mediaTime = tonumber(c.mediaTime),
     stampedAt = tonumber(c.stampedAt), rate = 1, reason = c.reason,
   })

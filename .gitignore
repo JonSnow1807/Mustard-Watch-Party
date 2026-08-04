@@ -2,5 +2,6 @@
 *.log
 node_modules/
 formal/*_TTrace_*.tla
+formal/*_TTrace_*.bin
 formal/states/
 formal/tools/

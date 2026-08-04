@@ -21,9 +21,16 @@ import type { RunMeta, ScenarioSpec } from './types.js';
 
 const N_CLIENTS = 3;
 const ENGINE = (process.env.HARNESS_ENGINE ?? 'baseline') as RunMeta['engine'];
-const CONTROLLER = (process.env.HARNESS_CONTROLLER ?? 'predictive') as
-  | 'reactive'
-  | 'predictive';
+const CONTROLLER_ARM = process.env.HARNESS_CONTROLLER ?? 'predictive';
+if (CONTROLLER_ARM !== 'reactive' && CONTROLLER_ARM !== 'predictive') {
+  // silently measuring the default arm under a typo would mislabel a whole
+  // published run - fail before any browser starts
+  console.error(
+    `HARNESS_CONTROLLER must be 'reactive' or 'predictive' (got '${CONTROLLER_ARM}')`,
+  );
+  process.exit(1);
+}
+const CONTROLLER = CONTROLLER_ARM as 'reactive' | 'predictive';
 const OUT_ROOT = process.env.HARNESS_OUT ?? join(process.cwd(), 'runs');
 const COMPOSE = 'docker compose -f lab/docker-compose.harness.yml';
 

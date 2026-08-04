@@ -87,6 +87,15 @@ export class ActorRoomStateStore
 
   /** rooms this instance currently owns: the actor's in-memory authority */
   private owned = new Map<string, { fence: string; timeline: Timeline }>();
+  /**
+   * Per-room serialization queue. The class doc claims the owner serializes
+   * control events locally; without this it did not: two concurrent calls
+   * both read entry.timeline before either commit replaced it, so a play or
+   * pause projected its position from stale state (a seek is immune - it
+   * carries an absolute mediaTime). A promise chain restores the invariant
+   * with no distributed lock.
+   */
+  private queues = new Map<string, Promise<unknown>>();
   private renewTimer: ReturnType<typeof setInterval> | null = null;
   private onForwarded: ((c: ForwardedControl) => void | Promise<void>) | null =
     null;
@@ -120,7 +129,21 @@ export class ActorRoomStateStore
     this.sub.on('message', (channel, payload) => {
       if (channel !== this.forwardChannel(this.instanceId)) return;
       try {
-        void this.onForwarded?.(JSON.parse(payload) as ForwardedControl);
+        // `void promise` does NOT handle a rejection: an async forward
+        // handler that throws would become an unhandled rejection, which
+        // terminates the process under Node's default mode. A forwarded
+        // control failing must degrade that one control, not the instance.
+        const result = this.onForwarded?.(
+          JSON.parse(payload) as ForwardedControl,
+        );
+        if (result instanceof Promise) {
+          void result.catch((e) =>
+            this.logger.error(
+              { err: String(e) },
+              'actor: forward handler failed',
+            ),
+          );
+        }
       } catch (e) {
         this.logger.error({ err: String(e) }, 'actor: bad forwarded payload');
       }
@@ -130,7 +153,9 @@ export class ActorRoomStateStore
     // lease simply expires and another instance claims with a higher fence,
     // which fences this one out on its next commit.
     this.renewTimer = setInterval(() => {
-      void this.renewAll();
+      void this.renewAll().catch((e) =>
+        this.logger.error({ err: String(e) }, 'actor: renew sweep failed'),
+      );
     }, RENEW_MS);
   }
 
@@ -229,7 +254,25 @@ export class ActorRoomStateStore
     return committed;
   }
 
-  async applyControl(
+  applyControl(
+    roomCode: string,
+    intent: ControlIntent,
+    mediaTime: number,
+    serverNow: number,
+    by: string,
+  ): Promise<ApplyOutcome> {
+    const prior = this.queues.get(roomCode) ?? Promise.resolve();
+    const next = prior
+      .catch(() => undefined)
+      .then(() =>
+        this.applyControlSerial(roomCode, intent, mediaTime, serverNow, by),
+      );
+    this.queues.set(roomCode, next);
+    void next.catch(() => undefined); // the caller owns the rejection
+    return next;
+  }
+
+  private async applyControlSerial(
     roomCode: string,
     intent: ControlIntent,
     mediaTime: number,
@@ -241,24 +284,62 @@ export class ActorRoomStateStore
       const lease = await this.claim(roomCode);
       if (!lease.mine) {
         // someone else owns this room: forward and let them broadcast
-        await this.pub.publish(
+        const delivered = await this.pub.publish(
           this.forwardChannel(lease.owner),
           JSON.stringify({ roomCode, intent, mediaTime, by }),
         );
-        return { kind: 'forwarded' };
+        if (delivered > 0) return { kind: 'forwarded' };
+        // Nobody is subscribed: the owner died between our lease read and
+        // this publish. PUBLISH returning 0 is the only signal we get, and
+        // dropping the user's control here would lose it silently. Steal the
+        // lease and apply locally - safe because the fence check rejects the
+        // old owner if it ever comes back.
+        this.logger.warn(
+          { roomCode, owner: lease.owner },
+          'actor: forward undeliverable, reclaiming',
+        );
+        await this.kv.del(this.leaseKey(roomCode));
+        const retaken = await this.claim(roomCode);
+        if (!retaken.mine) return { kind: 'forwarded' };
+        const current = await this.get(roomCode);
+        if (!current) return { kind: 'missing' };
+        this.owned.set(roomCode, { fence: retaken.epoch, timeline: current });
+        entry = this.owned.get(roomCode);
       }
-      const current = await this.get(roomCode);
-      if (!current) return { kind: 'missing' };
-      entry = { fence: lease.epoch, timeline: current };
-      this.owned.set(roomCode, entry);
+      if (!entry) {
+        const current = await this.get(roomCode);
+        if (!current) return { kind: 'missing' };
+        entry = { fence: lease.epoch, timeline: current };
+        this.owned.set(roomCode, entry);
+      }
     }
 
     // serialize locally against the in-memory timeline, then commit fenced
     const next = applyControl(entry.timeline, intent, mediaTime, serverNow, by);
     const committed = await this.commit(roomCode, entry.fence, next);
-    return committed
-      ? { kind: 'committed', timeline: committed }
-      : { kind: 'missing' };
+    if (committed) return { kind: 'committed', timeline: committed };
+    // Fenced out: another instance took ownership while we held stale
+    // authority. The user's intent must not evaporate - forward it to the
+    // new owner exactly as a non-owner would.
+    const nowLease = await this.claim(roomCode);
+    if (nowLease.mine) {
+      const fresh = await this.get(roomCode);
+      if (!fresh) return { kind: 'missing' };
+      this.owned.set(roomCode, { fence: nowLease.epoch, timeline: fresh });
+      const retry = await this.commit(
+        roomCode,
+        nowLease.epoch,
+        applyControl(fresh, intent, mediaTime, serverNow, by),
+      );
+      return retry
+        ? { kind: 'committed', timeline: retry }
+        : { kind: 'missing' };
+    }
+    const delivered = await this.pub.publish(
+      this.forwardChannel(nowLease.owner),
+      JSON.stringify({ roomCode, intent, mediaTime, by }),
+    );
+    return delivered > 0 ? { kind: 'forwarded' } : { kind: 'missing' };
   }
 
   async applySnapshot(
