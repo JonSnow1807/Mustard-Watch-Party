@@ -1,8 +1,18 @@
-function requireInProduction(name: string, devFallback: string): string {
+/**
+ * Fail closed. A dev fallback is only safe where the environment says
+ * explicitly that it is local: keying off `NODE_ENV === 'production'` meant
+ * any unset or typo'd NODE_ENV (staging, preview, a container that forgot
+ * it) silently got a known secret.
+ */
+const LOCAL_ENVS = ['development', 'test'];
+function requireOutsideLocal(name: string, devFallback: string): string {
   const value = process.env[name];
   if (value) return value;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error(`${name} must be set in production`);
+  const env = process.env.NODE_ENV ?? '';
+  if (!LOCAL_ENVS.includes(env)) {
+    throw new Error(
+      `${name} must be set (NODE_ENV='${env}' is not a local environment)`,
+    );
   }
   return devFallback;
 }
@@ -18,7 +28,7 @@ export default () => ({
   jwt: {
     // no fallback secret: a deployment that forgets JWT_SECRET must fail to
     // boot, not silently issue tokens anyone can forge
-    secret: requireInProduction('JWT_SECRET', 'dev-only-insecure-secret'),
+    secret: requireOutsideLocal('JWT_SECRET', 'dev-only-insecure-secret'),
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
   cors: {

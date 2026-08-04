@@ -92,13 +92,13 @@ export class VoiceGateway
   ) {
     try {
       console.log(
-        `${data.username} joining voice chat in room ${data.roomCode}`,
+        `${this.identity(client).username} joining voice in ${data.roomCode}`,
       );
 
       // Store user info
       const voiceUser: VoiceUser = {
-        userId: data.userId,
-        username: data.username,
+        userId: this.identity(client).userId,
+        username: this.identity(client).username,
         socketId: client.id,
         roomCode: data.roomCode,
         isMuted: false,
@@ -137,8 +137,8 @@ export class VoiceGateway
 
       // Notify others that a new user joined
       client.to(`voice-${data.roomCode}`).emit('voice-user-joined', {
-        userId: data.userId,
-        username: data.username,
+        userId: this.identity(client).userId,
+        username: this.identity(client).username,
         socketId: client.id,
       });
     } catch (error) {
@@ -158,7 +158,7 @@ export class VoiceGateway
   ) {
     try {
       console.log(
-        `User ${data.userId} leaving voice chat in room ${data.roomCode}`,
+        `User ${this.identity(client).userId} leaving voice in ${data.roomCode}`,
       );
 
       // Remove from maps
@@ -177,7 +177,7 @@ export class VoiceGateway
 
       // Notify others
       client.to(`voice-${data.roomCode}`).emit('voice-user-left', {
-        userId: data.userId,
+        userId: this.identity(client).userId,
         socketId: client.id,
       });
     } catch (error) {
@@ -200,8 +200,8 @@ export class VoiceGateway
         targetSocket.emit('voice-signal', {
           from: client.id,
           signal: data.signal,
-          username: data.username,
-          userId: data.userId,
+          username: this.identity(client).username,
+          userId: this.identity(client).userId,
         });
       }
     } catch (error) {
@@ -227,7 +227,7 @@ export class VoiceGateway
 
       // Notify all users in the room
       this.server.to(`voice-${data.roomCode}`).emit('voice-mute-status', {
-        userId: data.userId,
+        userId: this.identity(client).userId,
         socketId: client.id,
         isMuted: data.isMuted,
       });
@@ -258,7 +258,7 @@ export class VoiceGateway
 
       // Notify all users in the room
       this.server.to(`voice-${data.roomCode}`).emit('voice-deafen-status', {
-        userId: data.userId,
+        userId: this.identity(client).userId,
         socketId: client.id,
         isDeafened: data.isDeafened,
         isMuted: user?.isMuted || false,
@@ -281,7 +281,7 @@ export class VoiceGateway
     try {
       // Broadcast speaking status to all users in the room
       client.to(`voice-${data.roomCode}`).emit('voice-speaking-status', {
-        userId: data.userId,
+        userId: this.identity(client).userId,
         socketId: client.id,
         isSpeaking: data.isSpeaking,
       });

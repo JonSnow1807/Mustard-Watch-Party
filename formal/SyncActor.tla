@@ -28,9 +28,11 @@ VARIABLES
   committed,      \* the store's committed state: [epoch, seq]
   network,        \* in-flight broadcasts to clients: set of [dst, epoch, seq]
   applied,        \* per client: last applied [epoch, seq]
-  crashed         \* set of crashed instances (may revive as zombies)
+  crashed,        \* set of crashed instances (may revive as zombies)
+  pending         \* forwarded controls awaiting their owner: set of [to: Instance]
 
-vars == <<lease, ownerView, committed, network, applied, crashed>>
+vars ==
+  <<lease, ownerView, committed, network, applied, crashed, pending>>
 
 Init ==
   /\ lease = [owner |-> None, epoch |-> 0]
@@ -39,6 +41,7 @@ Init ==
   /\ network = {}
   /\ applied = [c \in Clients |-> [epoch |-> 0, seq |-> 0]]
   /\ crashed = {}
+  /\ pending = {}
 
 (***************************************************************************)
 (* Claim: when no valid lease exists (never granted, expired - modeled as  *)
@@ -56,7 +59,7 @@ Claim(i) ==
   /\ lease.epoch < MaxEpoch
   /\ lease' = [owner |-> i, epoch |-> lease.epoch + 1]
   /\ ownerView' = [ownerView EXCEPT ![i] = lease.epoch + 1]
-  /\ UNCHANGED <<committed, network, applied, crashed>>
+  /\ UNCHANGED <<committed, network, applied, crashed, pending>>
 
 (***************************************************************************)
 (* Commit: an instance that BELIEVES it owns the room serializes a control *)
@@ -67,7 +70,9 @@ Claim(i) ==
 Commit(i) ==
   /\ i \notin crashed
   /\ ownerView[i] > 0
-  /\ committed.seq < MaxSeq
+  \* MaxSeq bounds writes WITHIN an epoch: a global cap would silently stop
+  \* exploring once a new fence restarted the sequence at 1
+  /\ (committed.epoch = ownerView[i] => committed.seq < MaxSeq)
   /\ IF ownerView[i] = lease.epoch /\ lease.owner = i
      THEN /\ committed' = [epoch |-> ownerView[i],
                            seq |-> IF committed.epoch = ownerView[i]
@@ -75,10 +80,10 @@ Commit(i) ==
           /\ network' = network \cup
                { [dst |-> c, epoch |-> committed'.epoch, seq |-> committed'.seq]
                  : c \in Clients }
-          /\ UNCHANGED <<lease, ownerView, applied, crashed>>
+          /\ UNCHANGED <<lease, ownerView, applied, crashed, pending>>
      ELSE \* fenced out: the store rejects; the instance learns it lost
           /\ ownerView' = [ownerView EXCEPT ![i] = 0]
-          /\ UNCHANGED <<lease, committed, network, applied, crashed>>
+          /\ UNCHANGED <<lease, committed, network, applied, crashed, pending>>
 
 (* Crash: the owner (or any instance) dies; its lease will expire (modeled *)
 (* by LeaseFree). Revive: it comes back as a ZOMBIE still holding its old  *)
@@ -86,12 +91,50 @@ Commit(i) ==
 Crash(i) ==
   /\ i \notin crashed
   /\ crashed' = crashed \cup {i}
-  /\ UNCHANGED <<lease, ownerView, committed, network, applied>>
+  /\ UNCHANGED <<lease, ownerView, committed, network, applied, pending>>
 
 Revive(i) ==
   /\ i \in crashed
   /\ crashed' = crashed \ {i}
-  /\ UNCHANGED <<lease, ownerView, committed, network, applied>>
+  /\ UNCHANGED <<lease, ownerView, committed, network, applied, pending>>
+
+(***************************************************************************)
+(* A non-owner does not touch state: it forwards the control to the room's  *)
+(* owner and lets the owner commit and broadcast (the implementation's      *)
+(* pub/sub forward). Modelled WITH a delivery signal, matching the code:    *)
+(* if the observed owner is gone the publish reaches nobody and the sender  *)
+(* reclaims rather than dropping the user's intent.                         *)
+(***************************************************************************)
+Forward(i) ==
+  /\ i \notin crashed
+  /\ lease.owner /= None
+  /\ lease.owner /= i
+  /\ Cardinality(pending) < 2          \* bound the queue for TLC
+  /\ IF lease.owner \notin crashed
+     THEN /\ pending' = pending \cup {[to |-> lease.owner]}
+          /\ UNCHANGED <<lease, ownerView, committed, network, applied, crashed>>
+     ELSE /\ lease.epoch < MaxEpoch
+          /\ lease' = [owner |-> i, epoch |-> lease.epoch + 1]
+          /\ ownerView' = [ownerView EXCEPT ![i] = lease.epoch + 1]
+          /\ UNCHANGED <<committed, network, applied, crashed, pending>>
+
+(* The owner dequeues a forwarded control and commits it under its fence.  *)
+OwnerDequeue(i) ==
+  /\ i \notin crashed
+  /\ [to |-> i] \in pending
+  /\ pending' = pending \ {[to |-> i]}
+  /\ IF /\ ownerView[i] = lease.epoch
+        /\ lease.owner = i
+        /\ (committed.epoch = ownerView[i] => committed.seq < MaxSeq)
+     THEN /\ committed' = [epoch |-> ownerView[i],
+                           seq |-> IF committed.epoch = ownerView[i]
+                                   THEN committed.seq + 1 ELSE 1]
+          /\ network' = network \cup
+               { [dst |-> c, epoch |-> committed'.epoch, seq |-> committed'.seq]
+                 : c \in Clients }
+          /\ UNCHANGED <<lease, ownerView, applied, crashed>>
+     ELSE \* ownership moved while the control was in flight
+          /\ UNCHANGED <<lease, ownerView, committed, network, applied, crashed>>
 
 (* Clients apply by the ordered rule proven in SyncTimeline.tla. *)
 Deliver(m) ==
@@ -101,12 +144,12 @@ Deliver(m) ==
         \/ m.epoch = applied[m.dst].epoch /\ m.seq > applied[m.dst].seq
      THEN applied' = [applied EXCEPT ![m.dst] = [epoch |-> m.epoch, seq |-> m.seq]]
      ELSE UNCHANGED applied
-  /\ UNCHANGED <<lease, ownerView, committed, crashed>>
+  /\ UNCHANGED <<lease, ownerView, committed, crashed, pending>>
 
 Drop(m) ==
   /\ m \in network
   /\ network' = network \ {m}
-  /\ UNCHANGED <<lease, ownerView, committed, applied, crashed>>
+  /\ UNCHANGED <<lease, ownerView, committed, applied, crashed, pending>>
 
 (* The sweep re-fans the committed state - run by the CURRENT owner only.  *)
 Sweep ==
@@ -115,10 +158,12 @@ Sweep ==
   /\ committed.epoch > 0
   /\ network' = network \cup
        { [dst |-> c, epoch |-> committed.epoch, seq |-> committed.seq] : c \in Clients }
-  /\ UNCHANGED <<lease, ownerView, committed, applied, crashed>>
+  /\ UNCHANGED <<lease, ownerView, committed, applied, crashed, pending>>
 
 Next ==
-  \/ \E i \in Instances : Claim(i) \/ Commit(i) \/ Crash(i) \/ Revive(i)
+  \/ \E i \in Instances :
+       Claim(i) \/ Commit(i) \/ Crash(i) \/ Revive(i)
+         \/ Forward(i) \/ OwnerDequeue(i)
   \/ \E m \in network : Deliver(m) \/ Drop(m)
   \/ Sweep
 
@@ -132,6 +177,8 @@ Fairness ==
   /\ \A c \in Clients :
        SF_vars(\E m \in network : m.dst = c /\ Deliver(m))
   /\ \A i \in Instances : WF_vars(Revive(i))
+  \* a live owner eventually drains what was forwarded to it
+  /\ \A i \in Instances : SF_vars(OwnerDequeue(i))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
@@ -143,10 +190,13 @@ Spec == Init /\ [][Next]_vars /\ Fairness
 AtMostOneCurrentOwner ==
   Cardinality({ i \in Instances : ownerView[i] = lease.epoch /\ lease.epoch > 0 }) <= 1
 
-(* The store never accepts a write under a stale fence: committed.epoch    *)
-(* only ever equals the lease epoch at commit time, hence never decreases. *)
+(* The store never accepts a write under a stale fence.                    *)
+(* The earlier form only required committed.epoch never to DECREASE, which *)
+(* a stale write retaining the same epoch satisfies - the property was     *)
+(* weaker than its name. This checks the real thing: every transition that *)
+(* changes `committed` must write under the CURRENT lease epoch.           *)
 NoStaleFenceWrite ==
-  [][committed'.epoch >= committed.epoch]_vars
+  [][(committed' /= committed) => committed'.epoch = lease'.epoch]_vars
 
 (* Within an epoch, committed seq never regresses. *)
 CommitMonotone ==
@@ -160,19 +210,46 @@ ClientNoRegress ==
 
 TypeOK ==
   /\ lease.epoch \in 0..MaxEpoch
+  /\ lease.owner \in Instances \cup {None}
   /\ committed.epoch \in 0..MaxEpoch
   /\ committed.seq \in 0..MaxSeq
+  /\ crashed \subseteq Instances
+  /\ \A i \in Instances : ownerView[i] \in 0..MaxEpoch
+  /\ \A c \in Clients :
+       /\ applied[c].epoch \in 0..MaxEpoch
+       /\ applied[c].seq \in 0..MaxSeq
+  /\ \A m \in pending : m.to \in Instances
+  /\ \A m \in network :
+       /\ m.dst \in Clients
+       /\ m.epoch \in 0..MaxEpoch
+       /\ m.seq \in 0..MaxSeq
 
 (* TLC state constraint: bound in-flight messages - the sweep's re-fanning *)
 (* otherwise makes the network powerset explode. Four in flight suffices  *)
 (* to exhibit every interesting interleaving at the small constants.       *)
-NetworkBound == Cardinality(network) <= 4
+NetworkBound == Cardinality(network) <= 4 /\ Cardinality(pending) <= 2
 
 ----------------------------------------------------------------------------
-(* Liveness: whatever crashes and revives, clients eventually apply the    *)
-(* latest committed state.                                                 *)
+(* Liveness.                                                               *)
+(*                                                                         *)
+(* HONEST STATEMENT OF WHAT THIS PROVES. MaxSeq and MaxEpoch make commits  *)
+(* finite, so `committed` must eventually stop changing; the property below*)
+(* therefore verifies that clients converge ONCE COMMITS CEASE - repair     *)
+(* after the last write, under arbitrary crash/revive and message loss.    *)
+(* It does NOT prove convergence for a room under unbounded, continuing    *)
+(* control traffic; TLC cannot exhaust that state space here. The stronger  *)
+(* per-version property below is the one to reach for when the model is    *)
+(* given an explicit quiescence scenario (see docs/FORMAL.md).             *)
 Convergence ==
   <>[](\A c \in Clients :
         applied[c].epoch = committed.epoch /\ applied[c].seq = committed.seq)
+
+(* Stronger and load-independent: a client never gets STUCK behind a       *)
+(* committed version - it either applies that version or moves past it.    *)
+(* Checked as a safety-style always-eventually per committed state.        *)
+NoClientStrandedBehind ==
+  \A c \in Clients :
+    (committed.epoch > 0 /\ applied[c].epoch < committed.epoch)
+      ~> (applied[c].epoch >= committed.epoch)
 
 =============================================================================

@@ -98,20 +98,41 @@ fences.
 | `NoStaleFenceWrite` (the store never accepts a zombie's commit) | ok |
 | `CommitMonotone` (seq never regresses within an epoch) | ok |
 | `ClientNoRegress` (ordered rule holds under ownership churn) | ok |
-| `Convergence` (liveness: clients converge despite crash/revive) | ok |
+| `Convergence` (clients converge once commits cease — see caveat) | ok |
 
-Two modeling lessons worth recording:
+The spec now also models the **forwarding path** the implementation ships:
+a non-owner publishes the control to the room's owner and the owner
+dequeues and commits it under its fence; if the observed owner is gone the
+publish reaches nobody and the sender reclaims rather than dropping the
+user's intent (the code's `PUBLISH`-returns-0 branch). Adding it took the
+state space from ~50k to ~194k distinct states, and both safety and
+liveness still hold.
+
+Three modeling lessons worth recording:
 
 - **The sweep needs strong fairness here too.** With weak fairness, crash/
   revive churn keeps disabling the sweep and an adversarial scheduler
   starves the repair channel forever — a modeling artifact, not a real
   failure. SF states the actual assumption: an owner alive infinitely often
   sweeps infinitely often.
+- **An invariant can be weaker than its name.** `NoStaleFenceWrite`
+  originally required only that `committed.epoch` never DECREASE — which a
+  stale write retaining the same epoch satisfies. It now requires every
+  transition that changes `committed` to write under the *current* lease
+  epoch, which is what the name always claimed.
 - **Liveness checking needs bounded state.** The sweep's re-fanning makes
   the in-flight message powerset explode; a `NetworkBound` constraint (≤4
   in flight) plus small constants keeps TLC tractable. Safety and liveness
   are checked at the same (small) constants — stated plainly rather than
   implying exhaustive coverage of the unbounded system.
+
+**What the liveness result does and does not say.** `MaxSeq`/`MaxEpoch` make
+commits finite, so `committed` must eventually stop changing: TLC verifies
+that clients converge **once commits cease** — repair after the last write,
+under arbitrary crash/revive and message loss. It does *not* verify
+convergence for a room under unbounded, continuing control traffic, which
+this model cannot exhaust. Stated here rather than left for a reader to
+infer from the constants.
 
 **Design consequence:** epochs serve double duty — the fence that
 neutralizes zombies *and* the client ordering rule proven above. One

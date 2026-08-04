@@ -37,8 +37,16 @@ async function bench(name: string, transport: SyncTransport, token: string): Pro
   }
   transport.disconnect();
   const sorted = [...rtts].sort((a, b) => a - b);
+  if (timedOut > 0) {
+    // excluding them entirely biases the plane comparison optimistically:
+    // a plane that times out more looks the same as one that never does
+    console.warn(
+      `${name}: ${timedOut}/${PINGS} pings TIMED OUT and are excluded from ` +
+        `the percentiles below - treat this comparison as invalid`,
+    );
+  }
   console.log(
-    `${name}: n=${sorted.length}${timedOut ? ` (${timedOut} timed out)` : ''} ` +
+    `${name}: n=${sorted.length}${timedOut ? ` (${timedOut} timed out — INVALID)` : ''} ` +
       `P50=${percentile(sorted, 50).toFixed(2)}ms ` +
       `P95=${percentile(sorted, 95).toFixed(2)}ms ` +
       `P99=${percentile(sorted, 99).toFixed(2)}ms`,

@@ -116,15 +116,17 @@ jobs:
         working-directory: video-sync-backend
       - name: boot backend
         run: |
-          node dist/main.js &
+          node dist/main.js > nest.log 2>&1 &
           for i in $(seq 1 30); do
-            curl -sf http://localhost:3000/health && break
+            curl -sf --max-time 10 http://localhost:3000/health \
+            || { echo "backend never became healthy:"; tail -40 nest.log 2>/dev/null; exit 1; } && break
             sleep 1
           done
           # the loop above exits 0 even if every attempt failed; assert once
           # more so a backend that never booted fails HERE with a clear
           # message instead of as a confusing bot-connection error
-          curl -sf http://localhost:3000/health
+          curl -sf --max-time 10 http://localhost:3000/health \
+            || { echo "backend never became healthy:"; tail -40 nest.log 2>/dev/null; exit 1; }
         working-directory: video-sync-backend
         env:
           PORT: "3000"

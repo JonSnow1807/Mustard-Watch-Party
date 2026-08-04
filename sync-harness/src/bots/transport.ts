@@ -121,19 +121,43 @@ export class RawWSBinaryTransport implements SyncTransport {
   private timelineCb: ((tl: Timeline) => void) | null = null;
   private rejectedCb: (() => void) | null = null;
   private errorCb: ((err: string) => void) | null = null;
-  private pendingPongs: Array<(p: ClockPong) => void> = [];
+  /** keyed by the echoed t0: FIFO matching mis-attributes a late reply to
+   * the NEXT ping, shifting every subsequent RTT in a benchmark */
+  private pendingPongs = new Map<number, (p: ClockPong) => void>();
   private pendingJoin: ((tl: Timeline | null) => void) | null = null;
   private isConnected = false;
+  private token = '';
+  private reconnecting = false;
+  private disposed = false;
 
   constructor(private url: string) {}
 
   connect(token: string): Promise<void> {
+    this.token = token;
+    return this.open();
+  }
+
+  /** Reconnect like the Socket.IO arm does; without it a single drop
+   * silently removed a bot from the relay measurement and flattered it. */
+  private reconnect(): void {
+    if (this.disposed || this.reconnecting) return;
+    this.reconnecting = true;
+    setTimeout(() => {
+      this.reconnecting = false;
+      void this.open().catch(() => this.reconnect());
+    }, 1000);
+  }
+
+  private open(): Promise<void> {
+    const token = this.token;
     this.ws = new WebSocket(`${this.url}/sync?token=${encodeURIComponent(token)}`);
     this.ws.binaryType = 'nodebuffer';
     this.ws.on('message', (data: Buffer) => this.onFrame(data));
     this.ws.on('error', (e) => this.errorCb?.(String(e)));
     this.ws.on('close', () => {
       this.isConnected = false;
+      this.pendingPongs.clear();
+      this.reconnect();
     });
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('ws connect timeout')), 10_000);
@@ -153,13 +177,13 @@ export class RawWSBinaryTransport implements SyncTransport {
     if (buf.length < 1) return;
     switch (buf.readUInt8(0)) {
       case 0x02: {
-        // ClockPong [t0][t1][t2]
-        const cb = this.pendingPongs.shift();
-        cb?.({
-          t0: buf.readDoubleLE(1),
-          t1: buf.readDoubleLE(9),
-          t2: buf.readDoubleLE(17),
-        });
+        // ClockPong [t0][t1][t2] - matched by the echoed t0
+        const t0 = buf.readDoubleLE(1);
+        const cb = this.pendingPongs.get(t0);
+        if (cb) {
+          this.pendingPongs.delete(t0);
+          cb({ t0, t1: buf.readDoubleLE(9), t2: buf.readDoubleLE(17) });
+        }
         break;
       }
       case 0x04:
@@ -195,7 +219,7 @@ export class RawWSBinaryTransport implements SyncTransport {
     const frame = Buffer.alloc(9);
     frame.writeUInt8(0x01, 0);
     frame.writeDoubleLE(t0, 1);
-    this.pendingPongs.push(onPong);
+    this.pendingPongs.set(t0, onPong);
     this.ws.send(frame);
   }
 
@@ -227,6 +251,7 @@ export class RawWSBinaryTransport implements SyncTransport {
   }
 
   disconnect(): void {
+    this.disposed = true;
     this.ws?.close();
   }
 }
