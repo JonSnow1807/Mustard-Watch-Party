@@ -102,8 +102,32 @@ export class SyncEngine {
   attachAdapter(adapter: EngineAdapter): void {
     this.adapter = adapter;
     void adapter.probeFractionalRate().then((ok) => {
+      // a probe from an adapter that has since been replaced (video change,
+      // reconnect) must not decide anything for the current one
+      if (this.adapter !== adapter || this.disposed) return;
       this.fractionalRateOK = ok;
+      if (!ok) this.fallBackToSeekFirst('probe failed');
     });
+  }
+
+  /**
+   * The servo commands fractional playback rates; where the player snaps
+   * them to 1 those commands do nothing and the error is never corrected.
+   * README and SYNC_DESIGN both promise a SEEK-first fallback - this is it.
+   * Swapping the instance (rather than gating inside the servo) keeps the
+   * fallback on the reactive controller's OWN seek threshold; the servo's
+   * inner controller runs a widened threshold so the servo can own that
+   * band, which would leave 600ms of drift tolerated after a hand-off.
+   */
+  private fallBackToSeekFirst(reason: string): void {
+    if (!(this.controller instanceof DisciplineController)) return;
+    console.warn(`[sync] fractional rate unsupported (${reason}); using SEEK-first controller`);
+    if (this.adapter) this.adapter.setRate(1);
+    this.controller = new DriftController();
+    // the replacement inherits the current stand-down state: `enabled` stays
+    // true while a tab is hidden, so checking it alone would let a hidden
+    // tab resume issuing playback actions through the new controller
+    if (!this.enabled || document.hidden) this.controller.suspend();
   }
 
   /** Explicit user gesture: play/pause/scrub. Wait-for-broadcast — the
@@ -254,8 +278,9 @@ export class SyncEngine {
           this.controller.onRateApplied(applied);
         }
         if (Math.abs(applied - action.rate) > 0.001) {
-          // the probe lied for this video; fall back to SEEK mode
+          // the probe lied for this video: the player snapped the rate
           this.fractionalRateOK = false;
+          this.fallBackToSeekFirst('applied rate mismatch');
         }
         break;
       }

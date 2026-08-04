@@ -46,6 +46,27 @@ describe('ActorRoomStateStore — lease fencing', () => {
     await Promise.all(clients.map((c) => c.quit().catch(() => undefined)));
   });
 
+  it('serializes concurrent controls for one room (no stale-state commit)', async () => {
+    if (!available) return;
+    const r = `${room}-serial`;
+    await a.init(r, 'vid', 0, Date.now());
+    await a.applyControl(r, 'play', 100, Date.now(), 'u1');
+    // fire concurrently: without the per-room queue both would derive from
+    // the same in-memory timeline and the second would commit stale state
+    const outcomes = await Promise.all([
+      a.applyControl(r, 'pause', 0, Date.now(), 'u1'),
+      a.applyControl(r, 'play', 0, Date.now(), 'u1'),
+      a.applyControl(r, 'pause', 0, Date.now(), 'u1'),
+    ]);
+    const seqs = outcomes
+      .filter((o) => o.kind === 'committed')
+      .map((o) => (o as { timeline: { seq: number } }).timeline.seq);
+    expect(seqs.length).toBe(3);
+    expect(new Set(seqs).size).toBe(3); // strictly distinct
+    expect([...seqs].sort((x, y) => x - y)).toEqual(seqs); // and in order
+    await a.clear(r);
+  });
+
   it('one instance owns a room; the other forwards instead of writing', async () => {
     if (!available) return;
     await a.init(room, 'vid', 0, Date.now());
@@ -87,10 +108,13 @@ describe('ActorRoomStateStore — lease fencing', () => {
       Date.now(),
       'u1',
     );
-    expect(zombie.kind).toBe('missing'); // rejected, not committed
+    // the zombie's WRITE is rejected (that is NoStaleFenceWrite); its user's
+    // intent is then forwarded to the real owner rather than dropped
+    expect(zombie.kind).not.toBe('committed');
+    expect(zombie.kind).toBe('forwarded');
     expect(a.ownedRooms()).not.toContain(zombieRoom); // and it learned it lost
     const state = await b.get(zombieRoom);
-    expect(state?.mediaTime).toBe(42); // b's write survived
+    expect(state?.mediaTime).toBe(42); // b's write survived, 777 never landed
     await b.clear(zombieRoom);
   });
 
