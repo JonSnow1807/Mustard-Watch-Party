@@ -99,6 +99,8 @@ fences.
 | `CommitMonotone` (seq never regresses within an epoch) | ok |
 | `ClientNoRegress` (ordered rule holds under ownership churn) | ok |
 | `Convergence` (clients converge once commits cease — see caveat) | ok |
+| `NoClientStrandedBehind` (per-FIXED-version client progress) | ok |
+| `EveryForwardedControlProgresses` (no forwarded control starves) | ok |
 
 The spec now also models the **forwarding path** the implementation ships:
 a non-owner publishes the control to the room's owner and the owner
@@ -108,8 +110,26 @@ user's intent (the code's `PUBLISH`-returns-0 branch). Adding it took the
 state space from ~50k to ~194k distinct states, and both safety and
 liveness still hold.
 
-A second review round then caught the forwarding model **modelling losses
-the implementation does not have**: `pending` held only `[to]`, so two
+Two further review rounds hardened it again. The progress property
+`NoClientStrandedBehind` re-evaluated `committed` in its consequent, so it
+only said "the client eventually catches whatever is current" — it now
+quantifies over a **fixed version**, which is the per-version guarantee the
+doc claims. Aggregate fairness over `\E m \in pending` also let one
+forwarded control starve while others were repeatedly chosen; fairness is
+now per control identity, and `EveryForwardedControlProgresses` checks that
+every admitted control eventually leaves the queue.
+
+Adding that property immediately failed — and the counterexample was a
+**modelling artifact worth recording**: two direct commits exhausted
+`MaxSeq`, after which an already-forwarded control could never commit and
+sat in the queue forever. The bound was capping *writes* when it should cap
+*inputs*. `MaxSeq` now limits how many controls ever ENTER the system
+(local commits and forwards alike), which is what a bounded model of a
+real system should mean. A write bound masquerading as control loss would
+have been indistinguishable from a genuine bug.
+
+A second review round had already caught the forwarding model **modelling
+losses the implementation does not have**: `pending` held only `[to]`, so two
 forwards to the same owner collapsed into one element, and a dequeue that
 could not commit consumed the control anyway. Controls now carry an
 identity, and a dequeue that cannot commit **re-targets** to the current

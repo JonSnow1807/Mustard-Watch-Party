@@ -30,10 +30,11 @@ VARIABLES
   network,        \* in-flight broadcasts to clients: set of [dst, epoch, seq]
   applied,        \* per client: last applied [epoch, seq]
   crashed,        \* set of crashed instances (may revive as zombies)
+  admitted,       \* controls admitted into the system (the INPUT bound)
   pending         \* forwarded controls: set of [to: Instance, id: 1..MaxCtl]
 
 vars ==
-  <<lease, ownerView, committed, network, applied, crashed, pending>>
+  <<lease, ownerView, committed, network, applied, crashed, admitted, pending>>
 
 Init ==
   /\ lease = [owner |-> None, epoch |-> 0]
@@ -42,6 +43,7 @@ Init ==
   /\ network = {}
   /\ applied = [c \in Clients |-> [epoch |-> 0, seq |-> 0]]
   /\ crashed = {}
+  /\ admitted = 0
   /\ pending = {}
 
 (***************************************************************************)
@@ -60,7 +62,7 @@ Claim(i) ==
   /\ lease.epoch < MaxEpoch
   /\ lease' = [owner |-> i, epoch |-> lease.epoch + 1]
   /\ ownerView' = [ownerView EXCEPT ![i] = lease.epoch + 1]
-  /\ UNCHANGED <<committed, network, applied, crashed, pending>>
+  /\ UNCHANGED <<committed, network, applied, crashed, admitted, pending>>
 
 (***************************************************************************)
 (* Commit: an instance that BELIEVES it owns the room serializes a control *)
@@ -71,20 +73,25 @@ Claim(i) ==
 Commit(i) ==
   /\ i \notin crashed
   /\ ownerView[i] > 0
-  \* MaxSeq bounds writes WITHIN an epoch: a global cap would silently stop
-  \* exploring once a new fence restarted the sequence at 1
-  /\ (committed.epoch = ownerView[i] => committed.seq < MaxSeq)
+  \* MaxSeq is an INPUT bound: it caps how many controls ever ENTER the
+  \* system (local commits + forwards alike), not how many may be written.
+  \* Capping writes instead let direct commits exhaust the budget and strand
+  \* an already-forwarded control forever - a modelling artifact that looked
+  \* exactly like a lost control.
+  /\ admitted < MaxSeq
   /\ IF ownerView[i] = lease.epoch /\ lease.owner = i
      THEN /\ committed' = [epoch |-> ownerView[i],
                            seq |-> IF committed.epoch = ownerView[i]
                                    THEN committed.seq + 1 ELSE 1]
+          /\ admitted' = admitted + 1
           /\ network' = network \cup
                { [dst |-> c, epoch |-> committed'.epoch, seq |-> committed'.seq]
                  : c \in Clients }
           /\ UNCHANGED <<lease, ownerView, applied, crashed, pending>>
      ELSE \* fenced out: the store rejects; the instance learns it lost
           /\ ownerView' = [ownerView EXCEPT ![i] = 0]
-          /\ UNCHANGED <<lease, committed, network, applied, crashed, pending>>
+          /\ UNCHANGED <<lease, committed, network, applied, crashed, admitted,
+                          pending>>
 
 (* Crash: the owner (or any instance) dies; its lease will expire (modeled *)
 (* by LeaseFree). Revive: it comes back as a ZOMBIE still holding its old  *)
@@ -92,12 +99,14 @@ Commit(i) ==
 Crash(i) ==
   /\ i \notin crashed
   /\ crashed' = crashed \cup {i}
-  /\ UNCHANGED <<lease, ownerView, committed, network, applied, pending>>
+  /\ UNCHANGED <<lease, ownerView, committed, network, applied, admitted,
+                  pending>>
 
 Revive(i) ==
   /\ i \in crashed
   /\ crashed' = crashed \ {i}
-  /\ UNCHANGED <<lease, ownerView, committed, network, applied, pending>>
+  /\ UNCHANGED <<lease, ownerView, committed, network, applied, admitted,
+                  pending>>
 
 (***************************************************************************)
 (* A non-owner does not touch state: it forwards the control to the room's  *)
@@ -110,26 +119,37 @@ Forward(i) ==
   /\ i \notin crashed
   /\ lease.owner /= None
   /\ lease.owner /= i
+  \* admission is bounded by the remaining write budget: TLC's MaxSeq is an
+  \* INPUT bound, and admitting controls that can never commit would make a
+  \* progress property fail for a modelling reason rather than a real one
+  /\ admitted < MaxSeq
   /\ \E id \in 1..MaxCtl :
        \* identified controls: a plain set collapsed two forwards to the
        \* same owner into one element, silently losing a user's control
        /\ \A m \in pending : m.id /= id
        /\ IF lease.owner \notin crashed
           THEN /\ pending' = pending \cup {[to |-> lease.owner, id |-> id]}
-               /\ UNCHANGED <<lease, ownerView, committed, network, applied, crashed>>
+               /\ admitted' = admitted + 1
+               /\ UNCHANGED <<lease, ownerView, committed, network, applied,
+                               crashed>>
           ELSE /\ lease.epoch < MaxEpoch
                /\ lease' = [owner |-> i, epoch |-> lease.epoch + 1]
                /\ ownerView' = [ownerView EXCEPT ![i] = lease.epoch + 1]
-               /\ UNCHANGED <<committed, network, applied, crashed, pending>>
+               /\ UNCHANGED <<committed, network, applied, crashed, admitted,
+                               pending>>
 
 (* The owner dequeues a forwarded control and commits it under its fence.  *)
-OwnerDequeue(i) ==
+
+(* Dequeue a SPECIFIC control. Aggregate fairness over `\E m \in pending`   *)
+(* lets one control starve while others are repeatedly selected; fairness   *)
+(* per identity is what actually guarantees each forwarded control moves.   *)
+OwnerDequeueCtl(i, id) ==
   /\ i \notin crashed
   /\ \E m \in pending :
+       /\ m.id = id
        /\ m.to = i
        /\ IF /\ ownerView[i] = lease.epoch
              /\ lease.owner = i
-             /\ (committed.epoch = ownerView[i] => committed.seq < MaxSeq)
           THEN \* accepted: only NOW is the control consumed
                /\ pending' = pending \ {m}
                /\ committed' = [epoch |-> ownerView[i],
@@ -138,7 +158,7 @@ OwnerDequeue(i) ==
                /\ network' = network \cup
                     { [dst |-> c, epoch |-> committed'.epoch,
                        seq |-> committed'.seq] : c \in Clients }
-               /\ UNCHANGED <<lease, ownerView, applied, crashed>>
+               /\ UNCHANGED <<lease, ownerView, applied, crashed, admitted>>
           ELSE \* cannot commit (ownership moved, or the write bound is a
                \* TLC artifact): RE-TARGET to the current owner rather than
                \* consume it - dropping it here modelled a control loss the
@@ -148,7 +168,9 @@ OwnerDequeue(i) ==
                /\ pending' = (pending \ {m}) \cup
                     {[to |-> lease.owner, id |-> m.id]}
                /\ UNCHANGED <<lease, ownerView, committed, network, applied,
-                               crashed>>
+                               crashed, admitted>>
+
+OwnerDequeue(i) == \E id \in 1..MaxCtl : OwnerDequeueCtl(i, id)
 
 (* Clients apply by the ordered rule proven in SyncTimeline.tla. *)
 Deliver(m) ==
@@ -158,12 +180,12 @@ Deliver(m) ==
         \/ m.epoch = applied[m.dst].epoch /\ m.seq > applied[m.dst].seq
      THEN applied' = [applied EXCEPT ![m.dst] = [epoch |-> m.epoch, seq |-> m.seq]]
      ELSE UNCHANGED applied
-  /\ UNCHANGED <<lease, ownerView, committed, crashed, pending>>
+  /\ UNCHANGED <<lease, ownerView, committed, crashed, admitted, pending>>
 
 Drop(m) ==
   /\ m \in network
   /\ network' = network \ {m}
-  /\ UNCHANGED <<lease, ownerView, committed, applied, crashed, pending>>
+  /\ UNCHANGED <<lease, ownerView, committed, applied, crashed, admitted, pending>>
 
 (* The sweep re-fans the committed state - run by the CURRENT owner only.  *)
 Sweep ==
@@ -172,7 +194,7 @@ Sweep ==
   /\ committed.epoch > 0
   /\ network' = network \cup
        { [dst |-> c, epoch |-> committed.epoch, seq |-> committed.seq] : c \in Clients }
-  /\ UNCHANGED <<lease, ownerView, committed, applied, crashed, pending>>
+  /\ UNCHANGED <<lease, ownerView, committed, applied, crashed, admitted, pending>>
 
 Next ==
   \/ \E i \in Instances :
@@ -192,7 +214,7 @@ Fairness ==
        SF_vars(\E m \in network : m.dst = c /\ Deliver(m))
   /\ \A i \in Instances : WF_vars(Revive(i))
   \* a live owner eventually drains what was forwarded to it
-  /\ \A i \in Instances : SF_vars(OwnerDequeue(i))
+  /\ \A i \in Instances, id \in 1..MaxCtl : SF_vars(OwnerDequeueCtl(i, id))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
@@ -227,6 +249,7 @@ TypeOK ==
   /\ lease.owner \in Instances \cup {None}
   /\ committed.epoch \in 0..MaxEpoch
   /\ committed.seq \in 0..MaxSeq
+  /\ admitted \in 0..MaxSeq
   /\ crashed \subseteq Instances
   /\ \A i \in Instances : ownerView[i] \in 0..MaxEpoch
   /\ \A c \in Clients :
@@ -265,9 +288,19 @@ Behind(a, b) ==
   \/ a.epoch < b.epoch
   \/ (a.epoch = b.epoch /\ a.seq < b.seq)
 
+(* Per-version progress. The earlier form re-evaluated `committed` in the  *)
+(* consequent, so it only said "eventually catches whatever is current" -  *)
+(* quantifying over a FIXED version states the documented guarantee: once  *)
+(* version v is committed, every client eventually reaches v or passes it. *)
+Versions == [epoch : 1..MaxEpoch, seq : 1..MaxSeq]
+
 NoClientStrandedBehind ==
-  \A c \in Clients :
-    (committed.epoch > 0 /\ Behind(applied[c], committed))
-      ~> ~Behind(applied[c], committed)
+  \A c \in Clients : \A v \in Versions :
+    (committed = v) ~> ~Behind(applied[c], v)
+
+(* Every admitted control eventually leaves the queue (i.e. is committed). *)
+EveryForwardedControlProgresses ==
+  \A id \in 1..MaxCtl :
+    (\E m \in pending : m.id = id) ~> (\A m \in pending : m.id /= id)
 
 =============================================================================
