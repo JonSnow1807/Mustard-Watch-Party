@@ -63,7 +63,10 @@ function simulate(
       ctrl.onRateApplied(1);
     } else if (action.type === 'seek') {
       drift = 0.02; // seek lands near target
+      // the engine restores rate 1 before seeking and tells the controller,
+      // so the plant models that contract rather than silently diverging
       applied = 1;
+      ctrl.onRateApplied(1);
       seeks += 1;
     }
     drifts.push(drift);
@@ -110,14 +113,23 @@ describe('DisciplineController (predictive servo)', () => {
     const ctrl = new DisciplineController();
     simulate(ctrl, 200e-6, 30);
     const tl = { ...timeline(), isPlaying: false, mediaTime: 130 };
-    const action = ctrl.evaluate({
+    const base = {
       tLocal: 200_000,
       serverNow: 200_000,
       playerTime: 130,
-      playerState: 'playing',
       timeline: tl,
       fractionalRateOK: true,
-    });
+    };
+    const action = ctrl.evaluate({ ...base, playerState: 'playing' as const });
     expect(action.type).toBe('pause');
+    // and once the player is actually paused, the applied rate is released
+    const after = ctrl.evaluate({
+      ...base,
+      tLocal: 200_250,
+      serverNow: 200_250,
+      playerState: 'paused' as const,
+    });
+    expect(after.type).toBe('clear-rate');
+    expect(ctrl.getStatus().servoActive).toBe(false);
   });
 });

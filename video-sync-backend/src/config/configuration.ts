@@ -1,3 +1,12 @@
+function requireInProduction(name: string, devFallback: string): string {
+  const value = process.env[name];
+  if (value) return value;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`${name} must be set in production`);
+  }
+  return devFallback;
+}
+
 export default () => ({
   port: parseInt(process.env.PORT || '3000', 10),
   database: {
@@ -7,7 +16,9 @@ export default () => ({
     idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
   },
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-secret-key',
+    // no fallback secret: a deployment that forgets JWT_SECRET must fail to
+    // boot, not silently issue tokens anyone can forge
+    secret: requireInProduction('JWT_SECRET', 'dev-only-insecure-secret'),
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
   cors: {

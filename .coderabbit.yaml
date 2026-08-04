@@ -1,0 +1,36 @@
+# CodeRabbit configuration. Defaults are good; these path rules stop it
+# re-litigating deliberate, documented decisions so its signal stays high.
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  path_instructions:
+    - path: "sync-harness/**"
+      instructions: >-
+        Local MEASUREMENT tooling, not production code. Hardcoded lab
+        credentials, localhost URLs, and debug scripts are intentional. DO flag
+        anything that could corrupt a measurement (sampling races, unbounded
+        waits, silently dropped samples, statistics bugs) or make a run hang.
+    - path: "docs/measurements/**"
+      instructions: >-
+        Committed raw measurement artifacts (ndjson/json/svg) with provenance.
+        These are DATA, not code - do not review their contents except for
+        genuinely leaked secrets.
+    - path: "relay-go/**"
+      instructions: >-
+        An explicitly scoped systems study documented in docs/RELAY.md: no
+        Postgres, no authorization (proven on the Node plane), single instance.
+        Review it for memory/goroutine safety, protocol conformance and
+        panics; do not ask for the omitted product features.
+    - path: "video-sync-backend/src/shared/**"
+      instructions: >-
+        GENERATED copies of /shared (scripts/sync-shared.mjs). Report issues
+        against the canonical /shared file instead; never suggest editing here.
+    - path: "video-sync-frontend/src/shared/**"
+      instructions: >-
+        GENERATED copies of /shared (scripts/sync-shared.mjs). Report issues
+        against the canonical /shared file instead; never suggest editing here.
+    - path: "formal/**"
+      instructions: >-
+        TLA+ specifications and TLC configs. Review the model's fidelity to the
+        implementation and the strength of its invariants/fairness assumptions.

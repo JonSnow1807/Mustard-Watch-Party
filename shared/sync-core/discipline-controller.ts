@@ -83,6 +83,7 @@ export class DisciplineController {
     });
   }
 
+  /** Stand down; the caller restores playback rate 1 (see DriftController). */
   suspend(): void {
     this.reactive.suspend();
     this.resetServo();
@@ -106,6 +107,11 @@ export class DisciplineController {
     this.lastDrift = null;
     this.lastT = null;
     this.servoActive = false;
+    // The executor restores playback rate 1 whenever it seeks or suspends
+    // (SyncEngine.execute / bot executor), so the servo's belief must match
+    // or the next b-hat measurement is biased by the stale command.
+    this.appliedRate = 1;
+    this.lastCommand = 1;
     // bHat survives resets on purpose: the player's skew doesn't change
     // because we sought; the estimate is the point of the exercise
   }

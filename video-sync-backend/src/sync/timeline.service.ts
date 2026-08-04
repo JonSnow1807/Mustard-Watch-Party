@@ -167,10 +167,17 @@ export class TimelineService {
     return null;
   }
 
+  /**
+   * Tear down an empty room. Ordering matters: the in-memory maps are dropped
+   * FIRST (synchronously, so no join can interleave), and only then is the
+   * slow persistence flush awaited. Deleting after the await let a join that
+   * landed mid-flush have its freshly created state destroyed.
+   */
   async releaseRoom(roomCode: string): Promise<void> {
-    await this.flushPersist(roomCode);
+    const timeline = await this.store.get(roomCode);
     this.meta.delete(roomCode);
     await this.store.clear(roomCode);
+    if (timeline) await this.persistTimeline(roomCode, timeline);
   }
 
   dropSocket(socketId: string): void {
@@ -194,6 +201,10 @@ export class TimelineService {
     }
     const tl = await this.store.get(roomCode);
     if (!tl) return;
+    await this.persistTimeline(roomCode, tl);
+  }
+
+  private async persistTimeline(roomCode: string, tl: Timeline): Promise<void> {
     const now = this.clock ? this.clock.now() : Date.now();
     try {
       await this.database.room.update({

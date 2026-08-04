@@ -10,7 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
-import { wsAuthMiddleware } from './ws-auth';
+import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
 
 interface VoiceUser {
   userId: string;
@@ -52,6 +52,16 @@ export class VoiceGateway
 
   afterInit(server: Server): void {
     server.use(wsAuthMiddleware(this.jwt));
+  }
+
+  /**
+   * Identity comes from the verified JWT, never from the payload: the
+   * middleware authenticates the socket, so trusting body userIds would let
+   * any authenticated client impersonate anyone in the voice roster.
+   */
+  private identity(client: Socket): { userId: string; username: string } {
+    const data = client.data as AuthedSocketData;
+    return { userId: data.userId, username: data.username };
   }
 
   handleConnection(client: Socket) {

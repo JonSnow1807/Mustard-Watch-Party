@@ -284,6 +284,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   const [videoId, setVideoId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(true);
+  const syncEnabledRef = useRef(true);
   const [status, setStatus] = useState<EngineStatus>(EMPTY_STATUS);
   const [showHud, setShowHud] = useState(
     () => new URLSearchParams(window.location.search).get('debug') === '1',
@@ -319,6 +320,11 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     const engine = new SyncEngine(socket, roomCode);
     engineRef.current = engine;
     engine.start();
+    // the player may already be ready (socket reconnect / room change with a
+    // live player): adopt the existing adapter or the new engine would never
+    // get one and every control would dead-end
+    if (adapterRef.current) engine.attachAdapter(adapterRef.current);
+    engine.setEnabled(syncEnabledRef.current);
     const unsubscribe = engine.onStatus(setStatus);
 
     const onRejected = (r: { reason: string }) => {
@@ -336,7 +342,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       unsubscribe();
       engine.dispose();
       engineRef.current = null;
-      adapterRef.current = null;
+      // adapterRef is owned by the player effect below - clearing it here
+      // orphaned a live adapter (and its poll timer) on every reconnect
     };
   }, [socket, roomCode]);
 
@@ -355,7 +362,9 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     setVideoId(id);
     if (!id) return;
 
+    let cancelled = false;
     const initializePlayer = (vid: string) => {
+      if (cancelled) return;
       playerRef.current = new window.YT.Player('youtube-player', {
         videoId: vid,
         playerVars: {
@@ -381,16 +390,29 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       });
     };
 
+    const API_SRC = 'https://www.youtube.com/iframe_api';
+    const onApiReady = () => initializePlayer(id);
     if (window.YT?.Player) {
       initializePlayer(id);
     } else {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      document.head.appendChild(tag);
-      window.onYouTubeIframeAPIReady = () => initializePlayer(id);
+      // the API script is global: appending it twice re-runs it and races
+      if (!document.querySelector(`script[src="${API_SRC}"]`)) {
+        const tag = document.createElement('script');
+        tag.src = API_SRC;
+        document.head.appendChild(tag);
+      }
+      window.onYouTubeIframeAPIReady = onApiReady;
     }
 
     return () => {
+      // a late API load would otherwise build an orphan player (and an
+      // undisposed adapter poll timer) after this effect is gone
+      cancelled = true;
+      if (window.onYouTubeIframeAPIReady === onApiReady) {
+        window.onYouTubeIframeAPIReady = undefined;
+      }
+      adapterRef.current?.dispose();
+      adapterRef.current = null;
       playerRef.current?.destroy?.();
       setIsReady(false);
     };
@@ -438,6 +460,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   const handleSyncToggle = () => {
     const next = !syncEnabled;
     setSyncEnabled(next);
+    syncEnabledRef.current = next;
     engineRef.current?.setEnabled(next);
   };
 
