@@ -169,9 +169,11 @@ Four modeling lessons worth recording:
   epoch, which is what the name always claimed.
 - **Liveness checking needs bounded state.** The sweep's re-fanning makes
   the in-flight message powerset explode; a `NetworkBound` constraint (≤4
-  in flight) plus small constants keeps TLC tractable. Safety and liveness
-  are checked at the same (small) constants — stated plainly rather than
-  implying exhaustive coverage of the unbounded system.
+  in flight) plus small constants keeps TLC tractable. Both are checked at
+  small constants, though **not identical** ones — safety at `MaxSeq=3`,
+  liveness at `MaxSeq=2`, where the fairness obligations stay tractable —
+  stated plainly rather than implying exhaustive coverage of the unbounded
+  system.
 
 **What the liveness result does and does not say.** `MaxSeq`/`MaxEpoch` make
 commits finite, so `committed` must eventually stop changing: TLC verifies

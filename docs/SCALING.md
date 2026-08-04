@@ -13,8 +13,10 @@ execution *is* the serializer — concurrent control events from different
 instances commit as `(seq n, n+1)` with no locks, and every broadcast
 carries exactly the state the script returned, never a local copy.
 
-Measured on the live 3-instance lab: a 10-control blast split across two
-instances produced 13 broadcasts, 13 unique seqs, strictly monotone.
+Measured on the live 3-instance lab **[lab]** — `verify-m6.ts` prints this
+and asserts on it, but writes no artifact: a 10-control blast split across
+two instances produced 13 broadcasts (10 controls plus re-anchor sweeps),
+13 unique seqs, strictly monotone.
 
 **Rejected alternative — in-memory authority with pub/sub invalidation:**
 requires room→instance ownership (leases, failover, fencing, split-brain
@@ -33,7 +35,9 @@ Every timestamp therefore comes from `redis.call('TIME')` **inside** the
 Lua scripts, and each instance maintains a smoothed local→Redis offset
 (TIME round-trips every 5s, EMA-8) through which it converts the
 `sync:clock` ack stamps. Identity transform without Redis. Measured
-ack-offset spread across the 3 live lab instances: **4ms**.
+ack-offset spread across the 3 live lab instances: **4ms** **[lab]** —
+`verify-m6.ts` computes and gates this (< 50ms) on the console; no run
+directory is written, so the figure is reproducible but not citable.
 
 ## 3. Failure model
 
@@ -69,8 +73,8 @@ against 1 instance vs 3 instances behind nginx; each cell 120s with
 scripted control events; per-instance `/metrics` scraped every 5s
 (event-loop lag p99, CPU, RSS, connected clients); load-generator host load
 recorded per cell and cells above 0.7 load/core flagged self-skewed. SLOs:
-bot P95 vs-timeline drift ≤ 250ms (calibrated above the fleet's
-load-independent ~165ms simulation floor — see below); event-loop lag p99
+bot P95 vs-timeline drift ≤ 250ms (set above the fleet's simulated-player
+floor, measured at P95 116–156ms across this sweep); event-loop lag p99
 ≤ 100ms. The knee is the smallest N breaching an SLO, attributed via the
 correlated server metric.
 
@@ -108,8 +112,23 @@ simulated player's own latency is. The server metrics are where load shows
 up, which is why the knee is defined on event-loop lag rather than drift.
 
 Every cell passed load-gen validity (<0.7 load/core). Sizes 10 and 50 were
-re-run after the first pass flagged them self-skewed; the re-runs are the
-published cells and the raw first-pass files remain in the run directory.
+re-run after the first pass flagged them self-skewed; only the re-runs are
+published — the first-pass cell files were overwritten by the re-run and
+were not retained.
+
+**One cell reports seq gaps.** `three-25` records **59** `seqGaps`; every
+other cell records zero (`sweep-summary.json`, `botSummary.seqGaps`). Seq
+gaps are not one of the two SLOs above, so the cell is marked "ok" by the
+knee criterion and the table has no column for them — which would leave a
+non-zero integrity count invisible to anyone reading only the table. It is
+surfaced here instead. A gap is a bot observing a jump in `(storeEpoch,
+seq)`, which a dropped or reordered fanout message produces without any
+store-side defect; the store's own serialization is checked separately and
+directly (`verify-m6.ts`, and the CI gate fails on any gap). It is called
+out because a number that appears in a committed artifact and nowhere in
+the prose is exactly the kind of thing this document should not bury, and
+because it has not been root-caused — it warrants a re-run of that cell
+before the 3-instance topology is claimed clean on integrity.
 
 Charts: [drift](measurements/sweep/charts/sweep-drift.svg) ·
 [event-loop lag](measurements/sweep/charts/sweep-lag.svg) ·

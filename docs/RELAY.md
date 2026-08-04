@@ -19,7 +19,8 @@ JWT auth) runs against either plane via a transport abstraction
 | relay-go / raw WS / binary | 75ms | 116ms | 0 | pass |
 
 *(10 bots × 120s each, re-measured after the simulated-player fix described
-in `docs/SYNC_DESIGN.md` §8.)*
+in `docs/SYNC_DESIGN.md` §8. **[lab]** — these two fleet runs were not
+committed; the table is reproducible from the harness, not citable.)*
 
 Same protocol, same convergence, cross-language — which is the point.
 
@@ -28,9 +29,16 @@ Same protocol, same convergence, cross-language — which is the point.
 | | Socket.IO/JSON | raw-WS/binary |
 |---|---|---|
 | timeline broadcast wire size | 223 B | **31 B** (7.2×) |
-| clock-ack RTT P50 | 0.23ms | **0.15ms** |
-| clock-ack RTT P95 | 0.68ms | **0.38ms** |
-| clock-ack RTT P99 | 1.38ms | **0.91ms** |
+| clock-ack RTT P50 **[lab]** | 0.23ms | **0.15ms** |
+| clock-ack RTT P95 **[lab]** | 0.68ms | **0.38ms** |
+| clock-ack RTT P99 **[lab]** | 1.38ms | **0.91ms** |
+
+*The wire sizes are derived, not measured: 223 B is
+`Buffer.byteLength('42' + JSON.stringify(['sync:timeline', timeline]))` for a
+representative timeline and 31 B is the documented binary frame layout
+(1+4+8+1+8+8+1), both computed in `bench-planes.ts` and checkable by reading
+it. The RTT rows are **[lab]**: `bench-planes.ts` prints the percentiles and
+writes no artifact.*
 
 **Honest conclusion:** the binary plane is ~7× lighter on the wire and
 ~40% faster per exchange, but both planes sit deep under a millisecond on

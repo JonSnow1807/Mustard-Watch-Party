@@ -12,8 +12,11 @@ claiming them.
 ## The numbers (measured, not claimed)
 
 Same deterministic 3-browser scenario, same hardware, before → after the
-sync overhaul. Every figure traces to a committed run under
+sync overhaul. Every figure in this table traces to a committed run under
 [`docs/measurements/`](docs/measurements/) with SHA + hardware provenance.
+(Elsewhere in the docs, figures measured locally but not committed are
+tagged **[lab]** — see the provenance convention in
+[SYNC_DESIGN.md](docs/SYNC_DESIGN.md).)
 
 | scenario (one-way impairment) | baseline | reactive | **predictive servo (default)** |
 |---|---|---|---|
@@ -58,7 +61,7 @@ measured), and no correction mechanism existed
 ([baseline findings](docs/measurements/baseline/README.md)).
 
 Protocol-level, on the production multi-instance plane: 100 clients in one
-room hold P95 ≈ 147ms (P50 68ms); a 10-cell load sweep (10→250 clients × 1/3 instances)
+room hold P95 147ms (P50 67ms); a 10-cell load sweep (10→250 clients × 1/3 instances)
 locates the knee: **one instance breaches the event-loop-lag SLO at 250
 clients in a room (130ms), where three instances hold 76ms**
 ([scaling results](docs/SCALING.md#5-load-characterization)).
@@ -87,7 +90,8 @@ flowchart LR
   broadcast as everyone else — echo storms are structurally impossible.
 - **Clock discipline**: NTP-style offset over a Socket.IO ack, median-of-
   best-RTT filtering, slew-not-step; validated by bot fleets with injected
-  ±1s offsets recovered to ~2ms.
+  ±1s offsets and ±80ppm skews, recovered to a θ-error P95 of ~3ms
+  (2.7–6.9ms across the committed 10→250-client sweep).
 - **Predictive clock discipline** (default): a PI servo with an RLS-learned
   feed-forward skew term commands a continuous playback rate that cancels
   drift *before* it accumulates. It is engaged per video by a runtime probe;
@@ -96,8 +100,8 @@ flowchart LR
   with the lead *learned* from each seek's settle residual.
 - **Multi-instance**: room timelines live in Redis behind one Lua script per
   mutation (Redis's single-threaded execution is the serializer — no locks),
-  with `redis TIME` as the single clock domain (4ms measured spread across
-  live instances). Kill -9 an instance mid-playback and the room carries on.
+  with `redis TIME` as the single clock domain (4ms spread measured across
+  live instances by `verify-m6.ts`; console-gated, not a committed run). Kill -9 an instance mid-playback and the room carries on.
 
 Full design: [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md) ·
 [scaling & coordination](docs/SCALING.md) · [two coordination planes, measured](docs/COORDINATION.md) ·
@@ -144,4 +148,4 @@ Setup, labs, tests and gates: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 NestJS · Socket.IO · Prisma/PostgreSQL · Redis (ioredis + Lua) · React ·
 a shared pure-TS sync core consumed by the browser, the bot fleet, and jest
 · Playwright + Toxiproxy + tc-netem for measurement · GitHub Actions with a
-sync-regression gate on every push.
+sync-regression gate on every pull request and every push to `main`.

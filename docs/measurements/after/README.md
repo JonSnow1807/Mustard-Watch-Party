@@ -8,9 +8,20 @@ these run directories (SHA + scenario + impairment in each `meta.json`).
 
 Conditions: otherwise-idle machine. Earlier same-day runs with the idle
 3-instance lab running (and one with a mid-run Redis restart) measured
-2–4× worse P95/P99 tails — buffering-driven, zero hard seeks — and were
-superseded by these controlled re-runs. Stating conditions is part of the
-method; the noisy attempts remain in git history.
+materially worse P95/P99 tails — buffering-driven, zero hard seeks — and
+were superseded by these controlled re-runs. Stating conditions is part of
+the method. **Those attempts were never committed** — they exist only in the
+gitignored harness output, so the comparison above rests on these five runs
+alone, and the earlier set is context rather than evidence.
+
+**These five runs span two builds.** S5 ran at SHA `d7eead28`; S0, S2, S3
+and S6 ran at `57b730a8`, ~10 minutes later. The intervening change is the
+`isNewer` epoch-ordering fix found by TLC (plus its spec and the copies of
+it). That predicate only decides between competing `storeEpoch` values,
+which change on store rehydration — no rehydration occurs in this scenario,
+so within these runs it reduces to the same seq comparison on both builds
+and the S5 figure should be unaffected. Recorded rather than smoothed over,
+because "same build" is what a reader would otherwise assume.
 
 Asymmetry validation (S6 vs the symmetric S5 control): median client θ̂
 +50.5ms vs 0.0ms — predicted bias asym/2 = +50.0ms.

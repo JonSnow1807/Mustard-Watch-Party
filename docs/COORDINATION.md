@@ -33,7 +33,11 @@ plane A, so plane B needs no new client-side concept.
 ## The A/B
 
 25 bots, one room, 120s, identical scripted control events, same machine,
-same Redis, single instance per arm:
+same Redis, single instance per arm. **[lab]** — both arms were measured
+locally and the run outputs were not committed, so these figures are
+reproducible from the harness but you cannot open the artifact behind them.
+The drift rows come from the two 25-bot fleet runs; the handler means from a
+`/metrics` scrape taken during each arm.
 
 | | plane A (lua) | plane B (actor) |
 |---|---|---|
