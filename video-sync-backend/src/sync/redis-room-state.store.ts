@@ -39,7 +39,10 @@ interface RedisWithCommands extends Redis {
     mediaTime: string,
     by: string,
   ): Promise<string | null>;
-  mustardApplySnapshot(key: string, minIntervalMs: string): Promise<string | null>;
+  mustardApplySnapshot(
+    key: string,
+    minIntervalMs: string,
+  ): Promise<string | null>;
   mustardInit(key: string, videoId: string, mediaTime: string): Promise<string>;
 }
 
