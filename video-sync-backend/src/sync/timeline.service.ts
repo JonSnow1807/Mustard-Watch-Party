@@ -44,7 +44,40 @@ export class TimelineService {
    * Ensure the room has an authoritative timeline; called on join. Hydrates
    * from the Room row on first touch — always paused (P5).
    */
+  /** serializes ensureRoom against releaseRoom for one room */
+  private roomGate = new Map<string, Promise<unknown>>();
+
+  private gated<T>(roomCode: string, op: () => Promise<T>): Promise<T> {
+    const prior = this.roomGate.get(roomCode) ?? Promise.resolve();
+    const next = prior.catch(() => undefined).then(op);
+    this.roomGate.set(roomCode, next);
+    void next
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.roomGate.get(roomCode) === next)
+          this.roomGate.delete(roomCode);
+      });
+    return next;
+  }
+
   async ensureRoom(
+    roomCode: string,
+    room: {
+      creatorId: string;
+      allowGuestControl: boolean;
+      videoUrl: string | null;
+      currentTime: number;
+    },
+    now: number,
+  ): Promise<Timeline> {
+    // a release running concurrently would delete the meta/store state this
+    // join is creating; both run on one per-room gate
+    return this.gated(roomCode, () =>
+      this.ensureRoomInner(roomCode, room, now),
+    );
+  }
+
+  private async ensureRoomInner(
     roomCode: string,
     room: {
       creatorId: string;
@@ -179,7 +212,11 @@ export class TimelineService {
    * slow persistence flush awaited. Deleting after the await let a join that
    * landed mid-flush have its freshly created state destroyed.
    */
-  async releaseRoom(roomCode: string): Promise<void> {
+  releaseRoom(roomCode: string): Promise<void> {
+    return this.gated(roomCode, () => this.releaseRoomInner(roomCode));
+  }
+
+  private async releaseRoomInner(roomCode: string): Promise<void> {
     const timeline = await this.store.get(roomCode);
     this.meta.delete(roomCode);
     await this.store.clear(roomCode);

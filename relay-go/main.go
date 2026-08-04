@@ -124,6 +124,24 @@ func loadLua(dir string) (control, init_ *redis.Script, err error) {
 
 func nowMs() float64 { return float64(time.Now().UnixNano()) / 1e6 }
 
+// luaString converts a Redis reply to a string without panicking. A bare
+// res.(string) assertion panics on a number, table or status reply, and the
+// sweep goroutine has no http recovery - one odd reply would take the whole
+// relay down.
+func luaString(res interface{}, err error) (string, bool) {
+	if err != nil || res == nil {
+		return "", false
+	}
+	switch v := res.(type) {
+	case string:
+		return v, true
+	case []byte:
+		return string(v), true
+	default:
+		return "", false
+	}
+}
+
 func encodeTimeline(msgType byte, tl timeline) []byte {
 	buf := make([]byte, 1+4+8+1+8+8+1)
 	buf[0] = msgType
@@ -156,6 +174,10 @@ func (s *server) joinRoom(c *conn, room string) {
 	s.mu.Lock()
 	if c.room != "" {
 		delete(s.rooms[c.room], c)
+		// an empty map left behind is swept forever for nobody
+		if len(s.rooms[c.room]) == 0 {
+			delete(s.rooms, c.room)
+		}
 	}
 	if s.rooms[room] == nil {
 		s.rooms[room] = make(map[*conn]struct{})
@@ -244,14 +266,14 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			room := string(data[2 : 2+n])
 			s.joinRoom(c, room)
-			res, err := s.initRoom.Run(ctx, s.rdb,
-				[]string{"room:" + room + ":tl"}, "", "0").Result()
-			if err != nil {
-				log.Printf("init failed: %v", err)
+			raw, ok := luaString(s.initRoom.Run(ctx, s.rdb,
+				[]string{"room:" + room + ":tl"}, "", "0").Result())
+			if !ok {
+				log.Printf("init failed for room %s", room)
 				continue
 			}
 			var tl luaTimeline
-			if json.Unmarshal([]byte(res.(string)), &tl) == nil {
+			if json.Unmarshal([]byte(raw), &tl) == nil {
 				if !c.trySend(encodeTimeline(0x06, tl.toWire())) {
 					return
 				}
@@ -276,17 +298,17 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			room := string(data[11 : 11+n])
-			res, err := s.applyControl.Run(ctx, s.rdb,
+			raw, ok := luaString(s.applyControl.Run(ctx, s.rdb,
 				[]string{"room:" + room + ":tl"}, intent,
-				strconv.FormatFloat(mediaTime, 'f', -1, 64), "relay").Result()
-			if err != nil || res == nil {
+				strconv.FormatFloat(mediaTime, 'f', -1, 64), "relay").Result())
+			if !ok {
 				if !c.trySend([]byte{0x07, 0}) {
 					return
 				}
 				continue
 			}
 			var tl luaTimeline
-			if json.Unmarshal([]byte(res.(string)), &tl) == nil {
+			if json.Unmarshal([]byte(raw), &tl) == nil {
 				s.broadcast(room, encodeTimeline(0x04, tl.toWire()))
 			}
 		}
@@ -322,11 +344,14 @@ func main() {
 
 	// 10s snapshot sweep (the repair channel), same semantics as the Node plane
 	go func() {
-		snapshotScript := func() *redis.Script {
-			common, _ := os.ReadFile(filepath.Join(*luaDir, "common.lua"))
-			snap, _ := os.ReadFile(filepath.Join(*luaDir, "apply_snapshot.lua"))
-			return redis.NewScript(string(common) + string(snap))
-		}()
+		common, errC := os.ReadFile(filepath.Join(*luaDir, "common.lua"))
+		snap, errS := os.ReadFile(filepath.Join(*luaDir, "apply_snapshot.lua"))
+		if errC != nil || errS != nil {
+			// ignoring these errors ran an EMPTY script forever: the repair
+			// channel would be silently dead while the relay looked healthy
+			log.Fatalf("sweep lua unreadable: %v %v", errC, errS)
+		}
+		snapshotScript := redis.NewScript(string(common) + string(snap))
 		for range time.Tick(10 * time.Second) {
 			s.mu.RLock()
 			rooms := make([]string, 0, len(s.rooms))
@@ -335,13 +360,13 @@ func main() {
 			}
 			s.mu.RUnlock()
 			for _, room := range rooms {
-				res, err := snapshotScript.Run(context.Background(), s.rdb,
-					[]string{"room:" + room + ":tl"}).Result()
-				if err != nil || res == nil {
+				raw, ok := luaString(snapshotScript.Run(context.Background(), s.rdb,
+					[]string{"room:" + room + ":tl"}).Result())
+				if !ok {
 					continue
 				}
 				var tl luaTimeline
-				if json.Unmarshal([]byte(res.(string)), &tl) == nil && tl.IsPlaying {
+				if json.Unmarshal([]byte(raw), &tl) == nil && tl.IsPlaying {
 					s.broadcast(room, encodeTimeline(0x04, tl.toWire()))
 				}
 			}

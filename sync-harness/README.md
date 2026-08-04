@@ -38,7 +38,12 @@ adjectives.
   silently skewing data); a failed run is retried once, then marked FAILED.
   Poll failures are counted in the run output.
 - **Provenance.** Every run directory records git SHA, scenario, impairment,
-  hardware, and the raw samples — every published number traces back to one.
+  hardware, and the raw samples. Published numbers drawn from a committed run
+  directory trace back to one; figures measured locally without a committed
+  run are tagged **[lab]** in the docs (see the provenance convention at the
+  top of `docs/SYNC_DESIGN.md`). Some checks — `verify-m6.ts`,
+  `bench-planes.ts` — assert on the console and write no run directory, so
+  their numbers are reproducible but not citable.
 
 ## Prerequisites
 

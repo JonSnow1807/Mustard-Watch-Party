@@ -1,9 +1,24 @@
 # Sync Design
 
 How Mustard Watch Party keeps N YouTube players on different networks at the
-same frame, and how we know it works. Every number in this document traces to
-a committed run directory under `docs/measurements/` (SHA, scenario, hardware
-in `meta.json`); the harness and methodology live in `sync-harness/`.
+same frame, and how we know it works. The harness and methodology live in
+`sync-harness/`.
+
+**Provenance convention.** Numbers here come in two tiers, and the difference
+is marked rather than blurred:
+
+- **Committed** — traces to a run directory under `docs/measurements/` with
+  SHA, scenario, and hardware in `meta.json`. This covers the browser matrix
+  (baseline / after / servo), the load sweep, and the audio ground-truth
+  study. Anything not marked otherwise is this tier.
+- **Lab (uncommitted)** — measured locally and reproducible from the harness,
+  but the run output was not committed, so you cannot open the artifact
+  behind it. Every such figure is tagged **[lab]**.
+
+The tiers were previously not distinguished, which let lab figures sit under
+a blanket promise of committed provenance. They are separated now because a
+number you cannot check is a weaker claim than one you can, and the reader is
+entitled to know which is which.
 
 ## 1. Problem and goals
 
@@ -42,7 +57,8 @@ With Redis (the multi-instance plane), timestamps come from `redis.call
 ('TIME')` **inside the store's Lua scripts**, and each instance converts its
 own stamps through a smoothed local→Redis offset — one clock domain, so
 inter-instance wall-clock skew cannot masquerade as playback drift (measured
-ack-offset spread across 3 live instances: **4ms**).
+ack-offset spread across 3 live instances: **4ms** **[lab]**, from
+`verify-m6.ts`, which gates it on the console rather than writing a run).
 
 ## 3. Clock sync
 
@@ -63,7 +79,9 @@ drift controller never sees its clock step, larger ones step immediately.
 Cadence: 8×150ms burst on connect/reconnect/visibility-restore, then 1/2s;
 suspended while the tab is hidden (throttled timers produce garbage samples).
 Validation: bot fleets with injected ±1s offsets and ±80ppm skews recover
-ground truth to **θ-error P95 ≈ 2ms**.
+ground truth to a **θ-error P95 of ~3ms** — 2.7ms to 6.9ms across the ten
+committed cells of the 10→250-client sweep
+(`measurements/sweep/sweep-summary.json`, `thetaErrorP95Ms`).
 
 ## 4. Drift correction
 
@@ -156,8 +174,10 @@ an nginx-stream proxy container with `tc netem` inside for true packet loss
 (one root qdisc impairs both legs: `delay X` ⇒ +2X RTT, stated per scenario).
 YouTube CDN traffic never crosses a proxy. Steady-state windows exclude 15s
 warmup and 5s after control events; all-time numbers are also reported.
-Runs are health-gated; total failures are recorded as labeled exhibits, not
-discarded. CI runs a 10-bot tripwire on every push (P95 < 250ms, bounded
+Runs are health-gated. A failure caught after capture is kept as a labeled
+exhibit rather than discarded (S2 baseline); a failure caught by the gate
+*before* capture aborts the run and writes nothing, so those scenarios have
+no artifact and are reported as aborted rather than as a result. CI runs a 10-bot tripwire on every push (P95 < 250ms, bounded
 growth, seq integrity) — deliberately loose for shared runners; headline
 numbers come from local, hardware-documented runs.
 
@@ -169,31 +189,53 @@ See `docs/measurements/` for the run directories behind every number.
 |---|---|---|---|
 | S0 — clean loopback | 363ms / 255.3s | 31 / 83ms | **16 / 49ms** |
 | S2 — +150ms each way (~300ms RTT) | total failure | 25 / 139ms | **19 / 48ms** |
-| S3 — 50±30ms jitter each way | total failure | 68 / 118ms | **23 / 79ms** |
-| S5 — 25ms + 5% packet loss | total failure | 60 / 97ms | **11 / 29ms** |
-| S6 — asymmetric 120/20ms | total failure | 47 / 120ms | **10 / 86ms** |
+| S3 — 50±30ms jitter each way | aborted† | 68 / 118ms | **23 / 79ms** |
+| S5 — 25ms + 5% packet loss | aborted† | 60 / 97ms | **11 / 29ms** |
+| S6 — asymmetric 120/20ms | aborted† | 47 / 120ms | **10 / 86ms** |
 
 *Steady-state pairwise drift P50 / P95, 3 real Chrome clients, deterministic
 240s scenario, identical hardware. "Total failure" = the shipped engine's
-followers never started playing at all. Runs:
-[`docs/measurements/`](docs/measurements/) — baseline, after (reactive),
-servo (predictive).*
+followers never started playing at all, recorded as a committed exhibit run.
+Runs: [`docs/measurements/`](docs/measurements/) — baseline, after
+(reactive), servo (predictive).*
+
+*† Under S3/S5/S6 the baseline engine failed the player-health gate on both
+attempts — the same signature as S2 — so the run aborted before writing a
+directory. Only S0 and S2 have committed baseline artifacts. Calling these
+cells "total failure" would present an uncommitted observation as a
+measurement, so the overhauled figures for S3/S5/S6 stand without a paired
+before-number. This is the honest version of a table that would otherwise
+read as a cleaner sweep than the evidence supports.*
 
 No control event in any baseline run ever converged; every overhauled run
-converges after every event (seek ≤1s across the matrix, table above).
+converges after every event. Corrective seeks settle in **≤1s in nine of the
+ten** committed overhauled runs; the exception is the predictive-servo arm
+under S2 (+300ms RTT) at **8.75s**
+(`measurements/servo/S2-overhauled-servo-mse76wbj/stats.json`). That is the
+servo's worst published result and the clearest cost of preferring a smooth
+rate correction to a hard seek: under the matrix's longest RTT it takes
+almost nine seconds to close a seek, where the reactive arm closes the same
+seek in 1s. It is called out rather than averaged away.
+
 Asymmetry bias (S6): clients' θ̂ shows **+50.5ms vs the +50.0ms prediction**
 (asym/2), symmetric control 0.0ms — the NTP-family floor made visible.
-Earlier same-day runs under a loaded machine (idle lab containers + a
-mid-run Redis restart) measured 2–4× worse tails and were superseded by
-these controlled re-runs; both sets exist in history, and conditions are
-recorded per run.
 
-Protocol-level (bot fleet, local, reactive controller): 10 bots × 150s —
-P50 74ms / P95 113ms / P99 255ms, growth +1.7ms/min (bounded); 100 bots, one
-room, one instance — P50 68ms / P95 147ms, growth −1.3ms/min, zero seq gaps.
-With the predictive servo (M9) the same 10-bot cell reports P50 **7.3ms** /
-P95 83ms — the servo cancels steady-state drift outright, and transients
-(joins, seeks, stalls) set the shared P99.
+Earlier same-day runs under a loaded machine (idle lab containers + a
+mid-run Redis restart) measured materially worse P95/P99 tails and were
+superseded by these controlled re-runs. **Those attempts were never
+committed** — they live only in the gitignored harness output — so the
+figures above rest on the committed re-runs alone, and the earlier set is
+described here as context rather than offered as evidence.
+
+Protocol-level (bot fleet, reactive controller) — **[lab]**, these three
+fleet runs were not committed: 10 bots × 150s — P50 74ms / P95 113ms /
+P99 255ms, growth +1.7ms/min (bounded); 100 bots, one room, one instance —
+P50 68ms / P95 147ms, growth −1.3ms/min, zero seq gaps. With the predictive
+servo (M9) the same 10-bot cell reports P50 **7.3ms** / P95 83ms — the servo
+cancels steady-state drift outright, and transients (joins, seeks, stalls)
+set the shared P99. The **committed** protocol-level evidence is the load
+sweep (`measurements/sweep/`), whose ten cells are reactive-controller,
+120s, and cover 10→250 clients: P95 116→156ms.
 
 > **Protocol-level numbers were re-measured on 2026-08-04.** A defect in the
 > bot fleet's simulated player (it discarded up to one 250ms tick of playback

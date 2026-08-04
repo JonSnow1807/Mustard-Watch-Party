@@ -59,6 +59,17 @@ export class VoiceGateway
    * middleware authenticates the socket, so trusting body userIds would let
    * any authenticated client impersonate anyone in the voice roster.
    */
+  /**
+   * The voice room this socket ACTUALLY joined, from the server's own
+   * roster. Handlers previously broadcast to `voice-${data.roomCode}` -
+   * a client-supplied value - so any authenticated socket could inject
+   * mute/deafen/speaking events into a room it had never joined
+   * (CWE-862). The payload's roomCode is now advisory at best.
+   */
+  private joinedRoom(client: Socket): string | null {
+    return this.voiceUsers.get(client.id)?.roomCode ?? null;
+  }
+
   private identity(client: Socket): { userId: string; username: string } {
     const data = client.data as AuthedSocketData;
     return { userId: data.userId, username: data.username };
@@ -73,10 +84,7 @@ export class VoiceGateway
     const user = this.voiceUsers.get(client.id);
 
     if (user) {
-      await this.handleLeaveVoice(client, {
-        roomCode: user.roomCode,
-        userId: user.userId,
-      });
+      await this.handleLeaveVoice(client);
     }
   }
 
@@ -92,13 +100,13 @@ export class VoiceGateway
   ) {
     try {
       console.log(
-        `${data.username} joining voice chat in room ${data.roomCode}`,
+        `${this.identity(client).username} joining voice in ${data.roomCode}`,
       );
 
       // Store user info
       const voiceUser: VoiceUser = {
-        userId: data.userId,
-        username: data.username,
+        userId: this.identity(client).userId,
+        username: this.identity(client).username,
         socketId: client.id,
         roomCode: data.roomCode,
         isMuted: false,
@@ -137,8 +145,8 @@ export class VoiceGateway
 
       // Notify others that a new user joined
       client.to(`voice-${data.roomCode}`).emit('voice-user-joined', {
-        userId: data.userId,
-        username: data.username,
+        userId: this.identity(client).userId,
+        username: this.identity(client).username,
         socketId: client.id,
       });
     } catch (error) {
@@ -148,36 +156,32 @@ export class VoiceGateway
   }
 
   @SubscribeMessage('leave-voice-chat')
-  async handleLeaveVoice(
-    @ConnectedSocket() client: Socket,
-    @MessageBody()
-    data: {
-      roomCode: string;
-      userId: string;
-    },
-  ) {
+  async handleLeaveVoice(@ConnectedSocket() client: Socket) {
     try {
+      // the room comes from the server's roster, never the payload
+      const room = this.joinedRoom(client);
+      if (!room) return;
       console.log(
-        `User ${data.userId} leaving voice chat in room ${data.roomCode}`,
+        `User ${this.identity(client).userId} leaving voice in ${room}`,
       );
 
       // Remove from maps
       this.voiceUsers.delete(client.id);
 
-      const roomUsers = this.roomVoiceUsers.get(data.roomCode);
+      const roomUsers = this.roomVoiceUsers.get(room);
       if (roomUsers) {
         roomUsers.delete(client.id);
         if (roomUsers.size === 0) {
-          this.roomVoiceUsers.delete(data.roomCode);
+          this.roomVoiceUsers.delete(room);
         }
       }
 
       // Leave voice room
-      await client.leave(`voice-${data.roomCode}`);
+      await client.leave(`voice-${room}`);
 
       // Notify others
-      client.to(`voice-${data.roomCode}`).emit('voice-user-left', {
-        userId: data.userId,
+      client.to(`voice-${room}`).emit('voice-user-left', {
+        userId: this.identity(client).userId,
         socketId: client.id,
       });
     } catch (error) {
@@ -200,8 +204,8 @@ export class VoiceGateway
         targetSocket.emit('voice-signal', {
           from: client.id,
           signal: data.signal,
-          username: data.username,
-          userId: data.userId,
+          username: this.identity(client).username,
+          userId: this.identity(client).userId,
         });
       }
     } catch (error) {
@@ -220,14 +224,16 @@ export class VoiceGateway
     },
   ) {
     try {
+      const room = this.joinedRoom(client);
+      if (!room) return; // not in a voice room: nothing to broadcast into
       const user = this.voiceUsers.get(client.id);
       if (user) {
         user.isMuted = data.isMuted;
       }
 
       // Notify all users in the room
-      this.server.to(`voice-${data.roomCode}`).emit('voice-mute-status', {
-        userId: data.userId,
+      this.server.to(`voice-${room}`).emit('voice-mute-status', {
+        userId: this.identity(client).userId,
         socketId: client.id,
         isMuted: data.isMuted,
       });
@@ -247,6 +253,8 @@ export class VoiceGateway
     },
   ) {
     try {
+      const room = this.joinedRoom(client);
+      if (!room) return;
       const user = this.voiceUsers.get(client.id);
       if (user) {
         user.isDeafened = data.isDeafened;
@@ -257,8 +265,8 @@ export class VoiceGateway
       }
 
       // Notify all users in the room
-      this.server.to(`voice-${data.roomCode}`).emit('voice-deafen-status', {
-        userId: data.userId,
+      this.server.to(`voice-${room}`).emit('voice-deafen-status', {
+        userId: this.identity(client).userId,
         socketId: client.id,
         isDeafened: data.isDeafened,
         isMuted: user?.isMuted || false,
@@ -279,9 +287,11 @@ export class VoiceGateway
     },
   ) {
     try {
+      const room = this.joinedRoom(client);
+      if (!room) return;
       // Broadcast speaking status to all users in the room
-      client.to(`voice-${data.roomCode}`).emit('voice-speaking-status', {
-        userId: data.userId,
+      client.to(`voice-${room}`).emit('voice-speaking-status', {
+        userId: this.identity(client).userId,
         socketId: client.id,
         isSpeaking: data.isSpeaking,
       });

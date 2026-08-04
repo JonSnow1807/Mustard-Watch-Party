@@ -98,20 +98,104 @@ fences.
 | `NoStaleFenceWrite` (the store never accepts a zombie's commit) | ok |
 | `CommitMonotone` (seq never regresses within an epoch) | ok |
 | `ClientNoRegress` (ordered rule holds under ownership churn) | ok |
-| `Convergence` (liveness: clients converge despite crash/revive) | ok |
+| `Convergence` (clients converge once commits cease — see caveat) | ok |
+| `NoClientStrandedBehind` (per-FIXED-version client progress) | ok |
+| `EveryForwardedControlProgresses` (no forwarded control starves) | ok |
 
-Two modeling lessons worth recording:
+The spec now also models the **forwarding path** the implementation ships:
+a non-owner publishes the control to the room's owner and the owner
+dequeues and commits it under its fence; if the observed owner is gone the
+publish reaches nobody and the sender reclaims rather than dropping the
+user's intent (the code's `PUBLISH`-returns-0 branch). Adding it took the
+state space from ~50k to ~194k distinct states, and both safety and
+liveness still hold.
+
+Two further review rounds hardened it again. The progress property
+`NoClientStrandedBehind` re-evaluated `committed` in its consequent, so it
+only said "the client eventually catches whatever is current" — it now
+quantifies over a **fixed version**, which is the per-version guarantee the
+doc claims. Aggregate fairness over `\E m \in pending` also let one
+forwarded control starve while others were repeatedly chosen; fairness is
+now per control identity, and `EveryForwardedControlProgresses` checks that
+every admitted control eventually leaves the queue.
+
+Adding that property immediately failed — and the counterexample was a
+**modelling artifact worth recording**: two direct commits exhausted
+`MaxSeq`, after which an already-forwarded control could never commit and
+sat in the queue forever. The bound was capping *writes* when it should cap
+*inputs*. `MaxSeq` now limits how many controls ever ENTER the system
+(local commits and forwards alike), which is what a bounded model of a
+real system should mean. A write bound masquerading as control loss would
+have been indistinguishable from a genuine bug.
+
+A second review round had already caught the forwarding model **modelling
+losses the implementation does not have**: `pending` held only `[to]`, so two
+forwards to the same owner collapsed into one element, and a dequeue that
+could not commit consumed the control anyway. Controls now carry an
+identity, and a dequeue that cannot commit **re-targets** to the current
+owner instead of swallowing it — which is what the code does. That change
+took the state space to ~436k distinct; safety and liveness still held.
+
+Converting `MaxSeq` from a write bound to an input bound then shrank it
+again, since the budget is now shared between commits and forwards rather
+than consumed only by writes. **Current figures, both green:**
+
+| config | constants | states generated | distinct | depth |
+|---|---|---|---|---|
+| `SyncActor.cfg` (safety) | `MaxSeq=3`, `MaxEpoch=2`, `MaxCtl=2` | 621,993 | 85,940 | 19 |
+| `SyncActor_live.cfg` (liveness) | `MaxSeq=2`, `MaxEpoch=2`, `MaxCtl=2` | 59,837 | 9,772 | 16 |
+
+The safety config runs at `MaxSeq=3` precisely because the tighter input
+bound freed the headroom to go deeper; liveness stays at 2, where the
+fairness obligations remain tractable. Both are small — the point of
+quoting them is to show the scale honestly, not to imply the unbounded
+system was covered.
+
+Four modeling lessons worth recording:
 
 - **The sweep needs strong fairness here too.** With weak fairness, crash/
   revive churn keeps disabling the sweep and an adversarial scheduler
   starves the repair channel forever — a modeling artifact, not a real
   failure. SF states the actual assumption: an owner alive infinitely often
   sweeps infinitely often.
+- **A model can be more pessimistic than the code, and that hides bugs too.**
+  Collapsing two controls into one set element and dropping an uncommittable
+  one made the spec describe a lossy system; had a real loss existed, the
+  model would have looked "correct" for the wrong reason.
+- **An invariant can be weaker than its name.** `NoStaleFenceWrite`
+  originally required only that `committed.epoch` never DECREASE — which a
+  stale write retaining the same epoch satisfies. It now requires every
+  transition that changes `committed` to write under the *current* lease
+  epoch, which is what the name always claimed.
 - **Liveness checking needs bounded state.** The sweep's re-fanning makes
   the in-flight message powerset explode; a `NetworkBound` constraint (≤4
-  in flight) plus small constants keeps TLC tractable. Safety and liveness
-  are checked at the same (small) constants — stated plainly rather than
-  implying exhaustive coverage of the unbounded system.
+  in flight) plus small constants keeps TLC tractable. Both are checked at
+  small constants, though **not identical** ones — safety at `MaxSeq=3`,
+  liveness at `MaxSeq=2`, where the fairness obligations stay tractable —
+  stated plainly rather than implying exhaustive coverage of the unbounded
+  system.
+
+**What the liveness result does and does not say.** `MaxSeq`/`MaxEpoch` make
+commits finite, so `committed` must eventually stop changing: TLC verifies
+that clients converge **once commits cease** — repair after the last write,
+under the crash, revive, and message-loss behaviors this spec models.
+
+Four qualifications, because "converges under crash and message loss" is a
+much bigger claim than what was actually proven:
+
+- **Bounded, not arbitrary.** Crashes, revivals, epochs, and controls are all
+  capped by the constants (`MaxSeq`, `MaxEpoch`, `MaxCtl`); the result covers
+  behaviors within those bounds, not every behavior of the real system.
+- **Bounded network.** `NetworkBound` caps in-flight messages at 4. Loss is
+  modeled; unbounded backlog is not.
+- **Strong fairness is an assumption, not a proof.** The result holds only
+  where a live owner sweeps and dequeues infinitely often. A partitioned or
+  permanently-wedged owner is outside it.
+- **Not verified for continuing traffic.** Convergence is checked after the
+  last commit. A room under unbounded, continuing control traffic is a
+  behavior this model cannot exhaust.
+
+Stated here rather than left for a reader to infer from the constants.
 
 **Design consequence:** epochs serve double duty — the fence that
 neutralizes zombies *and* the client ordering rule proven above. One

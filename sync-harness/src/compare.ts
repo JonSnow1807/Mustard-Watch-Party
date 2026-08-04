@@ -52,35 +52,48 @@ const rows: string[] = [
 ];
 const chartData: Array<{ scenario: string; engine: string; p95ms: number }> = [];
 
+// A run whose meta says INVALID did not measure what it set out to measure.
+// The baseline was already guarded; the AFTER run - the one that becomes the
+// headline number - was formatted and charted unconditionally, so a botched
+// run could be published as a result. Percentiles over a run that half failed
+// are not a smaller result, they are not a result at all.
+const invalid = (r: Run | undefined): boolean => !!r?.meta.notes?.includes('INVALID');
+
 for (const id of scenarioOrder) {
   const a = after.get(id);
   if (!a) continue;
   const b = baseline.get(id);
-  const bCell = b
-    ? b.meta.notes?.includes('INVALID')
+  const bCell = !b
+    ? 'not measured'
+    : invalid(b)
       ? '**total failure** (followers never start)'
-      : `${fmt(b.stats.pairwiseSteadyState.p50)} / ${fmt(b.stats.pairwiseSteadyState.p95)}`
-    : 'not measured';
+      : `${fmt(b.stats.pairwiseSteadyState.p50)} / ${fmt(b.stats.pairwiseSteadyState.p95)}`;
   const seekConv = a.stats.convergenceAfterEventsS.filter((c) => c.event.startsWith('seek'));
   const seekCell =
-    seekConv.length > 0 && seekConv[0].convergenceS !== null
-      ? `${seekConv[0].convergenceS.toFixed(2)}s`
-      : '—';
+    invalid(a) || seekConv.length === 0 || seekConv[0].convergenceS === null
+      ? '—'
+      : `${seekConv[0].convergenceS.toFixed(2)}s`;
+  const aCell = invalid(a)
+    ? `**INVALID** — ${a.meta.notes}`
+    : `${fmt(a.stats.pairwiseSteadyState.p50)} / ${fmt(a.stats.pairwiseSteadyState.p95)} / ${fmt(a.stats.pairwiseSteadyState.p99)}`;
   rows.push(
-    `| ${id} — ${a.meta.scenario.title.split('—')[0].trim()} | ${bCell} | ` +
-      `${fmt(a.stats.pairwiseSteadyState.p50)} / ${fmt(a.stats.pairwiseSteadyState.p95)} / ${fmt(a.stats.pairwiseSteadyState.p99)} | ${seekCell} |`,
+    `| ${id} — ${a.meta.scenario.title.split('—')[0].trim()} | ${bCell} | ${aCell} | ${seekCell} |`,
   );
-  chartData.push({ scenario: id, engine: 'overhauled', p95ms: a.stats.pairwiseSteadyState.p95 * 1000 });
-  if (b && !b.meta.notes?.includes('INVALID')) {
+  if (!invalid(a)) {
+    chartData.push({ scenario: id, engine: 'overhauled', p95ms: a.stats.pairwiseSteadyState.p95 * 1000 });
+  }
+  if (b && !invalid(b)) {
     chartData.push({ scenario: id, engine: 'baseline', p95ms: b.stats.pairwiseSteadyState.p95 * 1000 });
   }
 }
 
-const hardSeeks = [...after.values()].map(
-  (r) => `${r.meta.scenario.id}: ${r.stats.hardSeeksPerMinute.toFixed(2)}`,
-);
-rows.push('', `Steady-state hard seeks per minute — ${hardSeeks.join(' · ')}.`);
-const anyAfter = [...after.values()][0];
+const hardSeeks = [...after.values()]
+  .filter((r) => !invalid(r))
+  .map((r) => `${r.meta.scenario.id}: ${r.stats.hardSeeksPerMinute.toFixed(2)}`);
+if (hardSeeks.length > 0) {
+  rows.push('', `Steady-state hard seeks per minute — ${hardSeeks.join(' · ')}.`);
+}
+const anyAfter = [...after.values()].find((r) => !invalid(r));
 rows.push(
   '',
   `3 real Chrome clients, deterministic 240s scenario, ${anyAfter?.meta.hardware ?? ''}; ` +
