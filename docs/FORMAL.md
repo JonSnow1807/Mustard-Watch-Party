@@ -133,8 +133,23 @@ losses the implementation does not have**: `pending` held only `[to]`, so two
 forwards to the same owner collapsed into one element, and a dequeue that
 could not commit consumed the control anyway. Controls now carry an
 identity, and a dequeue that cannot commit **re-targets** to the current
-owner instead of swallowing it — which is what the code does. State space
-194k → 436k distinct; safety and liveness still hold.
+owner instead of swallowing it — which is what the code does. That change
+took the state space to ~436k distinct; safety and liveness still held.
+
+Converting `MaxSeq` from a write bound to an input bound then shrank it
+again, since the budget is now shared between commits and forwards rather
+than consumed only by writes. **Current figures, both green:**
+
+| config | constants | states generated | distinct | depth |
+|---|---|---|---|---|
+| `SyncActor.cfg` (safety) | `MaxSeq=3`, `MaxEpoch=2`, `MaxCtl=2` | 621,993 | 85,940 | 19 |
+| `SyncActor_live.cfg` (liveness) | `MaxSeq=2`, `MaxEpoch=2`, `MaxCtl=2` | 59,837 | 9,772 | 16 |
+
+The safety config runs at `MaxSeq=3` precisely because the tighter input
+bound freed the headroom to go deeper; liveness stays at 2, where the
+fairness obligations remain tractable. Both are small — the point of
+quoting them is to show the scale honestly, not to imply the unbounded
+system was covered.
 
 Four modeling lessons worth recording:
 
@@ -161,10 +176,24 @@ Four modeling lessons worth recording:
 **What the liveness result does and does not say.** `MaxSeq`/`MaxEpoch` make
 commits finite, so `committed` must eventually stop changing: TLC verifies
 that clients converge **once commits cease** — repair after the last write,
-under arbitrary crash/revive and message loss. It does *not* verify
-convergence for a room under unbounded, continuing control traffic, which
-this model cannot exhaust. Stated here rather than left for a reader to
-infer from the constants.
+under the crash, revive, and message-loss behaviors this spec models.
+
+Four qualifications, because "converges under crash and message loss" is a
+much bigger claim than what was actually proven:
+
+- **Bounded, not arbitrary.** Crashes, revivals, epochs, and controls are all
+  capped by the constants (`MaxSeq`, `MaxEpoch`, `MaxCtl`); the result covers
+  behaviors within those bounds, not every behavior of the real system.
+- **Bounded network.** `NetworkBound` caps in-flight messages at 4. Loss is
+  modeled; unbounded backlog is not.
+- **Strong fairness is an assumption, not a proof.** The result holds only
+  where a live owner sweeps and dequeues infinitely often. A partitioned or
+  permanently-wedged owner is outside it.
+- **Not verified for continuing traffic.** Convergence is checked after the
+  last commit. A room under unbounded, continuing control traffic is a
+  behavior this model cannot exhaust.
+
+Stated here rather than left for a reader to infer from the constants.
 
 **Design consequence:** epochs serve double duty — the fence that
 neutralizes zombies *and* the client ordering rule proven above. One
