@@ -117,17 +117,31 @@ jobs:
       - name: boot backend
         run: |
           node dist/main.js > nest.log 2>&1 &
+          # /health returns 200 with status=degraded,redis=down when Redis is
+          # unreachable - deliberately, since REST still works. But THIS job
+          # exists to exercise the Lua store, so `curl -sf` alone would let it
+          # "pass" against an unusable Redis and quietly test the wrong path.
+          # Require redis=ok, not merely HTTP 200.
+          ready() {
+            curl -sf --max-time 5 http://localhost:3000/health 2>/dev/null \
+              | grep -Eq '"redis"[[:space:]]*:[[:space:]]*"ok"'
+          }
           # retry quietly; the loop must NOT fail on an early attempt (the
           # backend needs a few seconds), so the failure branch lives after it
           for i in $(seq 1 30); do
-            curl -sf --max-time 5 http://localhost:3000/health >/dev/null && break
+            ready && break
             sleep 1
           done
           # the loop above exits 0 even if every attempt failed; assert once
-          # more so a backend that never booted fails HERE with its log,
-          # rather than later as a confusing bot-connection error
-          curl -sf --max-time 10 http://localhost:3000/health \
-            || { echo "backend never became healthy:"; tail -40 nest.log 2>/dev/null; exit 1; }
+          # more so a backend that never became Redis-ready fails HERE with
+          # its log and last health body, rather than later as a confusing
+          # bot-connection error
+          ready || {
+            echo "backend never reached redis=ok; last /health:"
+            curl -s --max-time 10 http://localhost:3000/health || echo "(no response)"
+            echo; echo "--- nest.log ---"; tail -40 nest.log 2>/dev/null
+            exit 1
+          }
         working-directory: video-sync-backend
         env:
           PORT: "3000"
