@@ -2,8 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from '../contexts/SocketContext';
 import styled from '@emotion/styled';
 import { toast } from 'react-hot-toast';
-import { SyncEngine, type EngineStatus } from '../sync/SyncEngine';
+import {
+  SyncEngine,
+  type EngineAdapter,
+  type EngineStatus,
+} from '../sync/SyncEngine';
 import { YouTubeAdapter } from '../sync/YouTubeAdapter';
+import { Html5Adapter } from '../sync/Html5Adapter';
+import { AudioTruthProbe } from '../sync/audio-truth';
 import { SYNC_EVENTS } from '../shared/sync-protocol';
 import { SyncHud } from './SyncHud';
 
@@ -292,7 +298,12 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const playerRef = useRef<YTPlayer | null>(null);
   const engineRef = useRef<SyncEngine | null>(null);
-  const adapterRef = useRef<YouTubeAdapter | null>(null);
+  const adapterRef = useRef<EngineAdapter | null>(null);
+  const mediaRef = useRef<HTMLVideoElement | null>(null);
+  const probeRef = useRef<AudioTruthProbe | null>(null);
+  // a same-origin media file drives the HTML5 path: the sync core is
+  // player-agnostic, and only a same-origin element can be audio-tapped
+  const isDirectMedia = /^\/?media\/.+\.(mp4|webm|ogg)$/i.test(videoUrl ?? '');
   const canControl = isHost || allowGuestControl;
 
   // Extract YouTube video ID
@@ -356,8 +367,29 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // HTML5 bootstrap (audio-truth + player-agnostic proof)
+  useEffect(() => {
+    if (!isDirectMedia) return;
+    const el = mediaRef.current;
+    if (!el) return;
+    const adapter = new Html5Adapter(el);
+    adapterRef.current = adapter;
+    engineRef.current?.attachAdapter(adapter);
+    setIsReady(true);
+    const probe = new AudioTruthProbe(el);
+    probeRef.current = probe;
+    void probe.start();
+    return () => {
+      probe.stop();
+      probeRef.current = null;
+      adapterRef.current = null;
+      setIsReady(false);
+    };
+  }, [isDirectMedia, videoUrl]);
+
   // Player bootstrap
   useEffect(() => {
+    if (isDirectMedia) return;
     const id = getYouTubeId(videoUrl);
     setVideoId(id);
     if (!id) return;
@@ -469,6 +501,63 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  if (isDirectMedia) {
+    return (
+      <PlayerContainer>
+        <VideoWrapper>
+          <video
+            ref={mediaRef}
+            src={videoUrl}
+            playsInline
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+            }}
+          />
+          {showHud && <SyncHud status={status} />}
+        </VideoWrapper>
+        <Controls>
+          <ControlRow>
+            <PlayButton
+              data-testid="play-button"
+              onClick={handlePlayPause}
+              canControl={canControl}
+              disabled={!isReady}
+            >
+              {status.roomPlaying ? '⏸' : '▶'}
+              {status.roomPlaying ? 'Pause' : 'Play'}
+            </PlayButton>
+            <ProgressContainer>
+              <ProgressBar
+                data-testid="progress-bar"
+                onClick={handleProgressClick}
+                canControl={canControl}
+              >
+                <ProgressFill
+                  progress={
+                    status.durationS > 0
+                      ? Math.min(
+                          100,
+                          ((status.roomPlaying
+                            ? status.projectedS
+                            : (status.timeline?.mediaTime ?? 0)) /
+                            status.durationS) *
+                            100,
+                        )
+                      : 0
+                  }
+                />
+              </ProgressBar>
+            </ProgressContainer>
+          </ControlRow>
+        </Controls>
+      </PlayerContainer>
+    );
+  }
 
   if (!videoId) {
     return (

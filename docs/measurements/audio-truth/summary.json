@@ -1,0 +1,26 @@
+{
+  "runId": "audio-mse8zyx2",
+  "clients": 3,
+  "durationS": 150,
+  "pairedClicks": 228,
+  "audioTruthMs": {
+    "p50": 13.1767578125,
+    "p95": 63.989990234375,
+    "max": 287.94287109375
+  },
+  "playerApiMs": {
+    "p50": 7.937999999995782,
+    "p95": 19.016000000000588
+  },
+  "calibrationResidualMs": {
+    "p50": 6.942119140629245,
+    "p95": 58.860240234375595
+  },
+  "audioMeta": {
+    "sampleRate": 48000,
+    "baseLatency": 0.005333333333333333,
+    "outputLatency": 0.032
+  },
+  "gitSha": "fbac262c708962d5ec12a4713eb12df16e1ce32c",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64"
+}
