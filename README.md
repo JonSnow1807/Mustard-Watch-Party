@@ -52,8 +52,8 @@ measured), and no correction mechanism existed
 
 Protocol-level, on the production multi-instance plane: 100 clients in one
 room hold P95 ≈ 147ms (P50 68ms); a 10-cell load sweep (10→250 clients × 1/3 instances)
-found **no SLO breach within the load generator's valid range**, with the
-trend lines and the extrapolated knee stated honestly
+locates the knee: **one instance breaches the event-loop-lag SLO at 250
+clients in a room (130ms), where three instances hold 76ms**
 ([scaling results](docs/SCALING.md#5-load-characterization)).
 
 ## How it works
@@ -104,8 +104,9 @@ Full design: [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md) ·
 - Path asymmetry biases the clock estimate by asym/2 — fundamental to any
   NTP-family scheme; scenario S6 measures it rather than hiding it.
 - Background tabs suspend and resync on focus.
-- The load sweep attests up to 250 clients/room on documented hardware; the
-  extrapolated single-instance knee (~400–500) is stated as extrapolation.
+- Capacity is measured, not extrapolated: a single instance breaches the
+  event-loop-lag SLO at **250 clients in one room**; three instances carry
+  that load comfortably. Beyond 250/room is untested on this hardware.
 
 ## Reproduce the numbers
 
