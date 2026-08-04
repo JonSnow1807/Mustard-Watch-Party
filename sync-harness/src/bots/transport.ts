@@ -20,8 +20,18 @@ export interface SyncTransport {
 }
 
 export class SocketIOTransport implements SyncTransport {
-  private socket!: Socket;
+  private socket: Socket | null = null;
+  // Handlers may be registered before connect() (the bots do exactly that);
+  // buffer them rather than touching a socket that does not exist yet - the
+  // raw-WS transport tolerated the order, this one did not, and that
+  // inconsistency is precisely what a transport abstraction must not have.
+  private pending: Array<(s: Socket) => void> = [];
   constructor(private url: string) {}
+
+  private withSocket(fn: (s: Socket) => void): void {
+    if (this.socket) fn(this.socket);
+    else this.pending.push(fn);
+  }
 
   connect(token: string): Promise<void> {
     this.socket = io(this.url, {
@@ -30,13 +40,16 @@ export class SocketIOTransport implements SyncTransport {
       reconnection: true,
       reconnectionAttempts: Infinity,
     });
+    const socket = this.socket;
+    this.pending.forEach((fn) => fn(socket));
+    this.pending = [];
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('connect timeout')), 10_000);
-      this.socket.on('connect', () => {
+      socket.on('connect', () => {
         clearTimeout(t);
         resolve();
       });
-      this.socket.on('connect_error', (e) => {
+      socket.on('connect_error', (e) => {
         clearTimeout(t);
         reject(e);
       });
@@ -44,34 +57,36 @@ export class SocketIOTransport implements SyncTransport {
   }
 
   join(roomCode: string, userId: string): Promise<Timeline | null> {
+    const socket = this.socket;
+    if (!socket) return Promise.reject(new Error('join before connect'));
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('join timeout')), 10_000);
-      this.socket.once('room-joined', (p: { timeline?: Timeline }) => {
+      socket.once('room-joined', (p: { timeline?: Timeline }) => {
         clearTimeout(t);
         resolve(p.timeline ?? null);
       });
-      this.socket.emit('join-room', { roomCode, userId });
+      socket.emit('join-room', { roomCode, userId });
     });
   }
 
   sendClock(t0: number, onPong: (pong: ClockPong) => void): void {
-    this.socket.emit(SYNC_EVENTS.clock, { t0 }, onPong);
+    this.socket?.emit(SYNC_EVENTS.clock, { t0 }, onPong);
   }
 
   sendControl(roomCode: string, intent: ControlIntent, mediaTime: number): void {
-    this.socket.emit(SYNC_EVENTS.control, { v: 1, roomCode, intent, mediaTime });
+    this.socket?.emit(SYNC_EVENTS.control, { v: 1, roomCode, intent, mediaTime });
   }
 
   onTimeline(cb: (tl: Timeline) => void): void {
-    this.socket.on(SYNC_EVENTS.timeline, cb);
+    this.withSocket((s) => s.on(SYNC_EVENTS.timeline, cb));
   }
 
   onRejected(cb: () => void): void {
-    this.socket.on(SYNC_EVENTS.controlRejected, cb);
+    this.withSocket((s) => s.on(SYNC_EVENTS.controlRejected, cb));
   }
 
   onError(cb: (err: string) => void): void {
-    this.socket.on('error', (e: unknown) => cb(JSON.stringify(e)));
+    this.withSocket((s) => s.on('error', (e: unknown) => cb(JSON.stringify(e))));
   }
 
   connected(): boolean {
@@ -116,6 +131,7 @@ export class RawWSBinaryTransport implements SyncTransport {
     this.ws = new WebSocket(`${this.url}/sync?token=${encodeURIComponent(token)}`);
     this.ws.binaryType = 'nodebuffer';
     this.ws.on('message', (data: Buffer) => this.onFrame(data));
+    this.ws.on('error', (e) => this.errorCb?.(String(e)));
     this.ws.on('close', () => {
       this.isConnected = false;
     });
@@ -203,8 +219,7 @@ export class RawWSBinaryTransport implements SyncTransport {
   }
 
   onError(cb: (err: string) => void): void {
-    this.errorCb = cb;
-    this.ws?.on('error', (e) => this.errorCb?.(String(e)));
+    this.errorCb = cb; // connect() attaches the ws listener that calls it
   }
 
   connected(): boolean {

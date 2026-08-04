@@ -30,6 +30,8 @@ jobs:
           if java -cp tools/tla2tools.jar tlc2.TLC -config SyncTimeline_naive.cfg SyncTimeline.tla; then
             echo "naive rule unexpectedly passed - the spec lost its teeth"; exit 1
           fi
+          java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncActor.cfg SyncActor.tla
+          java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncActor_live.cfg SyncActor.tla
 
   lab-50:
     runs-on: ubuntu-latest
