@@ -174,12 +174,17 @@ an nginx-stream proxy container with `tc netem` inside for true packet loss
 (one root qdisc impairs both legs: `delay X` ⇒ +2X RTT, stated per scenario).
 YouTube CDN traffic never crosses a proxy. Steady-state windows exclude 15s
 warmup and 5s after control events; all-time numbers are also reported.
-Runs are health-gated. A failure caught after capture is kept as a labeled
-exhibit rather than discarded (S2 baseline); a failure caught by the gate
-*before* capture aborts the run and writes nothing, so those scenarios have
-no artifact and are reported as aborted rather than as a result. CI runs a 10-bot tripwire on every push (P95 < 250ms, bounded
-growth, seq integrity) — deliberately loose for shared runners; headline
-numbers come from local, hardware-documented runs.
+Runs are health-gated: every client must reach PLAYING before capture
+begins. A gate failure normally retries once and then aborts, writing
+nothing — which is why S3/S5/S6 have no baseline artifact. Setting
+`HARNESS_ALLOW_UNHEALTHY=1` instead captures the run anyway and stamps
+`INVALID per health gate …` into its `notes`, which is how the S2 baseline
+exhibit exists. So the difference between an exhibit and a missing run is
+not *when* the failure was caught — the gate always runs before capture —
+but whether that override was set. CI runs a 10-bot tripwire on every pull
+request and every push to `main` (P95 < 250ms, bounded growth, seq
+integrity) — deliberately loose for shared runners; headline numbers come
+from local, hardware-documented runs.
 
 ## 8. Results
 
