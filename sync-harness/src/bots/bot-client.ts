@@ -4,7 +4,6 @@
 // the process clock) so the estimator is exercised with real inhomogeneity —
 // and validated against the known injected offset.
 
-import { io, type Socket } from 'socket.io-client';
 import { ClockEstimator } from '../../../shared/sync-core/clock-estimator';
 import {
   DriftController,
@@ -13,8 +12,12 @@ import {
 import { DisciplineController } from '../../../shared/sync-core/discipline-controller';
 import { isNewer, projectMediaTime } from '../../../shared/sync-core/timeline';
 import type { ClockPong, ControlIntent, Timeline } from '../../../shared/sync-protocol';
-import { SYNC_EVENTS } from '../../../shared/sync-protocol';
 import { registerUser, type HarnessUser } from '../app-api.js';
+import {
+  RawWSBinaryTransport,
+  SocketIOTransport,
+  type SyncTransport,
+} from './transport.js';
 import { SimPlayer, mulberry32, type SimPlayerConfig } from './sim-player.js';
 
 export interface BotConfig {
@@ -29,6 +32,8 @@ export interface BotConfig {
   seed: number;
   /** reactive (threshold state machine) or predictive (PI servo) */
   controller?: 'reactive' | 'predictive';
+  /** node (Socket.IO/JSON) or relay (raw-WS binary, relay-go) */
+  plane?: 'node' | 'relay';
 }
 
 export interface BotSample {
@@ -53,7 +58,7 @@ export interface BotReport {
 }
 
 export class BotClient {
-  private socket!: Socket;
+  private transport!: SyncTransport;
   private estimator = new ClockEstimator();
   private controller: DriftController | DisciplineController;
   private player: SimPlayer;
@@ -93,13 +98,11 @@ export class BotClient {
 
   async connect(): Promise<void> {
     this.user = await registerUser(this.cfg.runId, this.cfg.index);
-    this.socket = io(this.cfg.wsUrl, {
-      transports: ['websocket'],
-      auth: { token: this.user.token },
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-    });
-    this.socket.on(SYNC_EVENTS.timeline, (tl: Timeline) => {
+    this.transport =
+      this.cfg.plane === 'relay'
+        ? new RawWSBinaryTransport(this.cfg.wsUrl)
+        : new SocketIOTransport(this.cfg.wsUrl);
+    this.transport.onTimeline((tl: Timeline) => {
       if (isNewer(tl, this.timeline)) {
         if (
           this.timeline &&
@@ -115,40 +118,21 @@ export class BotClient {
         this.seenSeqs.push(tl.seq);
       }
     });
-    this.socket.on(SYNC_EVENTS.controlRejected, () => {
+    this.transport.onRejected(() => {
       this.rejected += 1;
     });
-    this.socket.on('room-joined', (payload: { timeline?: Timeline }) => {
-      if (payload.timeline && isNewer(payload.timeline, this.timeline)) {
-        this.timeline = payload.timeline;
-        this.seenSeqs.push(payload.timeline.seq);
-      }
+    this.transport.onError((err) => {
+      this.handlerErrors.push(err);
     });
-    this.socket.on('error', (err: unknown) => {
-      this.handlerErrors.push(JSON.stringify(err));
-    });
-    await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(`bot ${this.cfg.index} connect timeout`)), 10_000);
-      this.socket.on('connect', () => {
-        clearTimeout(t);
-        resolve();
-      });
-      this.socket.on('connect_error', (e) => {
-        clearTimeout(t);
-        reject(e);
-      });
-    });
+    await this.transport.connect(this.user.token ?? '');
   }
 
-  join(roomCode: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(`bot ${this.cfg.index} join timeout`)), 10_000);
-      this.socket.once('room-joined', () => {
-        clearTimeout(t);
-        resolve();
-      });
-      this.socket.emit('join-room', { roomCode, userId: this.user.id });
-    });
+  async join(roomCode: string): Promise<void> {
+    const tl = await this.transport.join(roomCode, this.user.id);
+    if (tl && isNewer(tl, this.timeline)) {
+      this.timeline = tl;
+      this.seenSeqs.push(tl.seq);
+    }
   }
 
   start(): void {
@@ -198,9 +182,9 @@ export class BotClient {
   }
 
   private ping(): void {
-    if (!this.socket.connected) return;
+    if (!this.transport.connected()) return;
     const t0 = this.now();
-    this.socket.emit(SYNC_EVENTS.clock, { t0 }, (pong: ClockPong) => {
+    this.transport.sendClock(t0, (pong: ClockPong) => {
       this.estimator.addSample({ ...pong, t3: this.now() });
     });
   }
@@ -232,7 +216,7 @@ export class BotClient {
   }
 
   sendIntent(roomCode: string, intent: ControlIntent, mediaTime: number): void {
-    this.socket.emit(SYNC_EVENTS.control, { v: 1, roomCode, intent, mediaTime });
+    this.transport.sendControl(roomCode, intent, mediaTime);
   }
 
   scriptedStall(durationMs: number): void {
@@ -252,6 +236,6 @@ export class BotClient {
 
   dispose(): void {
     this.timers.forEach((t) => clearInterval(t));
-    this.socket.disconnect();
+    this.transport.disconnect();
   }
 }
