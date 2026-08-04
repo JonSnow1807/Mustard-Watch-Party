@@ -204,6 +204,17 @@ P95 83ms — the servo cancels steady-state drift outright, and transients
  Multi-instance: see `docs/SCALING.md` for the
 1-vs-3-instance comparison, the knee, and its attribution.
 
+### 8a. Validated against physical output
+
+Player-API drift is self-reported. An independent track ([AUDIO_TRUTH.md](
+AUDIO_TRUTH.md)) times the actual audio: **P50 13.2ms / P95 64.0ms** true
+output skew where the API claimed 7.9 / 19.0ms at the same instants. The
+engine is genuinely tight, but every API-derived figure in this document is
+optimistic by roughly that residual - decode and output buffering the player
+clock cannot see. Measured on the HTML5 path (a cross-origin iframe cannot
+be audio-tapped), so it is indicative for the YouTube path rather than a
+measurement of it.
+
 ## 9. Known limitations
 
 - **Ads/interstitials**: the embedded player can be interrupted by content
@@ -213,6 +224,8 @@ P95 83ms — the servo cancels steady-state drift outright, and transients
 - **Path asymmetry** biases θ by asym/2 — measured and displayed (S6), not
   correctable by any NTP-family scheme.
 - **Background tabs** are suspended, not synced; they resync on focus.
+- Published drift figures are player-API derived and therefore optimistic
+  by the residual measured in §8a; the audio-truth number is the honest one.
 - Tokens are verified at connect only; REST room mutation still trusts the
   body; voice rosters are per-instance (the voice mesh is not the sync
   plane). Each is a deliberate scope cut, documented rather than hidden.
