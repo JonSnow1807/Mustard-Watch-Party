@@ -15,17 +15,19 @@ Same deterministic 3-browser scenario, same hardware, before → after the
 sync overhaul. Every figure traces to a committed run under
 [`docs/measurements/`](docs/measurements/) with SHA + hardware provenance.
 
-| scenario (one-way impairment) | baseline P50 / P95 | overhauled P50 / P95 / P99 | convergence after seek |
+| scenario (one-way impairment) | baseline | reactive | **predictive servo (default)** |
 |---|---|---|---|
-| S0 — clean loopback (floor; loopback is unrealistically kind) | 363ms / 255.3s | 31ms / 83ms / 84ms | 0.75s |
-| S2 — +150ms each way (~300ms RTT), symmetric | **total failure** (followers never start) | 25ms / 139ms / 140ms | 1.00s |
-| S3 — 50±30ms jitter each way | **total failure** (as S2; unrecorded) | 68ms / 118ms / 119ms | 1.00s |
-| S5 — 25ms + 5% loss (netem) | **total failure** (as S2; unrecorded) | 60ms / 97ms / 136ms | 0.75s |
-| S6 — asymmetric 120ms up / 20ms down | **total failure** (as S2; unrecorded) | 47ms / 120ms / 121ms | 1.00s |
+| S0 — clean loopback | 363ms / 255.3s | 31 / 83ms | **16 / 49ms** |
+| S2 — +150ms each way (~300ms RTT) | total failure | 25 / 139ms | **19 / 48ms** |
+| S3 — 50±30ms jitter each way | total failure | 68 / 118ms | **23 / 79ms** |
+| S5 — 25ms + 5% packet loss | total failure | 60 / 97ms | **11 / 29ms** |
+| S6 — asymmetric 120/20ms | total failure | 47 / 120ms | **10 / 86ms** |
 
-Steady-state hard seeks per minute — S0: 0.00 · S2: 0.00 · S3: 0.00 · S5: 0.25 · S6: 0.00.
-
-3 real Chrome clients, deterministic 240s scenario, Chinmays-MacBook-Pro.local · arm64 · node v20.17.0; runs committed with SHA + scenario + impairment per directory.
+*Steady-state pairwise drift P50 / P95, 3 real Chrome clients, deterministic
+240s scenario, identical hardware. "Total failure" = the shipped engine's
+followers never started playing at all. Runs:
+[`docs/measurements/`](docs/measurements/) — baseline, after (reactive),
+servo (predictive).*
 
 Clock-sync theory, validated in vivo: under the asymmetric path (S6) the
 clients' own offset estimates carry a **+50.5ms** bias against a **+50.0ms**
@@ -71,10 +73,12 @@ flowchart LR
 - **Clock discipline**: NTP-style offset over a Socket.IO ack, median-of-
   best-RTT filtering, slew-not-step; validated by bot fleets with injected
   ±1s offsets recovered to ~2ms.
-- **SEEK-first correction** (the YouTube API rounds fractional rates toward
-  1 — measured, not assumed): corrective seeks target `projected + lead`
-  where the lead is *learned* from every seek's settle residual; a per-video
-  probe enables rate-nudging only where it actually sticks.
+- **Predictive clock discipline** (default): a PI servo with an RLS-learned
+  feed-forward skew term commands a continuous playback rate that cancels
+  drift *before* it accumulates. It is engaged per video by a runtime probe;
+  where the player refuses fractional rates the engine falls back to a
+  SEEK-first controller whose corrective seeks target `projected + lead`,
+  with the lead *learned* from each seek's settle residual.
 - **Multi-instance**: room timelines live in Redis behind one Lua script per
   mutation (Redis's single-threaded execution is the serializer — no locks),
   with `redis TIME` as the single clock domain (4ms measured spread across

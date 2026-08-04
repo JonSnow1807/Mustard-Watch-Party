@@ -42,13 +42,15 @@ const GESTURE_CHIP_THRESHOLD = 3;
 
 export class SyncEngine {
   private estimator = new ClockEstimator();
-  // ?controller=P selects the predictive PI servo (A/B-measured: P50 drift
-  // 7ms vs 81ms reactive on the bot fleet); reactive remains the default
-  // until the real-browser A/B settles the question
+  // The predictive PI servo is the default: measured better than the
+  // reactive controller in EVERY real-browser scenario (S0 16/49 vs 31/83,
+  // S2 19/48 vs 25/139, S5 11/29 vs 60/97 - docs/measurements/servo).
+  // ?controller=R selects the reactive arm, which remains the fallback
+  // wherever the per-video fractional-rate probe fails.
   private controller: DriftController | DisciplineController =
-    new URLSearchParams(window.location.search).get('controller') === 'P'
-      ? new DisciplineController()
-      : new DriftController();
+    new URLSearchParams(window.location.search).get('controller') === 'R'
+      ? new DriftController()
+      : new DisciplineController();
   private telemetry = new TelemetryRing();
   private timeline: Timeline | null = null;
   private adapter: YouTubeAdapter | null = null;

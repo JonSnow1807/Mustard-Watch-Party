@@ -1,0 +1,24 @@
+{
+  "runId": "S3-overhauled-servo-mse7c27y",
+  "scenario": {
+    "id": "S3",
+    "title": "50±30ms jitter each way — wifi-ish variance",
+    "must": true,
+    "impairment": {
+      "tool": "toxiproxy",
+      "upLatencyMs": 50,
+      "downLatencyMs": 50,
+      "upJitterMs": 30,
+      "downJitterMs": 30
+    },
+    "durationS": 240
+  },
+  "gitSha": "84ab38682e94412769079df12db686f3f5308a57",
+  "startedAt": "2026-08-04T05:12:42.466Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3101",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled",
+  "notes": "controller=predictive"
+}

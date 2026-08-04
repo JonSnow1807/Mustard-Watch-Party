@@ -1,0 +1,22 @@
+{
+  "runId": "S6-overhauled-servo-mse7me75",
+  "scenario": {
+    "id": "S6",
+    "title": "asymmetric 120ms up / 20ms down — NTP asymmetry-bias floor",
+    "must": true,
+    "impairment": {
+      "tool": "toxiproxy",
+      "upLatencyMs": 120,
+      "downLatencyMs": 20
+    },
+    "durationS": 240
+  },
+  "gitSha": "84ab38682e94412769079df12db686f3f5308a57",
+  "startedAt": "2026-08-04T05:20:44.545Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3101",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled",
+  "notes": "controller=predictive"
+}
