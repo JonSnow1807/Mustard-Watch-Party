@@ -12,7 +12,7 @@ const URL = process.env.REDIS_URL ?? 'redis://localhost:6380';
 describe('ActorRoomStateStore — lease fencing', () => {
   let a: ActorRoomStateStore;
   let b: ActorRoomStateStore;
-  let clients: Redis[] = [];
+  const clients: Redis[] = [];
   let available = true;
   const room = `actor-test-${Date.now().toString(36)}`;
 
