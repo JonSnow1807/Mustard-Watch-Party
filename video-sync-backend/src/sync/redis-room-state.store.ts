@@ -14,92 +14,19 @@ import { RoomStateStore } from './room-state.store';
 // rehydration mints a fresh storeEpoch (clients treat any new epoch as
 // newer, so a Redis flush can't strand them at a high stale seq).
 
-const KEY_TTL_MS = 24 * 60 * 60 * 1000;
+// The Lua lives in ./lua/*.lua - ONE source of truth shared verbatim with
+// the Go relay (relay-go loads the same files). nest-cli copies them into
+// dist as assets.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-const LUA_COMMON = `
-local function now_ms()
-  local t = redis.call('TIME')
-  return t[1] * 1000 + math.floor(t[2] / 1000)
-end
-local function load_tl(key)
-  local h = redis.call('HGETALL', key)
-  if #h == 0 then return nil end
-  local tl = {}
-  for i = 1, #h, 2 do tl[h[i]] = h[i + 1] end
-  return tl
-end
-local function save_tl(key, tl, ttl)
-  redis.call('HSET', key,
-    'seq', tl.seq, 'storeEpoch', tl.storeEpoch, 'videoId', tl.videoId,
-    'isPlaying', tl.isPlaying, 'mediaTime', tl.mediaTime,
-    'stampedAt', tl.stampedAt, 'reason', tl.reason, 'by', tl.by or '')
-  redis.call('PEXPIRE', key, ttl)
-end
-local function encode(tl)
-  return cjson.encode({
-    v = 1, seq = tonumber(tl.seq), storeEpoch = tl.storeEpoch,
-    videoId = tl.videoId ~= '' and tl.videoId or nil,
-    isPlaying = tl.isPlaying == '1',
-    mediaTime = tonumber(tl.mediaTime),
-    stampedAt = tonumber(tl.stampedAt),
-    rate = 1, reason = tl.reason, by = tl.by ~= '' and tl.by or nil,
-  })
-end
-`;
-
-// KEYS[1]=room key, ARGV: intent, mediaTime, by
-const LUA_APPLY_CONTROL = `${LUA_COMMON}
-local tl = load_tl(KEYS[1])
-if tl == nil then return false end
-local now = now_ms()
-local intent = ARGV[1]
-tl.seq = tonumber(tl.seq) + 1
-tl.stampedAt = now
-tl.mediaTime = ARGV[2]
-tl.by = ARGV[3]
-tl.reason = intent
-if intent == 'play' then
-  tl.isPlaying = '1'
-elseif intent == 'pause' then
-  tl.isPlaying = '0'
-end
--- seek keeps isPlaying as-is
-save_tl(KEYS[1], tl, ${KEY_TTL_MS})
-return encode(tl)
-`;
-
-// KEYS[1]=room key
-const LUA_APPLY_SNAPSHOT = `${LUA_COMMON}
-local tl = load_tl(KEYS[1])
-if tl == nil then return false end
-if tl.isPlaying ~= '1' then return encode(tl) end
-local now = now_ms()
-local elapsed = (now - tonumber(tl.stampedAt)) / 1000.0
-tl.seq = tonumber(tl.seq) + 1
-tl.mediaTime = tostring(tonumber(tl.mediaTime) + elapsed)
-tl.stampedAt = now
-tl.reason = 'snapshot'
-tl.by = ''
-save_tl(KEYS[1], tl, ${KEY_TTL_MS})
-return encode(tl)
-`;
-
-// KEYS[1]=room key, ARGV: videoId, mediaTime — first writer wins (P5).
-// storeEpoch is the store-domain mint time: TOTALLY ORDERED, which the TLA+
-// spec proved necessary — with random epochs a client cannot classify a
-// never-seen epoch as fresh or stale (formal/SyncTimeline.tla).
-const LUA_INIT = `${LUA_COMMON}
-local existing = load_tl(KEYS[1])
-if existing ~= nil then return encode(existing) end
-local now = now_ms()
-local tl = {
-  seq = 0, storeEpoch = tostring(now), videoId = ARGV[1],
-  isPlaying = '0', mediaTime = ARGV[2], stampedAt = now,
-  reason = 'join', by = '',
-}
-save_tl(KEYS[1], tl, ${KEY_TTL_MS})
-return encode(tl)
-`;
+const LUA_DIR = join(__dirname, 'lua');
+const LUA_COMMON = readFileSync(join(LUA_DIR, 'common.lua'), 'utf8');
+const lua = (name: string): string =>
+  LUA_COMMON + readFileSync(join(LUA_DIR, name), 'utf8');
+const LUA_APPLY_CONTROL = lua('apply_control.lua');
+const LUA_APPLY_SNAPSHOT = lua('apply_snapshot.lua');
+const LUA_INIT = lua('init.lua');
 
 interface RedisWithCommands extends Redis {
   mustardApplyControl(

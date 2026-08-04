@@ -22,6 +22,7 @@ interface Args {
   gate: boolean;
   wsUrl: string;
   controller: 'reactive' | 'predictive';
+  plane: 'node' | 'relay';
 }
 
 function parseArgs(): Args {
@@ -35,6 +36,7 @@ function parseArgs(): Args {
     gate: process.argv.includes('--gate'),
     wsUrl: get('--ws') ?? 'http://localhost:3000',
     controller: (get('--controller') ?? 'reactive') as 'reactive' | 'predictive',
+    plane: (get('--plane') ?? 'node') as 'node' | 'relay',
   };
 }
 
@@ -45,7 +47,10 @@ async function main(): Promise<void> {
   // fixtures must live on the same topology the sockets hit (JWT secrets
   // and databases differ between the host backend and the lab)
   if (!process.env.HARNESS_API_URL) {
-    process.env.HARNESS_API_URL = `${args.wsUrl}/api`;
+    // relay plane: fixtures (users/JWTs/rooms) still come from the node
+    // backend - the relay verifies the same JWT secret
+    process.env.HARNESS_API_URL =
+      args.plane === 'relay' ? 'http://localhost:3000/api' : `${args.wsUrl}/api`;
   }
   const runId = `bots-${Date.now().toString(36)}`;
   const rng = mulberry32(12345);
@@ -62,6 +67,7 @@ async function main(): Promise<void> {
         clockSkew: (rng() - 0.5) * 160e-6, // ±80ppm
         seed: 1000 + i,
         controller: args.controller,
+        plane: args.plane,
         player: {
           playbackSkew: (rng() - 0.5) * 160e-6,
           // A/B fairness: both controller arms face fractional-capable
@@ -174,6 +180,7 @@ async function main(): Promise<void> {
   const summary = {
     runId,
     controller: args.controller,
+    plane: args.plane,
     n: args.n,
     durationS: args.durationS,
     steadySamples: steadyDrifts.length,

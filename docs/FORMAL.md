@@ -74,5 +74,46 @@ java -cp tools/tla2tools.jar tlc2.TLC -config SyncTimeline_deadepochs.cfg SyncTi
 java -cp tools/tla2tools.jar tlc2.TLC -config SyncTimeline_ordered.cfg SyncTimeline.tla      # passes
 ```
 
-The ordered config runs in CI nightly. The M13 room-actor plane will extend
-this spec with leases and fencing before any implementation is written.
+The ordered config runs in CI nightly.
+
+---
+
+# Plane B: room-actor ownership with lease fencing
+
+`formal/SyncActor.tla` specifies the M13 coordination design **before any
+implementation exists** — the point of doing formal methods at all. One
+room, N instances, ownership by a lease in the shared store; the owner
+serializes control events in memory and commits under its fence; owner
+crash expires the lease; any live instance may claim with a fresh higher
+epoch; and a crashed-then-revived instance returns as a **zombie** still
+believing it owns the room.
+
+Modeled adversary: crash at any point, revive at any point, lossy and
+reordering client fanout, claim races, and zombie commits under stale
+fences.
+
+| Property | result |
+|---|---|
+| `AtMostOneCurrentOwner` (≤1 instance holds the current fence) | ok |
+| `NoStaleFenceWrite` (the store never accepts a zombie's commit) | ok |
+| `CommitMonotone` (seq never regresses within an epoch) | ok |
+| `ClientNoRegress` (ordered rule holds under ownership churn) | ok |
+| `Convergence` (liveness: clients converge despite crash/revive) | ok |
+
+Two modeling lessons worth recording:
+
+- **The sweep needs strong fairness here too.** With weak fairness, crash/
+  revive churn keeps disabling the sweep and an adversarial scheduler
+  starves the repair channel forever — a modeling artifact, not a real
+  failure. SF states the actual assumption: an owner alive infinitely often
+  sweeps infinitely often.
+- **Liveness checking needs bounded state.** The sweep's re-fanning makes
+  the in-flight message powerset explode; a `NetworkBound` constraint (≤4
+  in flight) plus small constants keeps TLC tractable. Safety and liveness
+  are checked at the same (small) constants — stated plainly rather than
+  implying exhaustive coverage of the unbounded system.
+
+**Design consequence:** epochs serve double duty — the fence that
+neutralizes zombies *and* the client ordering rule proven above. One
+mechanism, two guarantees, which is why plane B needs no new client-side
+concept.
