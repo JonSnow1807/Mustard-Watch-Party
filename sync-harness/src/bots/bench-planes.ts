@@ -38,6 +38,7 @@ async function bench(name: string, transport: SyncTransport, token: string): Pro
   transport.disconnect();
   const sorted = [...rtts].sort((a, b) => a - b);
   if (timedOut > 0) {
+    anyInvalid = true;
     // excluding them entirely biases the plane comparison optimistically:
     // a plane that times out more looks the same as one that never does
     console.warn(
@@ -53,6 +54,7 @@ async function bench(name: string, transport: SyncTransport, token: string): Pro
   );
 }
 
+let anyInvalid = false;
 const user = await registerUser(`bench-${Date.now().toString(36)}`, 0);
 
 // wire sizes for one timeline broadcast
@@ -67,4 +69,10 @@ console.log(`timeline broadcast wire size: socket.io/JSON=${sioBytes}B binary=31
 
 await bench('node/socket.io', new SocketIOTransport('http://localhost:3000'), user.token ?? '');
 await bench('relay-go/binary', new RawWSBinaryTransport('http://localhost:3400'), user.token ?? '');
+if (anyInvalid) {
+  // a plane that timed out is not comparable to one that did not; exiting
+  // non-zero stops an invalid comparison being quoted as a result
+  console.error('\nINVALID: at least one plane timed out - do not publish this comparison');
+  process.exit(2);
+}
 process.exit(0);

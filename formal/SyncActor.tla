@@ -20,6 +20,7 @@ CONSTANTS
   Clients,        \* e.g. {c1, c2}
   MaxSeq,         \* bound on committed writes per epoch
   MaxEpoch,       \* bound on ownership generations
+  MaxCtl,         \* bound on distinct in-flight forwarded controls
   None            \* model value: "no owner"
 
 VARIABLES
@@ -29,7 +30,7 @@ VARIABLES
   network,        \* in-flight broadcasts to clients: set of [dst, epoch, seq]
   applied,        \* per client: last applied [epoch, seq]
   crashed,        \* set of crashed instances (may revive as zombies)
-  pending         \* forwarded controls awaiting their owner: set of [to: Instance]
+  pending         \* forwarded controls: set of [to: Instance, id: 1..MaxCtl]
 
 vars ==
   <<lease, ownerView, committed, network, applied, crashed, pending>>
@@ -109,32 +110,45 @@ Forward(i) ==
   /\ i \notin crashed
   /\ lease.owner /= None
   /\ lease.owner /= i
-  /\ Cardinality(pending) < 2          \* bound the queue for TLC
-  /\ IF lease.owner \notin crashed
-     THEN /\ pending' = pending \cup {[to |-> lease.owner]}
-          /\ UNCHANGED <<lease, ownerView, committed, network, applied, crashed>>
-     ELSE /\ lease.epoch < MaxEpoch
-          /\ lease' = [owner |-> i, epoch |-> lease.epoch + 1]
-          /\ ownerView' = [ownerView EXCEPT ![i] = lease.epoch + 1]
-          /\ UNCHANGED <<committed, network, applied, crashed, pending>>
+  /\ \E id \in 1..MaxCtl :
+       \* identified controls: a plain set collapsed two forwards to the
+       \* same owner into one element, silently losing a user's control
+       /\ \A m \in pending : m.id /= id
+       /\ IF lease.owner \notin crashed
+          THEN /\ pending' = pending \cup {[to |-> lease.owner, id |-> id]}
+               /\ UNCHANGED <<lease, ownerView, committed, network, applied, crashed>>
+          ELSE /\ lease.epoch < MaxEpoch
+               /\ lease' = [owner |-> i, epoch |-> lease.epoch + 1]
+               /\ ownerView' = [ownerView EXCEPT ![i] = lease.epoch + 1]
+               /\ UNCHANGED <<committed, network, applied, crashed, pending>>
 
 (* The owner dequeues a forwarded control and commits it under its fence.  *)
 OwnerDequeue(i) ==
   /\ i \notin crashed
-  /\ [to |-> i] \in pending
-  /\ pending' = pending \ {[to |-> i]}
-  /\ IF /\ ownerView[i] = lease.epoch
-        /\ lease.owner = i
-        /\ (committed.epoch = ownerView[i] => committed.seq < MaxSeq)
-     THEN /\ committed' = [epoch |-> ownerView[i],
-                           seq |-> IF committed.epoch = ownerView[i]
-                                   THEN committed.seq + 1 ELSE 1]
-          /\ network' = network \cup
-               { [dst |-> c, epoch |-> committed'.epoch, seq |-> committed'.seq]
-                 : c \in Clients }
-          /\ UNCHANGED <<lease, ownerView, applied, crashed>>
-     ELSE \* ownership moved while the control was in flight
-          /\ UNCHANGED <<lease, ownerView, committed, network, applied, crashed>>
+  /\ \E m \in pending :
+       /\ m.to = i
+       /\ IF /\ ownerView[i] = lease.epoch
+             /\ lease.owner = i
+             /\ (committed.epoch = ownerView[i] => committed.seq < MaxSeq)
+          THEN \* accepted: only NOW is the control consumed
+               /\ pending' = pending \ {m}
+               /\ committed' = [epoch |-> ownerView[i],
+                                 seq |-> IF committed.epoch = ownerView[i]
+                                         THEN committed.seq + 1 ELSE 1]
+               /\ network' = network \cup
+                    { [dst |-> c, epoch |-> committed'.epoch,
+                       seq |-> committed'.seq] : c \in Clients }
+               /\ UNCHANGED <<lease, ownerView, applied, crashed>>
+          ELSE \* cannot commit (ownership moved, or the write bound is a
+               \* TLC artifact): RE-TARGET to the current owner rather than
+               \* consume it - dropping it here modelled a control loss the
+               \* implementation does not have
+               /\ lease.owner /= None
+               /\ lease.owner /= i
+               /\ pending' = (pending \ {m}) \cup
+                    {[to |-> lease.owner, id |-> m.id]}
+               /\ UNCHANGED <<lease, ownerView, committed, network, applied,
+                               crashed>>
 
 (* Clients apply by the ordered rule proven in SyncTimeline.tla. *)
 Deliver(m) ==
@@ -218,7 +232,7 @@ TypeOK ==
   /\ \A c \in Clients :
        /\ applied[c].epoch \in 0..MaxEpoch
        /\ applied[c].seq \in 0..MaxSeq
-  /\ \A m \in pending : m.to \in Instances
+  /\ \A m \in pending : m.to \in Instances /\ m.id \in 1..MaxCtl
   /\ \A m \in network :
        /\ m.dst \in Clients
        /\ m.epoch \in 0..MaxEpoch
@@ -227,7 +241,7 @@ TypeOK ==
 (* TLC state constraint: bound in-flight messages - the sweep's re-fanning *)
 (* otherwise makes the network powerset explode. Four in flight suffices  *)
 (* to exhibit every interesting interleaving at the small constants.       *)
-NetworkBound == Cardinality(network) <= 4 /\ Cardinality(pending) <= 2
+NetworkBound == Cardinality(network) <= 4 /\ Cardinality(pending) <= MaxCtl
 
 ----------------------------------------------------------------------------
 (* Liveness.                                                               *)
@@ -247,9 +261,13 @@ Convergence ==
 (* Stronger and load-independent: a client never gets STUCK behind a       *)
 (* committed version - it either applies that version or moves past it.    *)
 (* Checked as a safety-style always-eventually per committed state.        *)
+Behind(a, b) ==
+  \/ a.epoch < b.epoch
+  \/ (a.epoch = b.epoch /\ a.seq < b.seq)
+
 NoClientStrandedBehind ==
   \A c \in Clients :
-    (committed.epoch > 0 /\ applied[c].epoch < committed.epoch)
-      ~> (applied[c].epoch >= committed.epoch)
+    (committed.epoch > 0 /\ Behind(applied[c], committed))
+      ~> ~Behind(applied[c], committed)
 
 =============================================================================

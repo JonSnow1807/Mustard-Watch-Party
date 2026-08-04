@@ -117,14 +117,15 @@ jobs:
       - name: boot backend
         run: |
           node dist/main.js > nest.log 2>&1 &
+          # retry quietly; the loop must NOT fail on an early attempt (the
+          # backend needs a few seconds), so the failure branch lives after it
           for i in $(seq 1 30); do
-            curl -sf --max-time 10 http://localhost:3000/health \
-            || { echo "backend never became healthy:"; tail -40 nest.log 2>/dev/null; exit 1; } && break
+            curl -sf --max-time 5 http://localhost:3000/health >/dev/null && break
             sleep 1
           done
           # the loop above exits 0 even if every attempt failed; assert once
-          # more so a backend that never booted fails HERE with a clear
-          # message instead of as a confusing bot-connection error
+          # more so a backend that never booted fails HERE with its log,
+          # rather than later as a confusing bot-connection error
           curl -sf --max-time 10 http://localhost:3000/health \
             || { echo "backend never became healthy:"; tail -40 nest.log 2>/dev/null; exit 1; }
         working-directory: video-sync-backend

@@ -108,13 +108,25 @@ user's intent (the code's `PUBLISH`-returns-0 branch). Adding it took the
 state space from ~50k to ~194k distinct states, and both safety and
 liveness still hold.
 
-Three modeling lessons worth recording:
+A second review round then caught the forwarding model **modelling losses
+the implementation does not have**: `pending` held only `[to]`, so two
+forwards to the same owner collapsed into one element, and a dequeue that
+could not commit consumed the control anyway. Controls now carry an
+identity, and a dequeue that cannot commit **re-targets** to the current
+owner instead of swallowing it — which is what the code does. State space
+194k → 436k distinct; safety and liveness still hold.
+
+Four modeling lessons worth recording:
 
 - **The sweep needs strong fairness here too.** With weak fairness, crash/
   revive churn keeps disabling the sweep and an adversarial scheduler
   starves the repair channel forever — a modeling artifact, not a real
   failure. SF states the actual assumption: an owner alive infinitely often
   sweeps infinitely often.
+- **A model can be more pessimistic than the code, and that hides bugs too.**
+  Collapsing two controls into one set element and dropping an uncommittable
+  one made the spec describe a lossy system; had a real loss existed, the
+  model would have looked "correct" for the wrong reason.
 - **An invariant can be weaker than its name.** `NoStaleFenceWrite`
   originally required only that `committed.epoch` never DECREASE — which a
   stale write retaining the same epoch satisfies. It now requires every

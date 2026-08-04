@@ -140,10 +140,12 @@ export class RawWSBinaryTransport implements SyncTransport {
   /** Reconnect like the Socket.IO arm does; without it a single drop
    * silently removed a bot from the relay measurement and flattered it. */
   private reconnect(): void {
+    // disposal can land while a reconnect is already scheduled
     if (this.disposed || this.reconnecting) return;
     this.reconnecting = true;
     setTimeout(() => {
       this.reconnecting = false;
+      if (this.disposed) return; // checked again: disposal may have raced
       void this.open().catch(() => this.reconnect());
     }, 1000);
   }
@@ -156,6 +158,8 @@ export class RawWSBinaryTransport implements SyncTransport {
     this.ws.on('error', (e) => this.errorCb?.(String(e)));
     this.ws.on('close', () => {
       this.isConnected = false;
+      // outstanding clock exchanges cannot be completed across a reconnect:
+      // resolving them later would mix pre- and post-drop timing
       this.pendingPongs.clear();
       this.reconnect();
     });
@@ -177,7 +181,9 @@ export class RawWSBinaryTransport implements SyncTransport {
     if (buf.length < 1) return;
     switch (buf.readUInt8(0)) {
       case 0x02: {
-        // ClockPong [t0][t1][t2] - matched by the echoed t0
+        // ClockPong [t0][t1][t2] - matched by the echoed t0.
+        // A truncated frame would decode garbage into a timing sample.
+        if (buf.length < 25) return;
         const t0 = buf.readDoubleLE(1);
         const cb = this.pendingPongs.get(t0);
         if (cb) {
