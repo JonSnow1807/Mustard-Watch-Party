@@ -19,15 +19,22 @@ sync overhaul. Every figure traces to a committed run under
 |---|---|---|---|
 | S0 — clean loopback | 363ms / 255.3s | 31 / 83ms | **16 / 49ms** |
 | S2 — +150ms each way (~300ms RTT) | total failure | 25 / 139ms | **19 / 48ms** |
-| S3 — 50±30ms jitter each way | total failure | 68 / 118ms | **23 / 79ms** |
-| S5 — 25ms + 5% packet loss | total failure | 60 / 97ms | **11 / 29ms** |
-| S6 — asymmetric 120/20ms | total failure | 47 / 120ms | **10 / 86ms** |
+| S3 — 50±30ms jitter each way | aborted† | 68 / 118ms | **23 / 79ms** |
+| S5 — 25ms + 5% packet loss | aborted† | 60 / 97ms | **11 / 29ms** |
+| S6 — asymmetric 120/20ms | aborted† | 47 / 120ms | **10 / 86ms** |
 
 *Steady-state pairwise drift P50 / P95, 3 real Chrome clients, deterministic
 240s scenario, identical hardware. "Total failure" = the shipped engine's
-followers never started playing at all. Runs:
-[`docs/measurements/`](docs/measurements/) — baseline, after (reactive),
-servo (predictive).*
+followers never started playing at all, recorded as a committed exhibit run.
+Runs: [`docs/measurements/`](docs/measurements/) — baseline, after
+(reactive), servo (predictive).*
+
+*† The baseline engine failed the harness player-health gate on both attempts
+under S3/S5/S6 — same signature as S2, followers never started — so the run
+aborted and no artifact exists to cite. Only S0 and S2 have committed
+baseline directories. These cells say "aborted" rather than "total failure"
+because an observation that produced no artifact is not a measurement, and
+this table cites only what you can open.*
 
 **Validated against the signal, not the clock.** Player-API drift is the
 instrument grading itself, so a separate track measures the *physical* output:

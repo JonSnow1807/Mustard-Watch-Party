@@ -5,15 +5,24 @@ frontend change (published in the same branch; see `sync-harness/README.md`
 for methodology). Three real Chrome clients, Big Buck Bunny, deterministic
 240s scenario: staggered joins → play@30s → seek@90s → pause/resume@150/155s
 → hands-off. Every number below traces to a committed run directory with SHA,
-scenario, and hardware in `meta.json`.
+scenario, and hardware in `meta.json` — with one exception, called out
+explicitly in the table below rather than quietly folded in.
 
 ## Headline: the shipped sync works only on localhost
 
-| Scenario | Result |
-|----------|--------|
-| S0 clean loopback | P50 pairwise drift **363ms**, P95 **255.3s**, no control event ever converged |
-| S2 +150ms each way | **Total failure** — the host plays; followers never start (exhibit run recorded) |
-| S3 jitter / S5 loss / S6 asym | Total failure, same signature (health gate: FAILED both attempts) |
+| Scenario | Result | Artifact |
+|----------|--------|----------|
+| S0 clean loopback | P50 pairwise drift **363ms**, P95 **255.3s**, no control event ever converged | `S0-baseline-mscjatn1/` |
+| S2 +150ms each way | **Total failure** — the host plays; followers never start | `S2-baseline-mscjtbgk/` (exhibit) |
+| S3 jitter / S5 loss / S6 asym | Aborted before measurement: the player-health gate FAILED both attempts, the same signature as S2 (followers never started) | **none** — the run aborts before writing a directory |
+
+The S3/S5/S6 row is an observation, not a measurement. The harness aborts a
+run whose players fail the health check, so nothing was written and there is
+nothing to cite; `compare.ts`, which reads only committed directories,
+correctly reports those scenarios as "not measured". They are listed here
+because what happened is informative, and omitted from any published number
+because an uncommitted observation is not evidence. The overhaul's numbers
+for S3/S5/S6 therefore stand without a paired before-figure.
 
 ## Finding 1 — control events are silently lost on any real network
 

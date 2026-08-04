@@ -156,8 +156,10 @@ an nginx-stream proxy container with `tc netem` inside for true packet loss
 (one root qdisc impairs both legs: `delay X` ⇒ +2X RTT, stated per scenario).
 YouTube CDN traffic never crosses a proxy. Steady-state windows exclude 15s
 warmup and 5s after control events; all-time numbers are also reported.
-Runs are health-gated; total failures are recorded as labeled exhibits, not
-discarded. CI runs a 10-bot tripwire on every push (P95 < 250ms, bounded
+Runs are health-gated. A failure caught after capture is kept as a labeled
+exhibit rather than discarded (S2 baseline); a failure caught by the gate
+*before* capture aborts the run and writes nothing, so those scenarios have
+no artifact and are reported as aborted rather than as a result. CI runs a 10-bot tripwire on every push (P95 < 250ms, bounded
 growth, seq integrity) — deliberately loose for shared runners; headline
 numbers come from local, hardware-documented runs.
 
@@ -169,15 +171,23 @@ See `docs/measurements/` for the run directories behind every number.
 |---|---|---|---|
 | S0 — clean loopback | 363ms / 255.3s | 31 / 83ms | **16 / 49ms** |
 | S2 — +150ms each way (~300ms RTT) | total failure | 25 / 139ms | **19 / 48ms** |
-| S3 — 50±30ms jitter each way | total failure | 68 / 118ms | **23 / 79ms** |
-| S5 — 25ms + 5% packet loss | total failure | 60 / 97ms | **11 / 29ms** |
-| S6 — asymmetric 120/20ms | total failure | 47 / 120ms | **10 / 86ms** |
+| S3 — 50±30ms jitter each way | aborted† | 68 / 118ms | **23 / 79ms** |
+| S5 — 25ms + 5% packet loss | aborted† | 60 / 97ms | **11 / 29ms** |
+| S6 — asymmetric 120/20ms | aborted† | 47 / 120ms | **10 / 86ms** |
 
 *Steady-state pairwise drift P50 / P95, 3 real Chrome clients, deterministic
 240s scenario, identical hardware. "Total failure" = the shipped engine's
-followers never started playing at all. Runs:
-[`docs/measurements/`](docs/measurements/) — baseline, after (reactive),
-servo (predictive).*
+followers never started playing at all, recorded as a committed exhibit run.
+Runs: [`docs/measurements/`](docs/measurements/) — baseline, after
+(reactive), servo (predictive).*
+
+*† Under S3/S5/S6 the baseline engine failed the player-health gate on both
+attempts — the same signature as S2 — so the run aborted before writing a
+directory. Only S0 and S2 have committed baseline artifacts. Calling these
+cells "total failure" would present an uncommitted observation as a
+measurement, so the overhauled figures for S3/S5/S6 stand without a paired
+before-number. This is the honest version of a table that would otherwise
+read as a cleaner sweep than the evidence supports.*
 
 No control event in any baseline run ever converged; every overhauled run
 converges after every event (seek ≤1s across the matrix, table above).
