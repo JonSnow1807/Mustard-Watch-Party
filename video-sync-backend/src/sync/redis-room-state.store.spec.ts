@@ -20,6 +20,17 @@ import { SWEEP_DEDUP_PERIOD_MS } from './room-state.store';
 const URL = process.env.REDIS_URL ?? 'redis://localhost:6380';
 const key = (room: string): string => `room:${room}:tl`;
 
+/**
+ * The guard lives in Lua and derives its window from `redis.call('TIME')`, so
+ * every window this spec computes must come from the SAME clock. Seeding from
+ * the test host's `Date.now()` reaches across clock domains — the one thing
+ * D6 forbids — and makes these assertions flaky at window boundaries.
+ */
+const redisNowMs = async (c: Redis): Promise<number> => {
+  const [sec, usec] = await c.time();
+  return Number(sec) * 1000 + Math.floor(Number(usec) / 1000);
+};
+
 describe('RedisRoomStateStore — repair sweep dedup', () => {
   const clients: Redis[] = [];
   let available = true;
@@ -102,23 +113,39 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
 
   it('suppresses a STAGGERED second caller inside the same window', async () => {
     if (!available) return;
-    // The case an elapsed-time guard gets wrong: two instances whose timers
-    // are offset by nearly a full period. With a 9s "minimum interval" a
-    // sweep at t=0 and another at t=9.5s both commit, which is two bumps
-    // inside one 10s period. Aligned windows reject the second.
+    // A caller arriving late into a window another instance already claimed.
+    // Staged to look 9.5s old so the assertion is about WINDOW IDENTITY and
+    // not about the calls being milliseconds apart.
+    //
+    // Note on what this does and does not separate: an elapsed-time guard
+    // whose threshold equals the period is indistinguishable from the window
+    // guard on same-window cases, because within one window elapsed is always
+    // < period by construction. The two only diverge when the threshold is
+    // BELOW the period (the original 9s), which is what let a staggered
+    // caller through. The test that actually goes red on the old guard is
+    // 'lets the next window through' — verified by checking out the previous
+    // apply_snapshot.lua and re-running this file.
     const a = make();
     const b = make();
+    const c = raw();
     const staggered = `${room}-staggered`;
     await playingRoom(a, staggered);
 
-    const first = await a.applySnapshot(staggered, Date.now());
+    const first = await a.applySnapshot(staggered, await redisNowMs(c));
     expect(first).not.toBeNull();
 
-    // put the committed window's clock near the end of the same window
-    const w = Math.floor(Date.now() / SWEEP_DEDUP_PERIOD_MS);
-    await raw().hset(key(staggered), 'lastSweepWindow', String(w));
+    const now = await redisNowMs(c);
+    await c.hset(
+      key(staggered),
+      // the window is claimed...
+      'lastSweepWindow',
+      String(Math.floor(now / SWEEP_DEDUP_PERIOD_MS)),
+      // ...but the last sweep looks 9.5s old, so a 9s elapsed threshold passes
+      'lastSweepAt',
+      String(now - 9_500),
+    );
 
-    expect(await b.applySnapshot(staggered, Date.now())).toBeNull();
+    expect(await b.applySnapshot(staggered, now)).toBeNull();
     const after = await a.get(staggered);
     expect(after!.seq).toBe(first!.seq);
   });
@@ -126,20 +153,26 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
   it('lets the next window through', async () => {
     if (!available) return;
     const a = make();
+    const c = raw();
     const next = `${room}-next`;
     await playingRoom(a, next);
 
-    const first = await a.applySnapshot(next, Date.now());
+    const first = await a.applySnapshot(next, await redisNowMs(c));
     expect(first).not.toBeNull();
     // immediately after, the guard suppresses
-    expect(await a.applySnapshot(next, Date.now())).toBeNull();
+    expect(await a.applySnapshot(next, await redisNowMs(c))).toBeNull();
 
     // ...but the guard must not wedge the repair channel shut. Rather than
-    // sleep out a real period, put the room in an earlier window.
-    const w = Math.floor(Date.now() / SWEEP_DEDUP_PERIOD_MS);
-    await raw().hset(key(next), 'lastSweepWindow', String(w - 1));
+    // sleep out a real period, put the room in an earlier window — computed
+    // from Redis's clock, the same one the script reads.
+    //
+    // This assertion is the suite's regression tripwire: it is decided purely
+    // by window identity, so the elapsed-time guard fails it (that guard sees
+    // a commit milliseconds old and suppresses regardless of window).
+    const w = Math.floor((await redisNowMs(c)) / SWEEP_DEDUP_PERIOD_MS);
+    await c.hset(key(next), 'lastSweepWindow', String(w - 1));
 
-    const second = await a.applySnapshot(next, Date.now());
+    const second = await a.applySnapshot(next, await redisNowMs(c));
     expect(second).not.toBeNull();
     expect(second!.seq).toBe(first!.seq + 1);
   });

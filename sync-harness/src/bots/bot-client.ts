@@ -63,6 +63,11 @@ export interface BotReport {
    *  timeline twice is idempotent. Counted apart from reorders so the two
    *  are never conflated. */
   seqDuplicates: number;
+  /** transport reconnects, each followed by a re-join attempt */
+  reconnects: number;
+  /** re-joins that failed: this bot is deaf from here on and its remaining
+   *  seqs are outside the gap metric's detectable range */
+  rejoinFailures: number;
   handlerErrors: string[];
   rejected: number;
 }
@@ -82,6 +87,9 @@ export class BotClient {
   private seqsByEpoch = new Map<string, Set<number>>();
   private seqReorders = 0;
   private seqDuplicates = 0;
+  private reconnects = 0;
+  private rejoinFailures = 0;
+  private roomCode: string | null = null;
   private handlerErrors: string[] = [];
   private rejected = 0;
   private timers: Array<ReturnType<typeof setInterval>> = [];
@@ -124,10 +132,27 @@ export class BotClient {
     this.transport.onError((err) => {
       this.handlerErrors.push(err);
     });
+    this.transport.onReconnect(() => {
+      // a reconnected socket is not in its room; without this the bot goes
+      // deaf for the rest of the run and still reports zero gaps, because
+      // everything it misses lands after the last seq it ever saw
+      this.reconnects += 1;
+      const room = this.roomCode;
+      if (!room) return;
+      void this.transport
+        .join(room, this.user.id)
+        .then((tl) => {
+          if (tl) this.ingest(tl);
+        })
+        .catch(() => {
+          this.rejoinFailures += 1;
+        });
+    });
     await this.transport.connect(this.user.token ?? '');
   }
 
   async join(roomCode: string): Promise<void> {
+    this.roomCode = roomCode;
     const tl = await this.transport.join(roomCode, this.user.id);
     // the join response is classified exactly like a pushed timeline: it can
     // be stale (a broadcast overtook it) or a duplicate of one already
@@ -274,6 +299,8 @@ export class BotClient {
       seqGaps: gaps,
       seqReorders: this.seqReorders,
       seqDuplicates: this.seqDuplicates,
+      reconnects: this.reconnects,
+      rejoinFailures: this.rejoinFailures,
       handlerErrors: this.handlerErrors,
       rejected: this.rejected,
     };

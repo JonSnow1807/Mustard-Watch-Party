@@ -1,4 +1,5 @@
 import { InMemoryRoomStateStore } from './room-state.store';
+import type { Timeline } from '../shared/sync-protocol';
 import { TimelineService } from './timeline.service';
 
 const roomRow = {
@@ -11,10 +12,12 @@ const roomRow = {
 function makeService(): {
   svc: TimelineService;
   db: { room: { update: jest.Mock } };
+  store: InMemoryRoomStateStore;
 } {
   const db = { room: { update: jest.fn().mockResolvedValue({}) } };
-  const svc = new TimelineService(new InMemoryRoomStateStore(), db as never);
-  return { svc, db };
+  const store = new InMemoryRoomStateStore();
+  const svc = new TimelineService(store, db as never);
+  return { svc, db, store };
 }
 
 describe('TimelineService', () => {
@@ -117,13 +120,34 @@ describe('TimelineService', () => {
   it('sweeps only playing rooms and re-anchors the projection', async () => {
     const { svc } = makeService();
     await svc.ensureRoom('r1', roomRow, 1_000);
-    expect(await svc.sweepSnapshot('r1', 10_000)).toBeNull(); // paused
+    // paused: nothing to broadcast at all
+    expect((await svc.sweepSnapshot('r1', 10_000)).kind).toBe('idle');
     await svc.handleControl('r1', 's1', 'creator', 'play', 100, 10_000);
     const snap = await svc.sweepSnapshot('r1', 20_000);
-    expect(snap).not.toBeNull();
-    expect(snap!.mediaTime).toBeCloseTo(110, 9);
-    expect(snap!.stampedAt).toBe(20_000);
-    expect(snap!.reason).toBe('snapshot');
+    expect(snap.kind).toBe('committed');
+    const tl = (snap as { timeline: Timeline }).timeline;
+    expect(tl.mediaTime).toBeCloseTo(110, 9);
+    expect(tl.stampedAt).toBe(20_000);
+    expect(tl.reason).toBe('snapshot');
+  });
+
+  it('defers to the window winner but still re-anchors locally', async () => {
+    // A store that refuses the commit stands in for "another instance already
+    // swept this window". The caller must still get a timeline back, because
+    // its own local sockets are repaired in-process — relying on the winner's
+    // broadcast would route repair through the pub/sub adapter this sweep
+    // exists to work around.
+    const { svc, store } = makeService();
+    await svc.ensureRoom('r1', roomRow, 1_000);
+    await svc.handleControl('r1', 's1', 'creator', 'play', 100, 10_000);
+
+    jest.spyOn(store, 'applySnapshot').mockResolvedValue(null);
+    const snap = await svc.sweepSnapshot('r1', 20_000);
+
+    expect(snap.kind).toBe('deferred');
+    const tl = (snap as { timeline: Timeline }).timeline;
+    expect(tl.isPlaying).toBe(true);
+    expect(tl.videoId).toBe('vid');
   });
 
   it('P3: promotes the longest-connected participant when the controller leaves', async () => {

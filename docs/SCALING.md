@@ -175,9 +175,20 @@ The dedup belongs in the Lua script rather than in a lease, because Redis's
 single-threaded execution already serializes these calls. `apply_snapshot`
 buckets time into aligned windows of `SWEEP_DEDUP_PERIOD_MS`, records the
 window it last committed in, and no-ops if it is called again in that same
-window — returning null so the losing instances skip their broadcast
-entirely. The first caller of each window wins; if it dies, another wins the
+window. The first caller of each window wins; if it dies, another wins the
 next window, with no ownership to hand over.
+
+**The dedup covers the commit, not the broadcast** — and that distinction is
+the whole design. The first version suppressed the losing instances'
+broadcast too, which quietly broke the failure model above: `server.to(room)`
+delivers to an instance's own sockets *in-process*, so before the change
+every instance repaired its local clients without touching pub/sub. Letting
+only the winner broadcast would have made every other instance's clients
+depend on the adapter — the exact channel whose failure the sweep exists to
+repair. A losing instance now re-anchors its own sockets with
+`server.local.to(room)`, which delivers in-process and publishes nothing, so
+the repair path survives a pub/sub blip while the redundant writes and racing
+seq bumps are still gone.
 
 The window matters more than it looks. The first version of this guard tested
 *elapsed time* against a threshold just under the period, which two
@@ -190,20 +201,23 @@ neither failure mode — at most one commit per window by construction, and a
 all of it against a real Redis: simultaneous callers, the staggered caller,
 the next window still getting through, and a paused room never advancing.
 
-Measured on the 3-instance lab, 25 bots, 120s, against the interim
-elapsed-time guard (the window guard is strictly tighter):
+Measured on the 3-instance lab, 25 bots, 120s:
 
-| | commits in 120s | per 10s period | reorders + duplicates |
-|---|---|---|---|
-| 3 instances, before | 40 | 3.3 | 97 |
-| 3 instances, after | **14** | **1.2** | **0** |
-| 1 instance (reference) | 14 | 1.2 | 0 |
+| | commits in 120s | per 10s period | reorders | duplicates |
+|---|---|---|---|---|
+| 3 instances, before | 40 | 3.3 | 97 (conflated) | — |
+| 3 instances, after | **14** | **1.2** | **0** | 170 |
+| 1 instance (reference) | 14 | 1.2 | 0 | 0 |
 
 The three-instance plane commits at exactly the single-instance rate:
-coordination cost no longer scales with instance count. The repair channel is
-verifiably still alive — 14 commits over 120s is the ~12 sweeps plus the
-scripted control events, not a wedged sweep, which was the main risk of the
-change and so was measured rather than assumed.
+coordination cost no longer scales with instance count. The 170 duplicates
+are the design working — each instance re-anchoring its own clients with the
+seq the winner committed, which `isNewer` discards and which is why
+duplicates are counted apart from reorders rather than lumped in as noise.
+
+The repair channel is verifiably still alive — 14 commits over 120s is the
+~12 sweeps plus the scripted control events, not a wedged sweep. That was the
+main risk of the change, so it was measured rather than assumed.
 
 **Outstanding:** the committed sweep in this section predates the fix. Its
 drift and lag figures stand as measurements of that build, and the knee is

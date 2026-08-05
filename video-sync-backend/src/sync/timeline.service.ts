@@ -162,13 +162,41 @@ export class TimelineService {
     return { ok: true, timeline: outcome.timeline };
   }
 
-  /** Periodic re-anchor; null when the room has no state (nothing to sweep). */
-  async sweepSnapshot(roomCode: string, now: number): Promise<Timeline | null> {
+  /**
+   * Periodic re-anchor. The three outcomes are distinct and the caller must
+   * treat them differently:
+   *
+   * - `idle`   — no state, or the room is paused. Nothing to broadcast.
+   * - `committed` — this instance won the sweep window. Broadcast globally.
+   * - `deferred`  — another instance committed this window's snapshot. It has
+   *   already broadcast globally, but that reaches THIS instance's sockets
+   *   only over the pub/sub adapter — and a dropped adapter message is the
+   *   exact failure this sweep exists to repair. So the caller must still
+   *   re-anchor its own LOCAL sockets in-process, with `timeline`.
+   *
+   * Deduping the commit removes the redundant writes and the racing seq bumps.
+   * Deduping the broadcast as well would have made the repair channel depend
+   * on the channel it repairs.
+   */
+  async sweepSnapshot(
+    roomCode: string,
+    now: number,
+  ): Promise<
+    | { kind: 'idle' }
+    | { kind: 'committed'; timeline: Timeline }
+    | { kind: 'deferred'; timeline: Timeline }
+  > {
     const current = await this.store.get(roomCode);
-    if (!current) return null;
+    if (!current) return { kind: 'idle' };
     // paused rooms don't advance; re-broadcasting them is pure noise
-    if (!current.isPlaying) return null;
-    return this.store.applySnapshot(roomCode, now);
+    if (!current.isPlaying) return { kind: 'idle' };
+    const committed = await this.store.applySnapshot(roomCode, now);
+    if (committed) return { kind: 'committed', timeline: committed };
+    // lost the window (or, on the actor plane, we are not the owner): re-read
+    // so the local re-anchor carries the winner's committed state rather than
+    // the pre-sweep copy read above
+    const latest = (await this.store.get(roomCode)) ?? current;
+    return { kind: 'deferred', timeline: latest };
   }
 
   /**

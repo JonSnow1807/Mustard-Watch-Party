@@ -15,6 +15,14 @@ export interface SyncTransport {
   onTimeline(cb: (tl: Timeline) => void): void;
   onRejected(cb: () => void): void;
   onError(cb: (err: string) => void): void;
+  /**
+   * Fired after the transport re-establishes a connection. Both planes
+   * reconnect automatically, but a reconnected socket is NOT in its room:
+   * without a re-join the bot silently receives nothing for the rest of the
+   * run, and because every seq it misses then falls after the last one it
+   * ever saw, the gap metric reports a clean run for a bot that was deaf.
+   */
+  onReconnect(cb: () => void): void;
   connected(): boolean;
   disconnect(): void;
 }
@@ -26,6 +34,8 @@ export class SocketIOTransport implements SyncTransport {
   // raw-WS transport tolerated the order, this one did not, and that
   // inconsistency is precisely what a transport abstraction must not have.
   private pending: Array<(s: Socket) => void> = [];
+  private reconnectCb: (() => void) | null = null;
+  private sawFirstConnect = false;
   constructor(private url: string) {}
 
   private withSocket(fn: (s: Socket) => void): void {
@@ -47,6 +57,10 @@ export class SocketIOTransport implements SyncTransport {
       const t = setTimeout(() => reject(new Error('connect timeout')), 10_000);
       socket.on('connect', () => {
         clearTimeout(t);
+        // socket.io reuses this event for reconnects; only the first is the
+        // initial connect this promise is waiting on
+        if (this.sawFirstConnect) this.reconnectCb?.();
+        this.sawFirstConnect = true;
         resolve();
       });
       socket.on('connect_error', (e) => {
@@ -89,6 +103,10 @@ export class SocketIOTransport implements SyncTransport {
     this.withSocket((s) => s.on('error', (e: unknown) => cb(JSON.stringify(e))));
   }
 
+  onReconnect(cb: () => void): void {
+    this.reconnectCb = cb;
+  }
+
   connected(): boolean {
     return this.socket?.connected ?? false;
   }
@@ -128,6 +146,7 @@ export class RawWSBinaryTransport implements SyncTransport {
   private isConnected = false;
   private token = '';
   private reconnecting = false;
+  private reconnectCb: (() => void) | null = null;
   private disposed = false;
 
   constructor(private url: string) {}
@@ -146,7 +165,9 @@ export class RawWSBinaryTransport implements SyncTransport {
     setTimeout(() => {
       this.reconnecting = false;
       if (this.disposed) return; // checked again: disposal may have raced
-      void this.open().catch(() => this.reconnect());
+      void this.open()
+        .then(() => this.reconnectCb?.())
+        .catch(() => this.reconnect());
     }, 1000);
   }
 
@@ -250,6 +271,10 @@ export class RawWSBinaryTransport implements SyncTransport {
 
   onError(cb: (err: string) => void): void {
     this.errorCb = cb; // connect() attaches the ws listener that calls it
+  }
+
+  onReconnect(cb: () => void): void {
+    this.reconnectCb = cb;
   }
 
   connected(): boolean {
