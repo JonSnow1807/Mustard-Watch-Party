@@ -11,8 +11,9 @@ import { SWEEP_DEDUP_PERIOD_MS } from './room-state.store';
  * three seq bumps and three fanouts for one repair, scaling linearly with
  * instance count. The three commits also raced, and clients received them out
  * of order often enough that the bot fleet's gap counter recorded 59 "gaps"
- * on the three-instance 25-client cell. Nothing was ever lost — the metric
- * counted reordering as loss — but the redundant sweeps were real.
+ * on the three-instance 25-client cell. No seq inside any bot's observed
+ * range actually went unreceived — the metric counted reordering as loss —
+ * but the redundant sweeps were real.
  *
  * Skipped automatically when no Redis is reachable.
  */
@@ -37,6 +38,7 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
   };
 
   beforeAll(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const probe = new Redis(URL, {
         maxRetriesPerRequest: 1,
@@ -50,12 +52,16 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
       probe.on('error', () => undefined);
       await Promise.race([
         probe.connect().then(() => probe.ping()),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('probe timeout')), 3_000),
-        ),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('probe timeout')), 3_000);
+        }),
       ]);
     } catch {
       available = false;
+    } finally {
+      // the loser of the race is still pending: leaving its timer armed keeps
+      // the event loop alive and delays Jest's exit on every short run
+      if (timer) clearTimeout(timer);
     }
   }, 10_000);
 

@@ -132,16 +132,22 @@ one process in commit order, so this never triggered; the metric only broke
 where deliveries could interleave.
 
 Gaps are now decided at report time from the complete set of seqs a bot
-received on an epoch: a gap is a seq inside the observed range that **never
-arrived at all**. Three outcomes, three counters, because `isNewer` is false
-for all of them and lumping them together is what caused this:
+received on an epoch: a gap is a seq **inside the observed range** that the
+bot never received. Three outcomes, three counters, because `isNewer` is
+false for all of them and lumping them together is what caused this:
 
-| a seq that never arrived | `seqGaps` | the only one that is a defect |
+| delivery | counter | what it means |
 |---|---|---|
+| a seq inside the range, never received | `seqGaps` | the only one that is a defect |
 | a **lower** seq arriving after a higher one | `seqReorders` | out-of-order delivery; dropped by design |
-| the **same** seq delivered twice | `seqDuplicates` | idempotent; the repair sweep doing its job |
+| the **same** seq received twice | `seqDuplicates` | repeated delivery; idempotent to apply |
 
-Re-running the failing cell against the same server build:
+What this can and cannot see: the range is bounded by the lowest and highest
+seq a bot actually received, so a loss *before* its first or *after* its last
+is outside the rule and undetectable. `seqDuplicates` likewise records that a
+seq arrived twice, not why — redundant repair is the expected source, but the
+cause is not measured here. Re-running the failing cell against the same
+server build:
 
 | | seqGaps | reorders + duplicates |
 |---|---|---|
@@ -149,11 +155,12 @@ Re-running the failing cell against the same server build:
 | 3 instances, 25 bots (fixed metric) | **0** | 97 |
 | 1 instance, 25 bots (control) | 0 | 0 |
 
-Nothing had ever been lost. (That 97 was counted before reorders and
+So no seq inside any bot's observed range went unreceived — which is what the
+59 had claimed, and it was wrong. (That 97 was counted before reorders and
 duplicates were split apart, so it is the sum of the two, not 97 genuine
-reorders — the split landed while chasing this and is why the table above
-has three rows.) But 97 is not noise, and the control run isolates the cause
-to the multi-instance fanout.
+reorders — the split landed while chasing this and is why the table above has
+three rows.) But 97 is not noise, and the control run isolates the cause to
+the multi-instance fanout.
 
 **Every instance was sweeping every room it had a socket in.** The repair
 sweep iterates `userRooms`, which is per-instance state, so with 25 bots
