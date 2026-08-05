@@ -52,7 +52,22 @@ export interface BotSample {
 export interface BotReport {
   bot: number;
   samples: BotSample[];
+  /** seqs this bot NEVER received on an epoch it was following (true loss) */
   seqGaps: number[];
+  /** strictly LOWER seq arriving after a higher one on the same epoch: a
+   *  genuine out-of-order delivery. Harmless by design - `isNewer` drops it -
+   *  but counted so a reorder can never be mistaken for a gap. */
+  seqReorders: number;
+  /** the SAME seq delivered more than once. Not a reorder and not a loss:
+   *  redundant repair is the sweep working as designed, and applying a
+   *  timeline twice is idempotent. Counted apart from reorders so the two
+   *  are never conflated. */
+  seqDuplicates: number;
+  /** transport reconnects, each followed by a re-join attempt */
+  reconnects: number;
+  /** re-joins that failed: this bot is deaf from here on and its remaining
+   *  seqs are outside the gap metric's detectable range */
+  rejoinFailures: number;
   handlerErrors: string[];
   rejected: number;
 }
@@ -66,7 +81,15 @@ export class BotClient {
   private rng: () => number;
   private epoch = Date.now();
   private samples: BotSample[] = [];
-  private seenSeqs: number[] = [];
+  /** every seq received per epoch, whether or not `isNewer` applied it -
+   *  a gap is decided at report time from the complete set, so a late
+   *  low seq retracts the gap its successor would otherwise imply */
+  private seqsByEpoch = new Map<string, Set<number>>();
+  private seqReorders = 0;
+  private seqDuplicates = 0;
+  private reconnects = 0;
+  private rejoinFailures = 0;
+  private roomCode: string | null = null;
   private handlerErrors: string[] = [];
   private rejected = 0;
   private timers: Array<ReturnType<typeof setInterval>> = [];
@@ -102,36 +125,62 @@ export class BotClient {
       this.cfg.plane === 'relay'
         ? new RawWSBinaryTransport(this.cfg.wsUrl)
         : new SocketIOTransport(this.cfg.wsUrl);
-    this.transport.onTimeline((tl: Timeline) => {
-      if (isNewer(tl, this.timeline)) {
-        if (
-          this.timeline &&
-          tl.storeEpoch === this.timeline.storeEpoch &&
-          tl.seq > this.timeline.seq + 1
-        ) {
-          for (let missing = this.timeline.seq + 1; missing < tl.seq; missing++) {
-            // gaps are repaired by the sweep, but we count them honestly
-            this.seenSeqs.push(-missing);
-          }
-        }
-        this.timeline = tl;
-        this.seenSeqs.push(tl.seq);
-      }
-    });
+    this.transport.onTimeline((tl: Timeline) => this.ingest(tl));
     this.transport.onRejected(() => {
       this.rejected += 1;
     });
     this.transport.onError((err) => {
       this.handlerErrors.push(err);
     });
+    this.transport.onReconnect(() => {
+      // a reconnected socket is not in its room; without this the bot goes
+      // deaf for the rest of the run and still reports zero gaps, because
+      // everything it misses lands after the last seq it ever saw
+      this.reconnects += 1;
+      const room = this.roomCode;
+      if (!room) return;
+      void this.transport
+        .join(room, this.user.id)
+        .then((tl) => {
+          if (tl) this.ingest(tl);
+        })
+        .catch(() => {
+          this.rejoinFailures += 1;
+        });
+    });
     await this.transport.connect(this.user.token ?? '');
   }
 
   async join(roomCode: string): Promise<void> {
+    this.roomCode = roomCode;
     const tl = await this.transport.join(roomCode, this.user.id);
-    if (tl && isNewer(tl, this.timeline)) {
+    // the join response is classified exactly like a pushed timeline: it can
+    // be stale (a broadcast overtook it) or a duplicate of one already
+    // applied, and counting those differently here would skew the totals
+    if (tl) this.ingest(tl);
+  }
+
+  /**
+   * The single place a timeline enters this bot, whether pushed or returned
+   * from join. Records the seq for gap accounting, applies it if it is newer,
+   * and otherwise classifies why it was not: an EQUAL seq is a duplicate
+   * (idempotent, and what the repair sweep is for), a LOWER seq is a genuine
+   * out-of-order delivery. `isNewer` is false for both, so they have to be
+   * split explicitly or a duplicate reads as a reorder.
+   */
+  private ingest(tl: Timeline): void {
+    let seen = this.seqsByEpoch.get(tl.storeEpoch);
+    if (!seen) {
+      seen = new Set();
+      this.seqsByEpoch.set(tl.storeEpoch, seen);
+    }
+    seen.add(tl.seq);
+
+    if (isNewer(tl, this.timeline)) {
       this.timeline = tl;
-      this.seenSeqs.push(tl.seq);
+    } else if (this.timeline && tl.storeEpoch === this.timeline.storeEpoch) {
+      if (tl.seq === this.timeline.seq) this.seqDuplicates += 1;
+      else this.seqReorders += 1;
     }
   }
 
@@ -233,11 +282,25 @@ export class BotClient {
   }
 
   report(): BotReport {
-    const gaps = this.seenSeqs.filter((x) => x < 0).map((x) => -x);
+    // A gap is a seq inside the range this bot actually observed on an epoch
+    // that never arrived at all. Deciding this from the complete set - rather
+    // than incrementally, at the moment a higher seq lands - is what stops a
+    // reordered delivery from being recorded as a permanent loss.
+    const gaps: number[] = [];
+    for (const seen of this.seqsByEpoch.values()) {
+      if (seen.size === 0) continue;
+      const lo = Math.min(...seen);
+      const hi = Math.max(...seen);
+      for (let s = lo + 1; s < hi; s++) if (!seen.has(s)) gaps.push(s);
+    }
     return {
       bot: this.cfg.index,
       samples: this.samples,
       seqGaps: gaps,
+      seqReorders: this.seqReorders,
+      seqDuplicates: this.seqDuplicates,
+      reconnects: this.reconnects,
+      rejoinFailures: this.rejoinFailures,
       handlerErrors: this.handlerErrors,
       rejected: this.rejected,
     };

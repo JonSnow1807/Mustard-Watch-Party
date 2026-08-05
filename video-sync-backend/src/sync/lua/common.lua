@@ -13,7 +13,10 @@ local function save_tl(key, tl, ttl)
   redis.call('HSET', key,
     'seq', tl.seq, 'storeEpoch', tl.storeEpoch, 'videoId', tl.videoId,
     'isPlaying', tl.isPlaying, 'mediaTime', tl.mediaTime,
-    'stampedAt', tl.stampedAt, 'reason', tl.reason, 'by', tl.by or '')
+    'stampedAt', tl.stampedAt, 'reason', tl.reason, 'by', tl.by or '',
+    -- which aligned time window the repair sweep last committed in. Persisted
+    -- so the guard in apply_snapshot works across instances; never on the wire.
+    'lastSweepWindow', tl.lastSweepWindow or -1)
   redis.call('PEXPIRE', key, ttl)
 end
 local function encode(tl)

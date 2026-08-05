@@ -23,7 +23,11 @@ import { ClockDomainService } from '../redis/clock-domain.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { TimelineService } from './timeline.service';
 import { ActorRoomStateStore } from './actor-room-state.store';
-import { ROOM_STATE_STORE, RoomStateStore } from './room-state.store';
+import {
+  ROOM_STATE_STORE,
+  RoomStateStore,
+  SWEEP_INTERVAL_MS,
+} from './room-state.store';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
 
 const CONTROL_INTENTS: ReadonlyArray<SyncControl['intent']> = [
@@ -407,8 +411,14 @@ export class SyncGateway
    * Repair channel: a periodic re-anchored snapshot per playing room. Late
    * or lossy deliveries self-heal within one sweep period; clients drop
    * stale (storeEpoch, seq) so redundancy is harmless.
+   *
+   * Only one instance COMMITS per window (the store dedups), but every
+   * instance still re-anchors its own local sockets. See `sweepSnapshot`:
+   * skipping the broadcast on the losing instances would route their
+   * clients' repair through the pub/sub adapter, whose failure is precisely
+   * what this sweep is here to repair.
    */
-  @Interval(10_000)
+  @Interval(SWEEP_INTERVAL_MS)
   async sweepTimelines() {
     const activeRooms = new Set(this.userRooms.values());
     this.metrics.wsRoomsActive.set(activeRooms.size);
@@ -418,8 +428,14 @@ export class SyncGateway
           roomCode,
           this.clock.now(),
         );
-        if (snap) {
-          this.server.to(roomCode).emit(SYNC_EVENTS.timeline, snap);
+        if (snap.kind === 'committed') {
+          this.server.to(roomCode).emit(SYNC_EVENTS.timeline, snap.timeline);
+        } else if (snap.kind === 'deferred') {
+          // `.local` delivers in-process only: no second adapter publish, so
+          // this costs nothing on the wire between instances
+          this.server.local
+            .to(roomCode)
+            .emit(SYNC_EVENTS.timeline, snap.timeline);
         }
       } catch (error) {
         this.logger.error({ err: String(error), roomCode }, 'sweep failed');

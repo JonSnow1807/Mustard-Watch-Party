@@ -171,6 +171,10 @@ async function main(): Promise<void> {
   }
 
   const seqGaps = reports.flatMap((r) => r.seqGaps);
+  const seqReorders = reports.reduce((sum, r) => sum + r.seqReorders, 0);
+  const seqDuplicates = reports.reduce((sum, r) => sum + r.seqDuplicates, 0);
+  const reconnects = reports.reduce((sum, r) => sum + r.reconnects, 0);
+  const rejoinFailures = reports.reduce((sum, r) => sum + r.rejoinFailures, 0);
   const handlerErrors = reports.flatMap((r) => r.handlerErrors);
   const thetaP95 = percentile(
     [...thetaErrors].sort((a, b) => a - b),
@@ -188,6 +192,18 @@ async function main(): Promise<void> {
     slopeMsPerMin,
     thetaErrorP95Ms: thetaP95,
     seqGaps: seqGaps.length,
+    // reordered deliveries are expected on a multi-instance fanout and are
+    // dropped by the client's (storeEpoch, seq) ordering; reported so they
+    // are visible without being mistaken for loss
+    seqReorders,
+    // duplicates are the repair sweep doing its job (or a join racing a
+    // broadcast); idempotent, and deliberately not lumped in with reorders
+    seqDuplicates,
+    reconnects,
+    // a bot that could not re-join is deaf, and its missed seqs fall outside
+    // the gap metric's range - so a non-zero count here means the seqGaps
+    // number above is an UNDER-count, not a clean bill of health
+    rejoinFailures,
     handlerErrors: handlerErrors.length,
     rejectedControls: reports.reduce((s, r) => s + r.rejected, 0),
   };
@@ -207,6 +223,9 @@ async function main(): Promise<void> {
       failures.push(`drift slope ${slopeMsPerMin.toFixed(1)}ms/min >= 15`);
     if (seqGaps.length > 0) failures.push(`${seqGaps.length} seq gaps`);
     if (handlerErrors.length > 0) failures.push(`${handlerErrors.length} handler errors`);
+    // failing re-joins silently shrink what the gap check can see, so the
+    // gate has to treat them as a failure rather than trust a clean seqGaps
+    if (rejoinFailures > 0) failures.push(`${rejoinFailures} failed re-joins (gap metric is blind past these)`);
     if (failures.length > 0) {
       console.error('[gate] FAILED:\n  ' + failures.join('\n  '));
       process.exit(1);

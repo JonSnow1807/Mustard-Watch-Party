@@ -64,6 +64,23 @@ appears in a single-instance, one-room, 25-client test. Plane A remains the
 default because it is simpler and, *by measurement*, not worse for this
 product's shape.
 
+**One point for plane B that the A/B missed entirely.** The A/B ran one
+instance per arm, so it could not see that plane A's repair sweep was
+redundant across instances: every instance holding a socket in a room swept
+that room, committing and fanning out N times per period for one repair (see
+[SCALING.md](SCALING.md#the-59-seq-gaps-root-caused) — 3.3 commits per period
+on 3 instances, against 1.2 after the fix). Plane B never had this bug,
+because its sweep is owner-only by construction — `only the owner sweeps its
+rooms; non-owners no-op` falls straight out of having an owner at all.
+
+That does not overturn the conclusion above: plane A was patched with a
+guard inside the script it already had, and the actor plane's per-control
+cost still stands. But it is a concrete instance of the thing the "cannot
+show" paragraph was gesturing at — explicit ownership rules out whole
+classes of duplicated work that a shared-store plane has to notice and
+patch one at a time. Recorded because the A/B's conclusion would otherwise
+read as more settled than one single-instance test can make it.
+
 ## Two bugs the implementation surfaced
 
 1. **Non-atomic init.** 25 concurrent joins each passed a "no state yet"

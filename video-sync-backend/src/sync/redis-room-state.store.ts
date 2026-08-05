@@ -2,7 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_KV } from '../redis/redis.module';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
-import { ApplyOutcome, RoomStateStore } from './room-state.store';
+import {
+  ApplyOutcome,
+  RoomStateStore,
+  SWEEP_DEDUP_PERIOD_MS,
+} from './room-state.store';
 
 // Redis hash per room is the source of truth; ONE Lua script per mutation is
 // the serializer - Redis's single-threaded execution orders concurrent
@@ -35,7 +39,7 @@ interface RedisWithCommands extends Redis {
     mediaTime: string,
     by: string,
   ): Promise<string | null>;
-  mustardApplySnapshot(key: string): Promise<string | null>;
+  mustardApplySnapshot(key: string, periodMs: string): Promise<string | null>;
   mustardInit(key: string, videoId: string, mediaTime: string): Promise<string>;
 }
 
@@ -105,7 +109,14 @@ export class RedisRoomStateStore implements RoomStateStore {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _serverNow: number,
   ): Promise<Timeline | null> {
-    const result = await this.redis.mustardApplySnapshot(this.key(roomCode));
+    // Every instance with a local socket in the room runs its own sweep
+    // timer, so this is called once per instance per period. The script
+    // dedups: the first caller of a window commits, the rest return null and
+    // their callers skip broadcasting.
+    const result = await this.redis.mustardApplySnapshot(
+      this.key(roomCode),
+      String(SWEEP_DEDUP_PERIOD_MS),
+    );
     return this.parse(result);
   }
 
