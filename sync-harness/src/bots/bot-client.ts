@@ -117,18 +117,7 @@ export class BotClient {
       this.cfg.plane === 'relay'
         ? new RawWSBinaryTransport(this.cfg.wsUrl)
         : new SocketIOTransport(this.cfg.wsUrl);
-    this.transport.onTimeline((tl: Timeline) => {
-      this.recordSeq(tl);
-      if (isNewer(tl, this.timeline)) {
-        this.timeline = tl;
-      } else if (this.timeline && tl.storeEpoch === this.timeline.storeEpoch) {
-        // `isNewer` is false for an EQUAL seq as well as a lower one, so these
-        // two cases have to be split or a duplicate reads as a reorder - the
-        // same conflation that made reordering read as loss.
-        if (tl.seq === this.timeline.seq) this.seqDuplicates += 1;
-        else this.seqReorders += 1;
-      }
-    });
+    this.transport.onTimeline((tl: Timeline) => this.ingest(tl));
     this.transport.onRejected(() => {
       this.rejected += 1;
     });
@@ -140,19 +129,34 @@ export class BotClient {
 
   async join(roomCode: string): Promise<void> {
     const tl = await this.transport.join(roomCode, this.user.id);
-    if (tl) this.recordSeq(tl);
-    if (tl && isNewer(tl, this.timeline)) {
-      this.timeline = tl;
-    }
+    // the join response is classified exactly like a pushed timeline: it can
+    // be stale (a broadcast overtook it) or a duplicate of one already
+    // applied, and counting those differently here would skew the totals
+    if (tl) this.ingest(tl);
   }
 
-  private recordSeq(tl: Timeline): void {
+  /**
+   * The single place a timeline enters this bot, whether pushed or returned
+   * from join. Records the seq for gap accounting, applies it if it is newer,
+   * and otherwise classifies why it was not: an EQUAL seq is a duplicate
+   * (idempotent, and what the repair sweep is for), a LOWER seq is a genuine
+   * out-of-order delivery. `isNewer` is false for both, so they have to be
+   * split explicitly or a duplicate reads as a reorder.
+   */
+  private ingest(tl: Timeline): void {
     let seen = this.seqsByEpoch.get(tl.storeEpoch);
     if (!seen) {
       seen = new Set();
       this.seqsByEpoch.set(tl.storeEpoch, seen);
     }
     seen.add(tl.seq);
+
+    if (isNewer(tl, this.timeline)) {
+      this.timeline = tl;
+    } else if (this.timeline && tl.storeEpoch === this.timeline.storeEpoch) {
+      if (tl.seq === this.timeline.seq) this.seqDuplicates += 1;
+      else this.seqReorders += 1;
+    }
   }
 
   start(): void {

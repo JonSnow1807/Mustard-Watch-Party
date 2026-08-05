@@ -5,7 +5,7 @@ import { ControlIntent, Timeline } from '../shared/sync-protocol';
 import {
   ApplyOutcome,
   RoomStateStore,
-  SWEEP_MIN_INTERVAL_MS,
+  SWEEP_DEDUP_PERIOD_MS,
 } from './room-state.store';
 
 // Redis hash per room is the source of truth; ONE Lua script per mutation is
@@ -39,10 +39,7 @@ interface RedisWithCommands extends Redis {
     mediaTime: string,
     by: string,
   ): Promise<string | null>;
-  mustardApplySnapshot(
-    key: string,
-    minIntervalMs: string,
-  ): Promise<string | null>;
+  mustardApplySnapshot(key: string, periodMs: string): Promise<string | null>;
   mustardInit(key: string, videoId: string, mediaTime: string): Promise<string>;
 }
 
@@ -114,11 +111,11 @@ export class RedisRoomStateStore implements RoomStateStore {
   ): Promise<Timeline | null> {
     // Every instance with a local socket in the room runs its own sweep
     // timer, so this is called once per instance per period. The script
-    // dedups: the first caller of a period commits, the rest return null and
+    // dedups: the first caller of a window commits, the rest return null and
     // their callers skip broadcasting.
     const result = await this.redis.mustardApplySnapshot(
       this.key(roomCode),
-      String(SWEEP_MIN_INTERVAL_MS),
+      String(SWEEP_DEDUP_PERIOD_MS),
     );
     return this.parse(result);
   }
