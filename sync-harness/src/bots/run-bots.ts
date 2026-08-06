@@ -267,9 +267,17 @@ async function main(): Promise<void> {
     // failing re-joins silently shrink what the gap check can see, so the
     // gate has to treat them as a failure rather than trust a clean seqGaps
     if (rejoinFailures > 0) failures.push(`${rejoinFailures} failed re-joins (gap metric is blind past these)`);
+    // exact equality, both directions: MORE commits than commands means a
+    // duplicate was applied; FEWER means a command never committed - e.g.
+    // the transport dropped it while disconnected (by design, no buffering),
+    // which silently changes the scenario the run claims to have measured
     if (controlCommitsObserved > scriptedControls)
       failures.push(
         `${controlCommitsObserved} control commits for ${scriptedControls} commands - a duplicate was APPLIED`,
+      );
+    else if (controlCommitsObserved < scriptedControls)
+      failures.push(
+        `${controlCommitsObserved} control commits for ${scriptedControls} commands - a command was LOST`,
       );
     if (failures.length > 0) {
       console.error('[gate] FAILED:\n  ' + failures.join('\n  '));
