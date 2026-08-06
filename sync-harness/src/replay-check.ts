@@ -26,6 +26,9 @@ const arg = (flag: string): string | undefined => {
 const URL = arg('--redis') ?? process.env.REDIS_URL ?? 'redis://localhost:6380';
 const GATE = process.argv.includes('--gate');
 
+/** the report is a committable artifact: never let URI userinfo reach it */
+const redacted = (u: string): string => u.replace(/\/\/[^@/]+@/, '//<redacted>@');
+
 function fieldsToEntry(fields: string[]): LogEntry {
   const m = new Map<string, string>();
   for (let i = 0; i < fields.length; i += 2) m.set(fields[i], fields[i + 1]);
@@ -90,16 +93,37 @@ async function main(): Promise<void> {
     const chain = checkChain(log);
     for (const v of chain.violations) violations.push(`${room}: ${v}`);
 
-    const live = await redis.hgetall(`room:${room}:tl`);
-    if (Object.keys(live).length === 0) {
-      // timeline expired but the log survived: nothing to reconcile against
-      continue;
+    // XRANGE and HGETALL are separate commands, so a commit landing between
+    // them yields a mixed-version pair and FALSE drift. Re-read the live
+    // hash and retry the pair until its version is stable across the log
+    // read - rooms commit a few times a minute, so one pass is the norm.
+    let mismatch: string | null = null;
+    let reconciled = false;
+    for (let attempt = 0; attempt < 3 && !reconciled; attempt++) {
+      const liveBefore = await redis.hgetall(`room:${room}:tl`);
+      if (Object.keys(liveBefore).length === 0) {
+        // timeline expired but the log survived: nothing to reconcile
+        reconciled = true;
+        mismatch = null;
+        break;
+      }
+      const tail = (await redis.xrevrange(logKey, '+', '-', 'COUNT', 1)) as Array<
+        [string, string[]]
+      >;
+      const liveAfter = await redis.hgetall(`room:${room}:tl`);
+      if (
+        liveBefore.storeEpoch !== liveAfter.storeEpoch ||
+        liveBefore.seq !== liveAfter.seq
+      ) {
+        continue; // a commit raced the reads; retry the pair
+      }
+      const newest = tail.length > 0 ? fieldsToEntry(tail[0][1]) : log[log.length - 1];
+      mismatch = entryMatchesLive(newest, hashToTimeline(liveAfter));
+      reconciled = true;
     }
-    const mismatch = entryMatchesLive(
-      log[log.length - 1],
-      hashToTimeline(live),
-    );
-    if (mismatch) {
+    if (!reconciled) {
+      violations.push(`${room}: UNSTABLE - versions kept moving across 3 read attempts`);
+    } else if (mismatch) {
       driftRooms += 1;
       violations.push(`${room}: LIVE DRIFT - ${mismatch}`);
     }
@@ -110,7 +134,7 @@ async function main(): Promise<void> {
   console.log(
     JSON.stringify(
       {
-        redis: URL,
+        redis: redacted(URL),
         rooms,
         entries,
         transitionsChecked: entries - rooms,

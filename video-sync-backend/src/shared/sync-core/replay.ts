@@ -30,14 +30,18 @@ export interface LogEntry {
   cmdId?: string;
 }
 
-const CONTROL_REASONS: ReadonlySet<string> = new Set([
-  'play',
-  'pause',
-  'seek',
-]);
+const CONTROL_REASONS: ReadonlySet<string> = new Set(['play', 'pause', 'seek']);
 
 /** float slack for the snapshot projection (Lua string arithmetic). */
 const EPS = 1e-6;
+
+/**
+ * NaN fails every > comparison, so `Math.abs(a-b) > EPS` reports a
+ * non-finite value as LEGAL - the one way a corrupt entry could pass this
+ * checker silently. Every float comparison goes through here instead.
+ */
+const differs = (a: number, b: number): boolean =>
+  !Number.isFinite(a) || !Number.isFinite(b) || Math.abs(a - b) > EPS;
 
 /**
  * The legal-transition contract between two consecutive same-epoch entries,
@@ -45,10 +49,7 @@ const EPS = 1e-6;
  * exactly like the spec's Contract vs Apply split. Returns a violation
  * description, or null when legal.
  */
-export function checkTransition(
-  prev: LogEntry,
-  next: LogEntry,
-): string | null {
+export function checkTransition(prev: LogEntry, next: LogEntry): string | null {
   if (next.storeEpoch !== prev.storeEpoch) {
     return null; // epoch boundaries are anchored by init entries, not chained
   }
@@ -78,13 +79,8 @@ export function checkTransition(
     if (next.isPlaying !== prev.isPlaying) {
       return 'snapshot flipped isPlaying';
     }
-    const projected = projectMediaTime(
-      {
-        ...toTimeline(prev),
-      },
-      next.stampedAt,
-    );
-    if (Math.abs(next.mediaTime - projected) > EPS) {
+    const projected = projectMediaTime({ ...toTimeline(prev) }, next.stampedAt);
+    if (differs(next.mediaTime, projected)) {
       return `snapshot moved the projection: expected ${projected}, logged ${next.mediaTime}`;
     }
     return null;
@@ -144,8 +140,11 @@ export function entryMatchesLive(
   if (last.isPlaying !== live.isPlaying) {
     return `isPlaying: log ${last.isPlaying} vs live ${live.isPlaying}`;
   }
-  if (Math.abs(last.mediaTime - live.mediaTime) > EPS) {
+  if (differs(last.mediaTime, live.mediaTime)) {
     return `mediaTime: log ${last.mediaTime} vs live ${live.mediaTime}`;
+  }
+  if (last.reason !== live.reason) {
+    return `reason: log ${last.reason} vs live ${live.reason}`;
   }
   if (last.stampedAt !== live.stampedAt) {
     return `stampedAt: log ${last.stampedAt} vs live ${live.stampedAt}`;

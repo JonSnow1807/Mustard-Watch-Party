@@ -64,6 +64,48 @@ const cmdDedupTTLMS = 15 * 60 * 1000
 // so the derived room:<room>:cmd:<cmdId> key cannot alias another keyspace
 var cmdIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
+// parseControl decodes an 0x03 frame:
+//
+//	[0]=0x03 [1]=intent u8 [2..9]=mediaTime f64 [10]=roomLen [11..11+n)=room
+//	optionally followed by [cmdLen u8][cmdId ASCII [A-Za-z0-9_-]{1,64}]
+//
+// STRICT on length: a legacy frame must end exactly at room, a suffixed
+// frame exactly at cmdId. Trailing bytes are a malformed frame, not
+// padding - accepting them would let two encoders disagree about where a
+// field ends and still both "work".
+func parseControl(data []byte) (intent string, mediaTime float64, room, cmdID string, ok bool) {
+	if len(data) < 11 {
+		return "", 0, "", "", false
+	}
+	// validate rather than coerce: %3 turned any garbage byte into a
+	// valid intent, and a NaN/Inf mediaTime would poison the timeline
+	if data[1] > 2 {
+		return "", 0, "", "", false
+	}
+	intent = []string{"play", "pause", "seek"}[data[1]]
+	mediaTime = math.Float64frombits(binary.LittleEndian.Uint64(data[2:10]))
+	if math.IsNaN(mediaTime) || math.IsInf(mediaTime, 0) || mediaTime < 0 {
+		return "", 0, "", "", false
+	}
+	n := int(data[10])
+	if len(data) < 11+n {
+		return "", 0, "", "", false
+	}
+	room = string(data[11 : 11+n])
+	if len(data) == 11+n {
+		return intent, mediaTime, room, "", true // legacy: ends at room
+	}
+	cl := int(data[11+n])
+	if cl == 0 || cl > 64 || len(data) != 12+n+cl {
+		return "", 0, "", "", false
+	}
+	cmdID = string(data[12+n : 12+n+cl])
+	if !cmdIDPattern.MatchString(cmdID) {
+		return "", 0, "", "", false
+	}
+	return intent, mediaTime, room, cmdID, true
+}
+
 type luaTimeline struct {
 	Seq        int     `json:"seq"`
 	StoreEpoch string  `json:"storeEpoch"`
@@ -295,44 +337,13 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case 0x03: // Control
-			if len(data) < 11 {
+			intent, mediaTime, room, cmdId, okc := parseControl(data)
+			if !okc {
 				continue
-			}
-			// validate rather than coerce: %3 turned any garbage byte into a
-			// valid intent, and a NaN/Inf mediaTime would poison the timeline
-			if data[1] > 2 {
-				continue
-			}
-			intent := []string{"play", "pause", "seek"}[data[1]]
-			mediaTime := math.Float64frombits(binary.LittleEndian.Uint64(data[2:10]))
-			if math.IsNaN(mediaTime) || math.IsInf(mediaTime, 0) || mediaTime < 0 {
-				continue
-			}
-			n := int(data[10])
-			if len(data) < 11+n {
-				continue
-			}
-			room := string(data[11 : 11+n])
-			// optional idempotency key: absent on old frames, bounded like
-			// the Node gateway bounds it (it becomes a Redis key suffix)
-			cmdId := ""
-			if len(data) > 11+n {
-				cl := int(data[11+n])
-				if cl == 0 || cl > 64 || len(data) < 12+n+cl {
-					continue
-				}
-				cmdId = string(data[12+n : 12+n+cl])
-				// same charset the Node gateway enforces. Without it a cmdId
-				// containing ':' makes room:<room>:cmd:<cmdId> collide with
-				// OTHER keys (room "a" + cmd "b:tl" aliases the timeline of
-				// room "a:cmd:b"), and the SET NX against a hash would fail
-				// the whole script with WRONGTYPE
-				if !cmdIDPattern.MatchString(cmdId) {
-					continue
-				}
 			}
 			raw, ok := luaString(s.applyControl.Run(ctx, s.rdb,
-				[]string{"room:" + room + ":tl", "room:" + room + ":cmd:" + cmdId},
+				[]string{"room:" + room + ":tl", "room:" + room + ":cmd:" + cmdId,
+					"room:" + room + ":log"},
 				intent, strconv.FormatFloat(mediaTime, 'f', -1, 64), "relay",
 				cmdId, strconv.Itoa(cmdDedupTTLMS)).Result())
 			if !ok {

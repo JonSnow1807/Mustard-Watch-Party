@@ -15,9 +15,12 @@ transport toxic can ever produce an application-level duplicate.
 What "absorbed" means, per plane:
 
 - **node**: the servers' `control_dedup_hits_total` advanced by exactly 4
-  during the run (scraped from the instance that held the commanding
-  sockets), and no phantom seq appeared — `seqGaps: 0` with the reorder and
-  duplicate counters showing only the expected local re-anchor traffic.
+  during the run, and the **commit-count invariant** held:
+  `controlCommitsObserved == scriptedControls` (4 == 4). That equality is
+  the proof of deduplication — a duplicate that committed would mint the
+  *next contiguous* seq, so `seqGaps: 0` alone can never show it; the gap
+  counter is kept as a separate delivery-ordering check, not as dedup
+  evidence.
 - **relay**: each duplicate was answered as a targeted re-anchor carrying
   the already-committed seq (`seqDuplicates: 4` on a single-instance plane
   that otherwise produces none), through the extended binary control frame

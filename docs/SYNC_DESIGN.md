@@ -126,14 +126,23 @@ Reconciliation (`sync-harness/src/replay-check.ts`) is the live transfer of
 the spec's two log properties:
 
 - **TransitionContract**: every consecutive retained pair must satisfy its
-  reason's contract — a seek never flips play-state, a pause freezes at the
-  commanded frame, a snapshot moves the projection by *exactly nothing*,
-  `seq` is contiguous — checked by `shared/sync-core/replay.ts`, written
-  independently of the code that produces the transitions (double-entry).
+  reason's contract — a seek never flips play-state, play/pause set the
+  committed play-state, a snapshot moves the projection by *exactly
+  nothing*, `seq` is contiguous, `stampedAt` monotone — checked by
+  `shared/sync-core/replay.ts`, written independently of the code that
+  produces the transitions (double-entry). Stated precisely: for control
+  commits the *committed position is the command* (entries are post-states
+  and do not retain the request separately), so the checker verifies the
+  state-machine invariants, not commanded-vs-committed position — that
+  equality is what the TLA+ spec's `Contract` covers in the model, and the
+  per-command tests cover in code.
 - **ReplayReconstructs**: the newest retained entry must *be* the live
-  state, field for field. Any disagreement is drift between what was
-  committed and what is served, reported per room as a **measured drift
-  rate** the way the harness reports percentiles.
+  state, field for field (`reason` included). Any disagreement is drift
+  between what was committed and what is served, reported per room as a
+  **measured drift rate** the way the harness reports percentiles. The
+  reconciler reads log and live state as separate commands, so it re-reads
+  until the live version is stable across the pair — a commit racing the
+  reads must not masquerade as drift.
 
 Sweep commits are logged because the spec's `nosnaplog` config proved the
 alternative: they bump `seq` and re-anchor the projection, so a log of user
