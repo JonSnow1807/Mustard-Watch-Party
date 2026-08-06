@@ -71,11 +71,19 @@ jobs:
                 | grep -Eq '"redis"[[:space:]]*:[[:space:]]*"ok"' || return 1
             done
           }
-          for i in $(seq 1 120); do
-            ready && break
+          # Wall-clock deadline, not an iteration count: each failed pass can
+          # burn up to 4x5s of curl timeouts plus the sleep, so "120 tries"
+          # could take a quarter of the job's 30-minute budget. And the result
+          # is LATCHED - re-probing after a successful break re-rolls the
+          # dice, which is the same flapping-predicate bug as probing only
+          # nginx, one layer up.
+          booted=0
+          deadline=$(( SECONDS + 360 ))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if ready; then booted=1; break; fi
             sleep 3
           done
-          ready || {
+          [ "$booted" = 1 ] || {
             echo "lab never reached redis=ok on every instance; per-port /health:"
             for p in 3301 3302 3303 3300; do
               printf '%s: ' "$p"
