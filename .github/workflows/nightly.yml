@@ -65,27 +65,29 @@ jobs:
           # and require redis=ok (same deep-health rule as ci.yml): this job
           # exists to exercise the Lua store, and a 200 with status=degraded
           # would pass a bare -f probe while testing the wrong path.
-          ready() {
-            for p in 3301 3302 3303 3300; do
-              curl -sf --max-time 5 "http://localhost:$p/health" 2>/dev/null \
-                | grep -Eq '"redis"[[:space:]]*:[[:space:]]*"ok"' || return 1
-            done
-          }
-          # Wall-clock deadline, not an iteration count: each failed pass can
-          # burn up to 4x5s of curl timeouts plus the sleep, so "120 tries"
-          # could take a quarter of the job's 30-minute budget. And the result
-          # is LATCHED - re-probing after a successful break re-rolls the
-          # dice, which is the same flapping-predicate bug as probing only
-          # nginx, one layer up.
-          # The deadline bounds when a new probe pass may START; a pass in
-          # flight when it expires may still succeed (bounded overshoot:
-          # one pass, <= 4x5s of curl timeouts). A successful probe is
-          # ground truth that the lab is up - rejecting it because the
-          # stopwatch expired mid-pass would fail a healthy boot to honor
-          # an arbitrary number. The sleep is capped to the remaining
-          # budget so it cannot overshoot at all.
+          # Wall-clock deadline, not an iteration count, and the result is
+          # LATCHED - re-probing after a successful break re-rolls the dice,
+          # the same flapping-predicate bug as probing only nginx, one layer
+          # up. The gate's contract is "every instance proven healthy WITHIN
+          # the budget": each curl's timeout is capped to the remaining
+          # budget (a pass cannot run long past expiry), a pass that has not
+          # completed when the budget expires does not count, and the sleep
+          # cannot overshoot. The wait's worst case is exactly the number it
+          # advertises.
           booted=0
           deadline=$(( SECONDS + 360 ))
+          ready() {
+            local p rem
+            for p in 3301 3302 3303 3300; do
+              rem=$(( deadline - SECONDS ))
+              [ "$rem" -ge 1 ] || return 1
+              curl -sf --max-time $(( rem < 5 ? rem : 5 )) \
+                "http://localhost:$p/health" 2>/dev/null \
+                | grep -Eq '"redis"[[:space:]]*:[[:space:]]*"ok"' || return 1
+            done
+            # the whole pass must complete inside the budget to count
+            [ "$SECONDS" -lt "$deadline" ]
+          }
           while [ "$SECONDS" -lt "$deadline" ]; do
             if ready; then booted=1; break; fi
             remaining=$(( deadline - SECONDS ))
