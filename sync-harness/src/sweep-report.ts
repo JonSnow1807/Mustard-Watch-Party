@@ -107,9 +107,23 @@ const lines = [
   '|---|---|---|---|---|---|---|---|---|---|',
   ...rows.map(
     (r) =>
-      `| ${r.topology} | ${r.n} | ${fmt(r.p50)} | ${fmt(r.p95)} | ${fmt(r.p99)} | ${fmt(r.lagMax)} | ${r.cpuTotal.toFixed(2)} | ${r.gaps ?? '—'}/${r.reorders ?? '—'}/${r.dups ?? '—'} | ${r.sloOk ? 'ok' : 'BREACH'} | ${r.selfSkewed ? 'SELF-SKEWED' : 'valid'} |`,
+      // a failed re-join leaves that bot deaf: every seq after its drop falls
+      // outside the gap metric's observable range, so a clean gap count over
+      // deaf bots is a lower bound, not integrity - mark the cell
+      `| ${r.topology} | ${r.n} | ${fmt(r.p50)} | ${fmt(r.p95)} | ${fmt(r.p99)} | ${fmt(r.lagMax)} | ${r.cpuTotal.toFixed(2)} | ${r.gaps ?? '—'}/${r.reorders ?? '—'}/${r.dups ?? '—'}${(r.rejoinFailures ?? 0) > 0 ? ` ⚠ ${r.rejoinFailures} deaf` : ''} | ${r.sloOk ? 'ok' : 'BREACH'} | ${r.selfSkewed ? 'SELF-SKEWED' : 'valid'} |`,
   ),
 ];
+
+const deaf = rows.filter((r) => (r.rejoinFailures ?? 0) > 0);
+if (deaf.length > 0) {
+  lines.push(
+    '',
+    `⚠ ${deaf.length} cell(s) had bots that failed to re-join after a ` +
+      'reconnect. A deaf bot cannot observe the seqs it misses, so its gap ' +
+      'count is a lower bound and the integrity column for those cells is ' +
+      'incomplete, not clean.',
+  );
+}
 
 // knee: smallest N with an SLO breach on a valid cell, per topology
 for (const topo of ['1 instance', '3 instances']) {
