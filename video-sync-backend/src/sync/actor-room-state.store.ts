@@ -91,6 +91,10 @@ export interface ForwardedControl {
   /** rides the forward so the OWNER's fenced commit can dedup it - the
    *  forward publish itself can be redelivered (pubsub client resends) */
   cmdId?: string;
+  /** the ORIGINATING socket, preserved across forwards so a duplicate can
+   *  be answered to that socket alone (socket-id rooms span instances via
+   *  the adapter) instead of broadcast to the room */
+  originSocketId?: string;
 }
 
 @Injectable()
@@ -314,17 +318,10 @@ export class ActorRoomStateStore
     mediaTime: number,
     serverNow: number,
     by: string,
-    cmdId?: string,
+    opts?: { cmdId?: string; originSocketId?: string },
   ): Promise<ApplyOutcome> {
     return this.enqueue(roomCode, () =>
-      this.applyControlSerial(
-        roomCode,
-        intent,
-        mediaTime,
-        serverNow,
-        by,
-        cmdId,
-      ),
+      this.applyControlSerial(roomCode, intent, mediaTime, serverNow, by, opts),
     );
   }
 
@@ -334,8 +331,10 @@ export class ActorRoomStateStore
     mediaTime: number,
     serverNow: number,
     by: string,
-    cmdId?: string,
+    opts?: { cmdId?: string; originSocketId?: string },
   ): Promise<ApplyOutcome> {
+    const cmdId = opts?.cmdId;
+    const originSocketId = opts?.originSocketId;
     let entry = this.owned.get(roomCode);
     if (!entry) {
       const lease = await this.claim(roomCode);
@@ -343,7 +342,14 @@ export class ActorRoomStateStore
         // someone else owns this room: forward and let them broadcast
         const delivered = await this.pub.publish(
           this.forwardChannel(lease.owner),
-          JSON.stringify({ roomCode, intent, mediaTime, by, cmdId }),
+          JSON.stringify({
+            roomCode,
+            intent,
+            mediaTime,
+            by,
+            cmdId,
+            originSocketId,
+          }),
         );
         if (delivered > 0) return { kind: 'forwarded' };
         // Nobody is subscribed: the owner died between our lease read and
@@ -367,7 +373,14 @@ export class ActorRoomStateStore
           // P07: a live owner exists after all - forward rather than drop
           const second = await this.pub.publish(
             this.forwardChannel(retaken.owner),
-            JSON.stringify({ roomCode, intent, mediaTime, by, cmdId }),
+            JSON.stringify({
+              roomCode,
+              intent,
+              mediaTime,
+              by,
+              cmdId,
+              originSocketId,
+            }),
           );
           return second > 0 ? { kind: 'forwarded' } : { kind: 'missing' };
         }
@@ -415,7 +428,14 @@ export class ActorRoomStateStore
     }
     const delivered = await this.pub.publish(
       this.forwardChannel(nowLease.owner),
-      JSON.stringify({ roomCode, intent, mediaTime, by, cmdId }),
+      JSON.stringify({
+        roomCode,
+        intent,
+        mediaTime,
+        by,
+        cmdId,
+        originSocketId,
+      }),
     );
     return delivered > 0 ? { kind: 'forwarded' } : { kind: 'missing' };
   }

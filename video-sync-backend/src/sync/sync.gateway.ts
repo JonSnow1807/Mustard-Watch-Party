@@ -84,12 +84,24 @@ export class SyncGateway
           c.mediaTime,
           this.clock.now(),
           c.cmdId,
+          c.originSocketId,
         );
-        if (result.ok && result.timeline) {
-          this.server
-            .to(c.roomCode)
-            .emit(SYNC_EVENTS.timeline, result.timeline);
+        if (!result.ok || !result.timeline) return;
+        if ('duplicate' in result) {
+          // the forward was redelivered (or the command retried): the
+          // original commit already broadcast. Answer ONLY the originating
+          // socket - socket-id rooms span instances via the adapter, so
+          // this reaches it wherever it is connected. Broadcasting here
+          // would turn retry traffic into room-wide updates.
+          this.metrics.controlDedupHits.inc({ type: c.intent });
+          if (c.originSocketId) {
+            this.server
+              .to(c.originSocketId)
+              .emit(SYNC_EVENTS.timeline, result.timeline);
+          }
+          return;
         }
+        this.server.to(c.roomCode).emit(SYNC_EVENTS.timeline, result.timeline);
       });
     }
   }
@@ -383,6 +395,7 @@ export class SyncGateway
       data.mediaTime,
       this.clock.now(),
       data.cmdId,
+      client.id,
     );
     if (!result.ok) {
       this.metrics.controlEvents.inc({

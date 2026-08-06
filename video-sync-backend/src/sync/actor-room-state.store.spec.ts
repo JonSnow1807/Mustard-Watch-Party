@@ -125,41 +125,26 @@ describe('ActorRoomStateStore — lease fencing', () => {
     // every applied command and a redelivered forward re-applies.
     const r = `${room}-dedup-handoff`;
     await a.init(r, 'vid', 0, Date.now());
-    const first = await a.applyControl(
-      r,
-      'seek',
-      10,
-      Date.now(),
-      'u1',
-      'cmd-h1',
-    );
+    const first = await a.applyControl(r, 'seek', 10, Date.now(), 'u1', {
+      cmdId: 'cmd-h1',
+    });
     expect(first.kind).toBe('committed');
 
     // owner change: a's lease dies, b claims on its next control
     const kv = new Redis(URL, { maxRetriesPerRequest: 1 });
     clients.push(kv);
     await kv.del(`room:${r}:lease`);
-    const claim = await b.applyControl(
-      r,
-      'play',
-      20,
-      Date.now(),
-      'u2',
-      'cmd-h2',
-    );
+    const claim = await b.applyControl(r, 'play', 20, Date.now(), 'u2', {
+      cmdId: 'cmd-h2',
+    });
     expect(claim.kind).toBe('committed');
     const seqAfterClaim = (await b.get(r))!.seq;
 
     // the redelivered forward of the OLD owner's command reaches the NEW
     // owner (the forward publish is redeliverable) - it must dedup, not apply
-    const replay = await b.applyControl(
-      r,
-      'seek',
-      10,
-      Date.now(),
-      'u1',
-      'cmd-h1',
-    );
+    const replay = await b.applyControl(r, 'seek', 10, Date.now(), 'u1', {
+      cmdId: 'cmd-h1',
+    });
     expect(replay.kind).toBe('duplicate');
     expect((await b.get(r))!.seq).toBe(seqAfterClaim);
     await b.clear(r);

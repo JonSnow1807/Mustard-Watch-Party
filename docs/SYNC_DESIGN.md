@@ -62,8 +62,9 @@ ack-offset spread across 3 live instances: **4ms** **[lab]**, from
 
 ## 2a. Idempotent control commands (exactly-once application)
 
-Every control carries a client-minted UUID (`cmdId`), and the store applies
-each id **at most once** — Stripe's idempotency-key model, applied to
+Every control from a current client carries a client-minted UUID (`cmdId` —
+optional on the wire, so legacy clients that omit it keep the old
+non-deduped semantics), and the store applies each id **at most once** — Stripe's idempotency-key model, applied to
 playback control. The check-and-record is a `SET NX PX` executed *inside the
 same Lua script as the commit*, so check, apply, log and record are one
 atomic step; a split across two round trips would reintroduce the race the
@@ -205,8 +206,9 @@ threshold and then seeking.
 ## 6. Protocol
 
 Five events: `sync:clock` (ack: `{t0}`→`{t0,t1,t2}`), `sync:control`
-(`{roomCode, intent, mediaTime}`; identity comes only from the JWT-verified
-socket), `sync:timeline` (the only state message), `sync:control-rejected`
+(`{roomCode, intent, mediaTime, cmdId?}` — the optional idempotency key of
+§2a; identity comes only from the JWT-verified socket), `sync:timeline`
+(the only state message), `sync:control-rejected`
 (`not-controller` / `rate-limited` / `room-not-found`), `room:controller`
 (succession/reclaim). A 10s server sweep re-anchors playing rooms as the
 repair channel for lost broadcasts; redundancy is harmless because clients

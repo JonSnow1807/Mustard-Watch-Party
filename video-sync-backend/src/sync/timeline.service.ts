@@ -143,6 +143,9 @@ export class TimelineService {
     mediaTime: number,
     now: number,
     cmdId?: string,
+    /** the true originating socket; differs from socketId on the owner's
+     *  side of a forward, where socketId is synthetic */
+    originSocketId?: string,
   ): Promise<ControlResult> {
     const meta = this.meta.get(roomCode);
     if (!meta) return { ok: false, reason: 'room-not-found' };
@@ -158,7 +161,7 @@ export class TimelineService {
       mediaTime,
       now,
       userId,
-      cmdId,
+      { cmdId, originSocketId },
     );
     if (outcome.kind === 'missing')
       return { ok: false, reason: 'room-not-found' };

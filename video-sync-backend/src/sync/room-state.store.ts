@@ -51,10 +51,13 @@ export const CMD_DEDUP_TTL_MS = 15 * 60_000;
 export interface RoomStateStore {
   get(roomCode: string): Promise<Timeline | null>;
   /**
-   * Restamp a control intent and commit it with the next seq. `cmdId`, when
-   * present, is checked-and-recorded ATOMICALLY with the commit: a repeat of
-   * an applied id returns `duplicate` with the current state instead of
-   * committing again.
+   * Restamp a control intent and commit it with the next seq. `opts.cmdId`,
+   * when present, is checked-and-recorded ATOMICALLY with the commit: a
+   * repeat of an applied id returns `duplicate` with the current state
+   * instead of committing again. `opts.originSocketId` rides any forward so
+   * the room's owner can answer a duplicate to the ORIGINATING socket only
+   * (socket-id rooms are cluster-wide through the adapter) - a duplicate
+   * broadcast to the room would turn retry traffic into room-wide updates.
    */
   applyControl(
     roomCode: string,
@@ -62,7 +65,7 @@ export interface RoomStateStore {
     mediaTime: number,
     serverNow: number,
     by: string,
-    cmdId?: string,
+    opts?: { cmdId?: string; originSocketId?: string },
   ): Promise<ApplyOutcome>;
   /** Re-anchor the projection (periodic sweep); returns the committed state. */
   applySnapshot(roomCode: string, serverNow: number): Promise<Timeline | null>;
@@ -101,8 +104,9 @@ export class InMemoryRoomStateStore implements RoomStateStore {
     mediaTime: number,
     serverNow: number,
     by: string,
-    cmdId?: string,
+    opts?: { cmdId?: string; originSocketId?: string },
   ): Promise<ApplyOutcome> {
+    const cmdId = opts?.cmdId;
     const prev = this.rooms.get(roomCode);
     if (!prev) return Promise.resolve({ kind: 'missing' });
     if (cmdId) {

@@ -185,28 +185,18 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
     await playingRoom(a, r);
     const before = await a.get(r);
 
-    const first = await a.applyControl(
-      r,
-      'seek',
-      42,
-      Date.now(),
-      'u1',
-      'cmd-1',
-    );
+    const first = await a.applyControl(r, 'seek', 42, Date.now(), 'u1', {
+      cmdId: 'cmd-1',
+    });
     expect(first.kind).toBe('committed');
     const committedSeq = (first as { timeline: Timeline }).timeline.seq;
     expect(committedSeq).toBe(before!.seq + 1);
 
     // the SAME command delivered again - ioredis resending an EVAL whose
     // reply was lost is exactly this
-    const second = await a.applyControl(
-      r,
-      'seek',
-      42,
-      Date.now(),
-      'u1',
-      'cmd-1',
-    );
+    const second = await a.applyControl(r, 'seek', 42, Date.now(), 'u1', {
+      cmdId: 'cmd-1',
+    });
     expect(second.kind).toBe('duplicate');
     // no second commit: seq did not move, and the duplicate answers with
     // the CURRENT state so the retrying sender still gets its re-anchor
@@ -214,14 +204,9 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
     expect((await a.get(r))!.seq).toBe(committedSeq);
 
     // a DIFFERENT id is a different command (double-click), not a duplicate
-    const third = await a.applyControl(
-      r,
-      'seek',
-      42,
-      Date.now(),
-      'u1',
-      'cmd-2',
-    );
+    const third = await a.applyControl(r, 'seek', 42, Date.now(), 'u1', {
+      cmdId: 'cmd-2',
+    });
     expect(third.kind).toBe('committed');
     expect((third as { timeline: Timeline }).timeline.seq).toBe(
       committedSeq + 1,
@@ -248,17 +233,12 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
     const c = raw();
     const r = `${room}-ttl`;
     await playingRoom(a, r);
-    await a.applyControl(r, 'seek', 9, Date.now(), 'u1', 'cmd-ttl');
+    await a.applyControl(r, 'seek', 9, Date.now(), 'u1', { cmdId: 'cmd-ttl' });
     await c.pexpire(`room:${r}:cmd:cmd-ttl`, 1);
     await new Promise((res) => setTimeout(res, 20));
-    const replay = await a.applyControl(
-      r,
-      'seek',
-      9,
-      Date.now(),
-      'u1',
-      'cmd-ttl',
-    );
+    const replay = await a.applyControl(r, 'seek', 9, Date.now(), 'u1', {
+      cmdId: 'cmd-ttl',
+    });
     expect(replay.kind).toBe('committed'); // which is why TTL >> redelivery window
   });
 

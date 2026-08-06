@@ -13,6 +13,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRoom } from '../app-api.js';
 import { percentile } from '../stats.js';
+import type { ControlIntent } from '../../../shared/sync-protocol';
 import { BotClient } from './bot-client.js';
 import { mulberry32 } from './sim-player.js';
 
@@ -113,12 +114,20 @@ async function main(): Promise<void> {
     if (!tl) return 0;
     return tl.mediaTime + (tl.isPlaying ? (Date.now() - tl.stampedAt) / 1000 : 0);
   };
+  // the double-apply tripwire needs the ground truth of how many control
+  // COMMANDS were issued: each sendIntent is one command (its duplicate
+  // twin in --dup-controls mode shares the cmdId, so it must NOT commit)
+  let scriptedControls = 0;
+  const command = (intent: ControlIntent, mediaTime: number): void => {
+    scriptedControls += 1;
+    commander.sendIntent(room.code, intent, mediaTime);
+  };
   const events: Array<{ atS: number; run: () => void }> = [
-    { atS: 5, run: () => commander.sendIntent(room.code, 'play', 0) },
-    { atS: 30, run: () => commander.sendIntent(room.code, 'seek', 300) },
+    { atS: 5, run: () => command('play', 0) },
+    { atS: 30, run: () => command('seek', 300) },
     { atS: 40, run: () => bots[Math.min(2, bots.length - 1)].scriptedStall(4000) },
-    { atS: 50, run: () => commander.sendIntent(room.code, 'pause', projectedNow()) },
-    { atS: 55, run: () => commander.sendIntent(room.code, 'play', projectedNow()) },
+    { atS: 50, run: () => command('pause', projectedNow()) },
+    { atS: 55, run: () => command('play', projectedNow()) },
   ];
   for (const e of events) {
     const wait = t0 + e.atS * 1000 - Date.now();
@@ -183,6 +192,13 @@ async function main(): Promise<void> {
   const reconnects = reports.reduce((sum, r) => sum + r.reconnects, 0);
   const rejoinFailures = reports.reduce((sum, r) => sum + r.rejoinFailures, 0);
   const dupControlsSent = reports.reduce((sum, r) => sum + r.dupControlsSent, 0);
+  // union across the fleet: a control commit any bot observed. A duplicate
+  // that double-applies mints an extra (epoch,seq) with a control reason -
+  // contiguous seq, so seqGaps stays clean, but this count exceeds the
+  // number of commands actually issued
+  const controlCommitsObserved = new Set(
+    reports.flatMap((r) => r.controlCommits),
+  ).size;
   const handlerErrors = reports.flatMap((r) => r.handlerErrors);
   const thetaP95 = percentile(
     [...thetaErrors].sort((a, b) => a - b),
@@ -227,6 +243,8 @@ async function main(): Promise<void> {
     // these produce ZERO extra seqs - any double-apply shows as a phantom
     // seq in the integrity counters
     dupControlsSent,
+    scriptedControls,
+    controlCommitsObserved,
     handlerErrors: handlerErrors.length,
     rejectedControls: reports.reduce((s, r) => s + r.rejected, 0),
   };
@@ -249,6 +267,10 @@ async function main(): Promise<void> {
     // failing re-joins silently shrink what the gap check can see, so the
     // gate has to treat them as a failure rather than trust a clean seqGaps
     if (rejoinFailures > 0) failures.push(`${rejoinFailures} failed re-joins (gap metric is blind past these)`);
+    if (controlCommitsObserved > scriptedControls)
+      failures.push(
+        `${controlCommitsObserved} control commits for ${scriptedControls} commands - a duplicate was APPLIED`,
+      );
     if (failures.length > 0) {
       console.error('[gate] FAILED:\n  ' + failures.join('\n  '));
       process.exit(1);

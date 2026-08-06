@@ -31,6 +31,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"regexp"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -58,6 +59,10 @@ var reasonCodes = map[string]uint8{
 // parameter (formal/SyncExactlyOnce.tla earlyevict), far above every
 // redelivery window in this system
 const cmdDedupTTLMS = 15 * 60 * 1000
+
+// mirror of the Node gateway's cmdId validation: bounded, separator-free,
+// so the derived room:<room>:cmd:<cmdId> key cannot alias another keyspace
+var cmdIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 type luaTimeline struct {
 	Seq        int     `json:"seq"`
@@ -316,6 +321,14 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				cmdId = string(data[12+n : 12+n+cl])
+				// same charset the Node gateway enforces. Without it a cmdId
+				// containing ':' makes room:<room>:cmd:<cmdId> collide with
+				// OTHER keys (room "a" + cmd "b:tl" aliases the timeline of
+				// room "a:cmd:b"), and the SET NX against a hash would fail
+				// the whole script with WRONGTYPE
+				if !cmdIDPattern.MatchString(cmdId) {
+					continue
+				}
 			}
 			raw, ok := luaString(s.applyControl.Run(ctx, s.rdb,
 				[]string{"room:" + room + ":tl", "room:" + room + ":cmd:" + cmdId},

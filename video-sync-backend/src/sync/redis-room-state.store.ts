@@ -97,8 +97,9 @@ export class RedisRoomStateStore implements RoomStateStore {
     mediaTime: number,
     _serverNow: number, // stamping happens inside Lua from redis TIME (D6)
     by: string,
-    cmdId?: string,
+    opts?: { cmdId?: string; originSocketId?: string },
   ): Promise<ApplyOutcome> {
+    const cmdId = opts?.cmdId;
     const result = await this.redis.mustardApplyControl(
       this.key(roomCode),
       // the dedup record; the script never touches it when cmdId is ''

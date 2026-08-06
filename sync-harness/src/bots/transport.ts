@@ -98,7 +98,12 @@ export class SocketIOTransport implements SyncTransport {
     mediaTime: number,
     cmdId?: string,
   ): void {
-    this.socket?.emit(SYNC_EVENTS.control, {
+    // the no-buffering contract the dedup TTL's soundness rests on
+    // (SYNC_DESIGN 2a): socket.io would queue this while disconnected and
+    // flush it arbitrarily late after reconnect - drop instead, like the
+    // real client does
+    if (!this.socket?.connected) return;
+    this.socket.emit(SYNC_EVENTS.control, {
       v: 1,
       roomCode,
       intent,
@@ -272,6 +277,8 @@ export class RawWSBinaryTransport implements SyncTransport {
     mediaTime: number,
     cmdId?: string,
   ): void {
+    // same no-buffering contract as the socket.io transport
+    if (!this.isConnected) return;
     const room = Buffer.from(roomCode, 'utf8');
     // cmdLen+cmdId are appended after room; the relay tolerates their
     // absence, so old frames stay decodable

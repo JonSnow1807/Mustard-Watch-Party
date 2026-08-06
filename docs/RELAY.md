@@ -59,7 +59,7 @@ discipline of proving the protocol implementation-independent.
 |---|---|---|
 | C→S | 0x01 ClockPing | `t0 f64` |
 | S→C | 0x02 ClockPong | `t0 f64, t1 f64, t2 f64` |
-| C→S | 0x03 Control | `intent u8, mediaTime f64, roomLen u8, room…` |
+| C→S | 0x03 Control | `intent u8, mediaTime f64, roomLen u8, room…[, cmdLen u8, cmdId…]` |
 | S→C | 0x04 Timeline | `seq u32, epoch f64, isPlaying u8, mediaTime f64, stampedAt f64, reason u8` |
 | C→S | 0x05 Join | `roomLen u8, room…` |
 | S→C | 0x06 JoinAck | Timeline payload |

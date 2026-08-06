@@ -73,6 +73,8 @@ export interface BotReport {
   rejoinFailures: number;
   /** duplicate-injection mode: how many extra same-cmdId sends this bot made */
   dupControlsSent: number;
+  /** distinct (epoch,seq) of committed control transitions this bot saw */
+  controlCommits: string[];
   handlerErrors: string[];
   rejected: number;
 }
@@ -95,6 +97,11 @@ export class BotClient {
   private reconnects = 0;
   private rejoinFailures = 0;
   private dupControlsSent = 0;
+  /** every distinct committed CONTROL transition observed: (epoch, seq) of
+   *  timelines whose reason is play/pause/seek. Snapshot commits excluded.
+   *  A double-applied duplicate mints an EXTRA one of these - contiguous
+   *  seq, so invisible to the gap metric, but countable here. */
+  private controlCommits = new Set<string>();
   private roomCode: string | null = null;
   private handlerErrors: string[] = [];
   private rejected = 0;
@@ -182,6 +189,9 @@ export class BotClient {
     }
     seen.add(tl.seq);
 
+    if (tl.reason === 'play' || tl.reason === 'pause' || tl.reason === 'seek') {
+      this.controlCommits.add(`${tl.storeEpoch}:${tl.seq}`);
+    }
     if (isNewer(tl, this.timeline)) {
       this.timeline = tl;
     } else if (this.timeline && tl.storeEpoch === this.timeline.storeEpoch) {
@@ -320,6 +330,7 @@ export class BotClient {
       reconnects: this.reconnects,
       rejoinFailures: this.rejoinFailures,
       dupControlsSent: this.dupControlsSent,
+      controlCommits: [...this.controlCommits],
       handlerErrors: this.handlerErrors,
       rejected: this.rejected,
     };
