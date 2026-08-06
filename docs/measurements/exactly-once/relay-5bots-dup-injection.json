@@ -1,0 +1,25 @@
+{
+  "runId": "bots-msi2n4p3",
+  "gitSha": "950fae7acd340479997dc94b844033545c24dbe4",
+  "hardware": "10 cores (Apple M2 Pro)",
+  "controller": "reactive",
+  "plane": "relay",
+  "n": 5,
+  "durationS": 60,
+  "steadySamples": 576,
+  "driftMs": {
+    "p50": 90.88685245618677,
+    "p95": 149.16698927765992,
+    "p99": 346.3328149505287
+  },
+  "slopeMsPerMin": 0,
+  "thetaErrorP95Ms": 1.92822265625,
+  "seqGaps": 0,
+  "seqReorders": 0,
+  "seqDuplicates": 4,
+  "reconnects": 0,
+  "rejoinFailures": 0,
+  "dupControlsSent": 4,
+  "handlerErrors": 0,
+  "rejectedControls": 0
+}
