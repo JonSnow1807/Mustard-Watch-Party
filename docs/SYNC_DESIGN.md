@@ -241,8 +241,10 @@ P50 68ms / P95 147ms, growth −1.3ms/min, zero seq gaps. With the predictive
 servo (M9) the same 10-bot cell reports P50 **7.3ms** / P95 83ms — the servo
 cancels steady-state drift outright, and transients (joins, seeks, stalls)
 set the shared P99. The **committed** protocol-level evidence is the load
-sweep (`measurements/sweep/`), whose ten cells are reactive-controller,
-120s, and cover 10→250 clients: P95 116→156ms.
+sweeps: the current matrix (`measurements/sweep2/`, post-sweep-dedup build,
+P95 116→158ms, zero gaps/reorders on all ten cells) and the earlier one
+(`measurements/sweep/`, P95 116→156ms) — both reactive-controller, 120s,
+10→250 clients.
 
 > **Protocol-level numbers were re-measured on 2026-08-04.** A defect in the
 > bot fleet's simulated player (it discarded up to one 250ms tick of playback

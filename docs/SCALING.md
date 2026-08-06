@@ -74,9 +74,67 @@ scripted control events; per-instance `/metrics` scraped every 5s
 (event-loop lag p99, CPU, RSS, connected clients); load-generator host load
 recorded per cell and cells above 0.7 load/core flagged self-skewed. SLOs:
 bot P95 vs-timeline drift ≤ 250ms (set above the fleet's simulated-player
-floor, measured at P95 116–156ms across this sweep); event-loop lag p99
-≤ 100ms. The knee is the smallest N breaching an SLO, attributed via the
+floor, measured at P95 116–158ms across the current sweep); event-loop lag
+p99 ≤ 100ms. The knee is the smallest N breaching an SLO, attributed via the
 correlated server metric.
+
+### Current matrix — post-sweep-dedup build
+
+Sweep `sweep-mshvizoy (+sweep-mshw7yw5 size-10 re-run)` · 10 cores (Apple M2 Pro) · 120s cells · SHA `c52162d4cf`
+
+| topology | clients | drift P50 | P95 | P99 | lag p99 max | server CPU (cores) | gaps/reord/dups | SLO | load-gen |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 instance | 10 | 76ms | 116ms | 315ms | 17ms | 0.02 | 0/0/0 | ok | valid |
+| 3 instances | 10 | 74ms | 117ms | 314ms | 18ms | 0.04 | 0/0/84 | ok | valid |
+| 1 instance | 25 | 73ms | 120ms | 226ms | 17ms | 0.04 | 0/0/0 | ok | valid |
+| 3 instances | 25 | 73ms | 141ms | 317ms | 17ms | 0.06 | 0/0/170 | ok | valid |
+| 1 instance | 50 | 58ms | 140ms | 263ms | 20ms | 0.07 | 0/0/0 | ok | valid |
+| 3 instances | 50 | 55ms | 140ms | 262ms | 22ms | 0.08 | 0/0/396 | ok | valid |
+| 1 instance | 100 | 70ms | 149ms | 330ms | 32ms | 0.14 | 0/0/0 | ok | valid |
+| 3 instances | 100 | 68ms | 151ms | 331ms | 23ms | 0.13 | 0/0/670 | ok | valid |
+| 1 instance | 250 | 63ms | 158ms | 340ms | 42ms | 0.49 | 0/0/0 | ok | valid |
+| 3 instances | 250 | 69ms | 158ms | 340ms | 65ms | 0.36 | 0/0/1668 | ok | valid |
+
+**No SLO breach on any cell, either topology, up to 250 clients in one
+room.** Every cell passed load-gen validity (0.28–0.45 load/core against the
+0.7 gate). The size-10 cells are a re-run minutes after the first pass: the
+first attempt ran ~2 minutes after `compose up` and `three-10` failed at bot
+*registration* with a 502 from nginx (backends still booting) before any
+measurement began — recorded in the summary's `note`, and one-10 was re-run
+alongside it so the size-10 row is a single-conditions pair.
+
+**The integrity columns are the point of this re-run.** Gaps and reorders
+are zero on every cell. Duplicates appear only on the 3-instance topology
+and scale with n (84 → 170 → 396 → 670 → 1668) — these are the losing
+instances' local re-anchors landing alongside the window-winner's broadcast,
+exactly the designed signature of the sweep dedup (below), idempotent and
+dropped by `isNewer`.
+
+**The previously published knee did not reproduce.** The earlier sweep
+(retained below) measured a one-instance event-loop-lag breach at 250
+clients: 130ms p99 against the 100ms SLO. This run measures **42ms** on the
+same cell — no breach anywhere, so the knee on this hardware is somewhere
+above 250 clients per room and is currently *unlocated*. The sweep dedup
+cannot explain the difference (a single instance has exactly one sweeper
+either way); the salient environmental change is that the earlier run's
+Docker VM had ~26 days of uptime while this run followed a host reboot. The
+attribution is therefore *withdrawn rather than replaced*: the earlier
+"fanout saturates one event loop, three instances spread it" story matched
+that run's numbers but is not supported by this one — here the 3-instance
+lag at 250 (65ms) is actually *higher* than 1-instance (42ms). Both runs
+stay committed; a knee claim will return when a breach reproduces.
+
+Client-visible drift is barely affected across the whole range (P95 116 →
+158ms from 10 to 250 clients, near-identical between topologies):
+coordination and fanout are not what bounds sync quality here — the
+simulated player's own latency is. The server metrics are where load shows
+up, which is why the knee is defined on event-loop lag rather than drift.
+
+Charts: [drift](measurements/sweep2/charts/sweep-drift.svg) ·
+[event-loop lag](measurements/sweep2/charts/sweep-lag.svg) ·
+[full run](measurements/sweep2/)
+
+### Previous matrix — pre-dedup build (retained)
 
 Sweep `sweep-msex1u7w (+msext3tp re-runs)` · 10 cores (Apple M2 Pro) · 120s cells · SHA `d6d33c9b3b`
 
@@ -93,28 +151,14 @@ Sweep `sweep-msex1u7w (+msext3tp re-runs)` · 10 cores (Apple M2 Pro) · 120s ce
 | 1 instance | 250 | 67ms | 155ms | 336ms | 130ms | 0.56 | BREACH | valid |
 | 3 instances | 250 | 68ms | 156ms | 339ms | 76ms | 0.37 | ok | valid |
 
-**1 instance knee:** SLO breach at n=250 (drift P95 155ms, lag 130ms).
-
-**3 instances:** no SLO breach on any valid cell in this sweep.
-
-**The knee, and what causes it.** A single instance **breaches at 250 clients
-in one room**: event-loop lag p99 hits 130ms against a 100ms SLO while CPU
-climbs to 0.56 cores. Three instances carry the same 250 clients at 76ms lag
-and 0.37 cores total — the fanout work that saturates one event loop is
-spread across three, which is exactly the benefit the topology exists for and
-the first sweep was too coarse to show.
-
-Client-visible drift is barely affected across the whole range (P95 116 →
-156ms from 10 to 250 clients; the 1-vs-3-instance difference per cell spans
-1–14ms with no consistent direction, i.e. within run-to-run noise):
-coordination and fanout are not what bounds sync quality here — the
-simulated player's own latency is. The server metrics are where load shows
-up, which is why the knee is defined on event-loop lag rather than drift.
-
-Every cell passed load-gen validity (<0.7 load/core). Sizes 10 and 50 were
-re-run after the first pass flagged them self-skewed; only the re-runs are
-published — the first-pass cell files were overwritten by the re-run and
-were not retained.
+This matrix was measured on the build *before* the sweep dedup, with the
+Docker VM ~26 days up. Its `three-25` cell records `seqGaps: 59` — the
+metric artifact root-caused below, not a real loss — and its one-instance
+breach at 250 is the non-reproduced knee discussed above. It is retained
+because published claims cited it and because the disagreement between the
+two runs is itself a finding. Sizes 10 and 50 were re-run after the first
+pass flagged them self-skewed; only the re-runs are published — the
+first-pass cell files were overwritten by the re-run and were not retained.
 
 ### The 59 seq gaps, root-caused
 
@@ -219,15 +263,13 @@ The repair channel is verifiably still alive — 14 commits over 120s is the
 ~12 sweeps plus the scripted control events, not a wedged sweep. That was the
 main risk of the change, so it was measured rather than assumed.
 
-**Outstanding:** the committed sweep in this section predates the fix. Its
-drift and lag figures stand as measurements of that build, and the knee is
-unaffected (a single instance has one sweeper either way), but the
-`three-25` `seqGaps: 59` in `sweep-summary.json` is the artifact explained
-above, not a defect. Refreshing the matrix needs an otherwise-idle machine —
-the attempt made here ran at a 15-minute load average of 8.19 on 10 cores,
-which the harness's own validity gate (>0.7 load/core) rejects, and
-publishing it would be exactly the sort of number this document promises not
-to print.
+The full matrix was re-run on this build once the machine was quiet (§5,
+"current matrix"): gaps and reorders are zero on all ten cells, and the
+duplicate counts follow the designed local-re-anchor signature exactly. An
+earlier refresh attempt at a 15-minute load average of 8.19 on 10 cores was
+discarded unpublished — the harness's own validity gate (>0.7 load/core)
+rejects it, and printing it would be exactly the sort of number this
+document promises not to.
 
 Worth noting against the A/B in [COORDINATION.md](COORDINATION.md): plane B
 never had this bug. Its sweep is owner-only by construction (`only the owner

@@ -9,8 +9,8 @@
 // SLOs (a cell FAILS the knee when breached): bot P95 vs-timeline drift
 // <= 250ms and event-loop lag p99 <= 100ms. The drift bound sits ABOVE the
 // fleet's simulated-player floor - set by the deliberately pessimistic
-// SimPlayer latency/settle model, and measured at P95 116-156ms across this
-// matrix - so it detects load-induced rise rather than the simulation floor.
+// SimPlayer latency/settle model, and measured at P95 116-158ms across the
+// current matrix - so it detects load-induced rise rather than the simulation floor.
 // (An earlier comment here quoted a flat ~165ms floor; that belonged to a
 // superseded pre-fix sweep and was not what the current matrix measures.)
 // Load-gen validity:
