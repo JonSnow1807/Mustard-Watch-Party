@@ -83,6 +83,7 @@ export class SyncGateway
           c.intent,
           c.mediaTime,
           this.clock.now(),
+          c.cmdId,
         );
         if (result.ok && result.timeline) {
           this.server
@@ -338,7 +339,15 @@ export class SyncGateway
       !CONTROL_INTENTS.includes(data?.intent) ||
       typeof data.mediaTime !== 'number' ||
       !Number.isFinite(data.mediaTime) ||
-      data.mediaTime < 0
+      data.mediaTime < 0 ||
+      // cmdId is optional (wire compat) but when present it must be a
+      // bounded string: it becomes a Redis key suffix, and an unbounded
+      // client value there is a memory lever
+      (data.cmdId !== undefined &&
+        (typeof data.cmdId !== 'string' ||
+          data.cmdId.length === 0 ||
+          data.cmdId.length > 64 ||
+          !/^[A-Za-z0-9_-]+$/.test(data.cmdId)))
     ) {
       client.emit(SYNC_EVENTS.controlRejected, {
         v: 1,
@@ -373,6 +382,7 @@ export class SyncGateway
       data.intent,
       data.mediaTime,
       this.clock.now(),
+      data.cmdId,
     );
     if (!result.ok) {
       this.metrics.controlEvents.inc({
@@ -394,6 +404,19 @@ export class SyncGateway
         type: data.intent,
         result: 'forwarded',
       });
+      stop();
+      return;
+    }
+    if ('duplicate' in result) {
+      // already applied: the original commit broadcast to the room, so the
+      // only thing owed is a targeted re-anchor to the sender - the ack a
+      // retrying client is waiting for
+      this.metrics.controlDedupHits.inc({ type: data.intent });
+      this.metrics.controlEvents.inc({
+        type: data.intent,
+        result: 'duplicate',
+      });
+      client.emit(SYNC_EVENTS.timeline, result.timeline);
       stop();
       return;
     }

@@ -59,6 +59,14 @@ export interface SyncControl {
   roomCode: string;
   intent: ControlIntent;
   mediaTime: number;
+  /**
+   * Client-minted idempotency key (UUID), the Stripe model: the store
+   * applies each cmdId at most once and answers a duplicate with the
+   * already-committed timeline instead of committing again. Optional for
+   * wire compat - a command without one gets no dedup, exactly the old
+   * behavior. Deduped atomically inside the same Lua script as the commit.
+   */
+  cmdId?: string;
 }
 
 /** S→C error for rejected controls (permission, rate limit, no room). */

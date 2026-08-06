@@ -4,6 +4,7 @@ import { REDIS_KV } from '../redis/redis.module';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
 import {
   ApplyOutcome,
+  CMD_DEDUP_TTL_MS,
   RoomStateStore,
   SWEEP_DEDUP_PERIOD_MS,
 } from './room-state.store';
@@ -35,9 +36,12 @@ const LUA_INIT = lua('init.lua');
 interface RedisWithCommands extends Redis {
   mustardApplyControl(
     key: string,
+    cmdKey: string,
     intent: string,
     mediaTime: string,
     by: string,
+    cmdId: string,
+    dedupTtlMs: string,
   ): Promise<string | null>;
   mustardApplySnapshot(key: string, periodMs: string): Promise<string | null>;
   mustardInit(key: string, videoId: string, mediaTime: string): Promise<string>;
@@ -49,7 +53,7 @@ export class RedisRoomStateStore implements RoomStateStore {
 
   constructor(@Inject(REDIS_KV) redis: Redis) {
     redis.defineCommand('mustardApplyControl', {
-      numberOfKeys: 1,
+      numberOfKeys: 2,
       lua: LUA_APPLY_CONTROL,
     });
     redis.defineCommand('mustardApplySnapshot', {
@@ -93,15 +97,32 @@ export class RedisRoomStateStore implements RoomStateStore {
     mediaTime: number,
     _serverNow: number, // stamping happens inside Lua from redis TIME (D6)
     by: string,
+    cmdId?: string,
   ): Promise<ApplyOutcome> {
     const result = await this.redis.mustardApplyControl(
       this.key(roomCode),
+      // the dedup record; the script never touches it when cmdId is ''
+      `room:${roomCode}:cmd:${cmdId ?? ''}`,
       intent,
       String(mediaTime),
       by,
+      cmdId ?? '',
+      String(CMD_DEDUP_TTL_MS),
     );
-    const timeline = this.parse(result);
-    return timeline ? { kind: 'committed', timeline } : { kind: 'missing' };
+    if (result === null) return { kind: 'missing' };
+    const raw = JSON.parse(result) as Timeline & {
+      dup?: true;
+      videoId?: string;
+    };
+    // same normalization as parse(): Lua omits empty videoId entirely
+    const timeline: Timeline = { ...raw, videoId: raw.videoId ?? null };
+    if (raw.dup) {
+      // already applied: hand back current state, commit nothing. The dup
+      // marker is script-internal - strip it before the timeline escapes.
+      delete (timeline as Timeline & { dup?: true }).dup;
+      return { kind: 'duplicate', timeline };
+    }
+    return { kind: 'committed', timeline };
   }
 
   async applySnapshot(

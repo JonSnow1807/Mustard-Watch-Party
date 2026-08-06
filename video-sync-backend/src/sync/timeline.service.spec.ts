@@ -131,6 +131,50 @@ describe('TimelineService', () => {
     expect(tl.reason).toBe('snapshot');
   });
 
+  it('answers a repeated cmdId as duplicate without committing again', async () => {
+    // the InMemory store mirrors the Lua SET NX PX contract, so the CI path
+    // without Redis exercises the same dedup semantics
+    const { svc } = makeService();
+    await svc.ensureRoom('r1', roomRow, 1_000);
+    const first = await svc.handleControl(
+      'r1',
+      's1',
+      'creator',
+      'seek',
+      30,
+      2_000,
+      'cmd-a',
+    );
+    expect(first.ok).toBe(true);
+    const seq = (first as { timeline: Timeline }).timeline.seq;
+
+    const dup = await svc.handleControl(
+      'r1',
+      's1',
+      'creator',
+      'seek',
+      30,
+      3_000,
+      'cmd-a',
+    );
+    expect(dup.ok).toBe(true);
+    expect('duplicate' in dup && dup.duplicate).toBe(true);
+    // no new commit: same seq comes back, and the store did not advance
+    expect((dup as { timeline: Timeline }).timeline.seq).toBe(seq);
+
+    const fresh = await svc.handleControl(
+      'r1',
+      's1',
+      'creator',
+      'seek',
+      30,
+      4_000,
+      'cmd-b',
+    );
+    expect('duplicate' in fresh).toBe(false);
+    expect((fresh as { timeline: Timeline }).timeline.seq).toBe(seq + 1);
+  });
+
   it('defers to the window winner but still re-anchors locally', async () => {
     // A store that refuses the commit stands in for "another instance already
     // swept this window". The caller must still get a timeline back, because

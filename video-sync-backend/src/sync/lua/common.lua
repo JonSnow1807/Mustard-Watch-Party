@@ -19,7 +19,10 @@ local function save_tl(key, tl, ttl)
     'lastSweepWindow', tl.lastSweepWindow or -1)
   redis.call('PEXPIRE', key, ttl)
 end
-local function encode(tl)
+-- dup: set when answering a deduplicated command - the caller replies to
+-- the sender with current state but must NOT broadcast (the original
+-- commit already did). Stripped before the timeline reaches any client.
+local function encode(tl, dup)
   return cjson.encode({
     v = 1, seq = tonumber(tl.seq), storeEpoch = tl.storeEpoch,
     videoId = tl.videoId ~= '' and tl.videoId or nil,
@@ -27,5 +30,6 @@ local function encode(tl)
     mediaTime = tonumber(tl.mediaTime),
     stampedAt = tonumber(tl.stampedAt),
     rate = 1, reason = tl.reason, by = tl.by ~= '' and tl.by or nil,
+    dup = dup or nil,
   })
 end

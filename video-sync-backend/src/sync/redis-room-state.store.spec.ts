@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 import { RedisRoomStateStore } from './redis-room-state.store';
+import type { Timeline } from '../shared/sync-protocol';
 import { SWEEP_DEDUP_PERIOD_MS } from './room-state.store';
 
 /**
@@ -175,6 +176,90 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
     const second = await a.applySnapshot(next, await redisNowMs(c));
     expect(second).not.toBeNull();
     expect(second!.seq).toBe(first!.seq + 1);
+  });
+
+  it('applies each cmdId at most once - the retried command re-anchors, not re-commits', async () => {
+    if (!available) return;
+    const a = make();
+    const r = `${room}-dedup`;
+    await playingRoom(a, r);
+    const before = await a.get(r);
+
+    const first = await a.applyControl(
+      r,
+      'seek',
+      42,
+      Date.now(),
+      'u1',
+      'cmd-1',
+    );
+    expect(first.kind).toBe('committed');
+    const committedSeq = (first as { timeline: Timeline }).timeline.seq;
+    expect(committedSeq).toBe(before!.seq + 1);
+
+    // the SAME command delivered again - ioredis resending an EVAL whose
+    // reply was lost is exactly this
+    const second = await a.applyControl(
+      r,
+      'seek',
+      42,
+      Date.now(),
+      'u1',
+      'cmd-1',
+    );
+    expect(second.kind).toBe('duplicate');
+    // no second commit: seq did not move, and the duplicate answers with
+    // the CURRENT state so the retrying sender still gets its re-anchor
+    expect((second as { timeline: Timeline }).timeline.seq).toBe(committedSeq);
+    expect((await a.get(r))!.seq).toBe(committedSeq);
+
+    // a DIFFERENT id is a different command (double-click), not a duplicate
+    const third = await a.applyControl(
+      r,
+      'seek',
+      42,
+      Date.now(),
+      'u1',
+      'cmd-2',
+    );
+    expect(third.kind).toBe('committed');
+    expect((third as { timeline: Timeline }).timeline.seq).toBe(
+      committedSeq + 1,
+    );
+  });
+
+  it('a command without a cmdId gets the old non-deduped behavior', async () => {
+    if (!available) return;
+    const a = make();
+    const r = `${room}-nocmd`;
+    await playingRoom(a, r);
+    const s1 = await a.applyControl(r, 'pause', 7, Date.now(), 'u1');
+    const s2 = await a.applyControl(r, 'pause', 7, Date.now(), 'u1');
+    expect(s1.kind).toBe('committed');
+    expect(s2.kind).toBe('committed'); // legacy clients keep legacy semantics
+  });
+
+  it('an expired dedup record re-applies - the TTL is the correctness boundary', async () => {
+    if (!available) return;
+    // formal/SyncExactlyOnce.tla earlyevict: eviction before the redelivery
+    // window closes IS the double-apply. This test documents the mechanism
+    // by forcing it: expire the record, replay the id, watch it commit.
+    const a = make();
+    const c = raw();
+    const r = `${room}-ttl`;
+    await playingRoom(a, r);
+    await a.applyControl(r, 'seek', 9, Date.now(), 'u1', 'cmd-ttl');
+    await c.pexpire(`room:${r}:cmd:cmd-ttl`, 1);
+    await new Promise((res) => setTimeout(res, 20));
+    const replay = await a.applyControl(
+      r,
+      'seek',
+      9,
+      Date.now(),
+      'u1',
+      'cmd-ttl',
+    );
+    expect(replay.kind).toBe('committed'); // which is why TTL >> redelivery window
   });
 
   it('never advances a paused room', async () => {

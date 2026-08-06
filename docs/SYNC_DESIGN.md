@@ -60,6 +60,57 @@ inter-instance wall-clock skew cannot masquerade as playback drift (measured
 ack-offset spread across 3 live instances: **4ms** **[lab]**, from
 `verify-m6.ts`, which gates it on the console rather than writing a run).
 
+## 2a. Idempotent control commands (exactly-once application)
+
+Every control carries a client-minted UUID (`cmdId`), and the store applies
+each id **at most once** — Stripe's idempotency-key model, applied to
+playback control. The check-and-record is a `SET NX PX` executed *inside the
+same Lua script as the commit*, so check, apply, log and record are one
+atomic step; a split across two round trips would reintroduce the race the
+guard closes (`formal/SyncExactlyOnce.tla`, which was written first and
+constrains this design). A duplicate is answered with the **current**
+committed timeline, targeted at the sender only — the re-anchor a retrying
+client is waiting for — and never re-broadcast, because the original commit
+already was.
+
+This is a bug fix, not decoration. Two real double-apply paths existed:
+
+- **ioredis resends an EVAL whose reply was lost.** The KV client's
+  `autoResendUnfulfilledCommands` default means a dropped Redis connection
+  after execution but before the reply re-runs `apply_control.lua` on
+  reconnect: seq burned twice, the room's projection re-anchored at the
+  later `redis TIME`. With the dedup record, the resend is answered as a
+  duplicate — the resend machinery becomes *safe* instead of disabled.
+- **The actor plane's forward publish can be redelivered** (the pubsub
+  client resends without limit), running the owner's commit-and-broadcast
+  twice for one user command. The forward now carries the `cmdId`, and the
+  owner's fenced commit dedupes it.
+
+**The TTL is a correctness parameter, not a tuning knob** (the spec's
+`earlyevict` config is the counterexample): the record must outlive the
+longest window in which a copy can still arrive. The client bounds that
+window structurally — a control is emitted **only on a live connection,
+never buffered**, so a reconnect cannot flush an arbitrarily old command; a
+dropped gesture is visible (nothing happens; pressing again mints a NEW
+command with a new id, which is a second command, not a duplicate). The
+residual redelivery sources are both seconds-scale; the TTL is 15 minutes.
+
+On the actor plane the dedup record is **fence-independent and lives in
+Redis**, not owner memory: seq restarts when the fence advances, so
+`(epoch, seq)` cannot identify a command across an owner handoff — but the
+cmd record can, and a command applied by the old owner is answered as a
+duplicate by the new one (`actor-room-state.store.spec.ts` pins this).
+
+Proven end-to-end by injection, since netem-level duplication cannot test
+it — TCP dedupes its own segments, so transport toxics never produce an
+app-level duplicate. The bot fleet's `--dup-controls` mode sends every
+control twice with the same `cmdId`: 25 bots on the 3-instance lab measured
+**4 injected duplicates, 4 `control_dedup_hits_total` on the servers, zero
+seq gaps**; the same run on the relay plane (binary frames) confirms
+cross-language conformance (committed under
+`docs/measurements/exactly-once/`). Legacy clients without a `cmdId` keep
+the old semantics — the field is optional on the wire.
+
 ## 3. Clock sync
 
 NTP-style over a Socket.IO ack: client stamps t0/t3, the server ack carries

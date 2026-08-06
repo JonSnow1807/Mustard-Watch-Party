@@ -23,6 +23,7 @@ interface Args {
   wsUrl: string;
   controller: 'reactive' | 'predictive';
   plane: 'node' | 'relay';
+  dupControls: boolean;
 }
 
 function parseArgs(): Args {
@@ -37,8 +38,13 @@ function parseArgs(): Args {
     wsUrl: get('--ws') ?? 'http://localhost:3000',
     controller: (get('--controller') ?? 'reactive') as 'reactive' | 'predictive',
     plane: (get('--plane') ?? 'node') as 'node' | 'relay',
+    // exactly-once proof mode: every control sent twice with the same cmdId
+    dupControls: process.argv.includes('--dup-controls'),
   };
 }
+
+import { execSync } from 'node:child_process';
+import { cpus } from 'node:os';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -68,6 +74,7 @@ async function main(): Promise<void> {
         seed: 1000 + i,
         controller: args.controller,
         plane: args.plane,
+        duplicateControls: args.dupControls,
         player: {
           playbackSkew: (rng() - 0.5) * 160e-6,
           // A/B fairness: both controller arms face fractional-capable
@@ -175,6 +182,7 @@ async function main(): Promise<void> {
   const seqDuplicates = reports.reduce((sum, r) => sum + r.seqDuplicates, 0);
   const reconnects = reports.reduce((sum, r) => sum + r.reconnects, 0);
   const rejoinFailures = reports.reduce((sum, r) => sum + r.rejoinFailures, 0);
+  const dupControlsSent = reports.reduce((sum, r) => sum + r.dupControlsSent, 0);
   const handlerErrors = reports.flatMap((r) => r.handlerErrors);
   const thetaP95 = percentile(
     [...thetaErrors].sort((a, b) => a - b),
@@ -183,6 +191,17 @@ async function main(): Promise<void> {
 
   const summary = {
     runId,
+    // provenance: an earlier audit found bot-fleet numbers published without
+    // a citable artifact; a summary that names its build and hardware can be
+    // committed under docs/measurements and pass the two-tier convention.
+    // A dirty tree is STAMPED as dirty - a SHA that does not contain the
+    // code that produced the run is worse than no SHA.
+    gitSha:
+      execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim() +
+      (execSync('git status --porcelain', { encoding: 'utf8' }).trim()
+        ? '-dirty'
+        : ''),
+    hardware: `${cpus().length} cores (${cpus()[0]?.model ?? 'unknown'})`,
     controller: args.controller,
     plane: args.plane,
     n: args.n,
@@ -204,6 +223,10 @@ async function main(): Promise<void> {
     // the gap metric's range - so a non-zero count here means the seqGaps
     // number above is an UNDER-count, not a clean bill of health
     rejoinFailures,
+    // duplicate-injection mode: extra same-cmdId sends. With dedup working,
+    // these produce ZERO extra seqs - any double-apply shows as a phantom
+    // seq in the integrity counters
+    dupControlsSent,
     handlerErrors: handlerErrors.length,
     rejectedControls: reports.reduce((s, r) => s + r.rejected, 0),
   };

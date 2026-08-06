@@ -18,6 +18,12 @@ JWT auth) runs against either plane via a transport abstraction
 | node / Socket.IO / JSON | 73ms | 115ms | 0 | pass |
 | relay-go / raw WS / binary | 75ms | 116ms | 0 | pass |
 
+The control frame carries an optional idempotency key appended after the
+room (`[cmdLen u8][cmdId...]`; old frames end at the room and stay
+decodable). The relay passes it into the same `apply_control.lua`, so both
+planes dedup identically — verified by the `--dup-controls` conformance run
+(4 injected duplicates, 0 double-applies, on this plane's binary framing).
+
 *(10 bots × 120s each, re-measured after the simulated-player fix described
 in `docs/SYNC_DESIGN.md` §8. **[lab]** — these two fleet runs were not
 committed; the table is reproducible from the harness, not citable.)*

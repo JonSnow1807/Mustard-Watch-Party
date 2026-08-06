@@ -4,6 +4,7 @@
 // the process clock) so the estimator is exercised with real inhomogeneity —
 // and validated against the known injected offset.
 
+import { randomUUID } from 'node:crypto';
 import { ClockEstimator } from '../../../shared/sync-core/clock-estimator';
 import {
   DriftController,
@@ -34,6 +35,8 @@ export interface BotConfig {
   controller?: 'reactive' | 'predictive';
   /** node (Socket.IO/JSON) or relay (raw-WS binary, relay-go) */
   plane?: 'node' | 'relay';
+  /** exactly-once proof mode: send every control twice with the same cmdId */
+  duplicateControls?: boolean;
 }
 
 export interface BotSample {
@@ -68,6 +71,8 @@ export interface BotReport {
   /** re-joins that failed: this bot is deaf from here on and its remaining
    *  seqs are outside the gap metric's detectable range */
   rejoinFailures: number;
+  /** duplicate-injection mode: how many extra same-cmdId sends this bot made */
+  dupControlsSent: number;
   handlerErrors: string[];
   rejected: number;
 }
@@ -89,6 +94,7 @@ export class BotClient {
   private seqDuplicates = 0;
   private reconnects = 0;
   private rejoinFailures = 0;
+  private dupControlsSent = 0;
   private roomCode: string | null = null;
   private handlerErrors: string[] = [];
   private rejected = 0;
@@ -274,7 +280,19 @@ export class BotClient {
   }
 
   sendIntent(roomCode: string, intent: ControlIntent, mediaTime: number): void {
-    this.transport.sendControl(roomCode, intent, mediaTime);
+    const cmdId = randomUUID();
+    this.transport.sendControl(roomCode, intent, mediaTime, cmdId);
+    if (this.cfg.duplicateControls) {
+      // the exactly-once proof harness: the SAME command sent again, byte
+      // for byte. Injected at the app layer on purpose - netem duplicate
+      // works on TCP segments, which TCP itself dedupes, so transport
+      // toxics can never produce an app-level duplicate. The server must
+      // absorb this one via the cmdId record: seq bumps once, the second
+      // delivery is answered as a duplicate, and any double-apply shows up
+      // as a phantom seq the fleet's integrity counters catch.
+      this.transport.sendControl(roomCode, intent, mediaTime, cmdId);
+      this.dupControlsSent += 1;
+    }
   }
 
   scriptedStall(durationMs: number): void {
@@ -301,6 +319,7 @@ export class BotClient {
       seqDuplicates: this.seqDuplicates,
       reconnects: this.reconnects,
       rejoinFailures: this.rejoinFailures,
+      dupControlsSent: this.dupControlsSent,
       handlerErrors: this.handlerErrors,
       rejected: this.rejected,
     };

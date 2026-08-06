@@ -11,7 +11,12 @@ export interface SyncTransport {
   connect(token: string): Promise<void>;
   join(roomCode: string, userId: string): Promise<Timeline | null>;
   sendClock(t0: number, onPong: (pong: ClockPong) => void): void;
-  sendControl(roomCode: string, intent: ControlIntent, mediaTime: number): void;
+  sendControl(
+    roomCode: string,
+    intent: ControlIntent,
+    mediaTime: number,
+    cmdId?: string,
+  ): void;
   onTimeline(cb: (tl: Timeline) => void): void;
   onRejected(cb: () => void): void;
   onError(cb: (err: string) => void): void;
@@ -87,8 +92,19 @@ export class SocketIOTransport implements SyncTransport {
     this.socket?.emit(SYNC_EVENTS.clock, { t0 }, onPong);
   }
 
-  sendControl(roomCode: string, intent: ControlIntent, mediaTime: number): void {
-    this.socket?.emit(SYNC_EVENTS.control, { v: 1, roomCode, intent, mediaTime });
+  sendControl(
+    roomCode: string,
+    intent: ControlIntent,
+    mediaTime: number,
+    cmdId?: string,
+  ): void {
+    this.socket?.emit(SYNC_EVENTS.control, {
+      v: 1,
+      roomCode,
+      intent,
+      mediaTime,
+      cmdId,
+    });
   }
 
   onTimeline(cb: (tl: Timeline) => void): void {
@@ -250,14 +266,26 @@ export class RawWSBinaryTransport implements SyncTransport {
     this.ws.send(frame);
   }
 
-  sendControl(roomCode: string, intent: ControlIntent, mediaTime: number): void {
+  sendControl(
+    roomCode: string,
+    intent: ControlIntent,
+    mediaTime: number,
+    cmdId?: string,
+  ): void {
     const room = Buffer.from(roomCode, 'utf8');
-    const frame = Buffer.alloc(11 + room.length);
+    // cmdLen+cmdId are appended after room; the relay tolerates their
+    // absence, so old frames stay decodable
+    const cmd = Buffer.from(cmdId ?? '', 'utf8');
+    const frame = Buffer.alloc(11 + room.length + (cmd.length ? 1 + cmd.length : 0));
     frame.writeUInt8(0x03, 0);
     frame.writeUInt8(INTENTS.indexOf(intent), 1);
     frame.writeDoubleLE(mediaTime, 2);
     frame.writeUInt8(room.length, 10);
     room.copy(frame, 11);
+    if (cmd.length) {
+      frame.writeUInt8(cmd.length, 11 + room.length);
+      cmd.copy(frame, 12 + room.length);
+    }
     this.ws.send(frame);
   }
 

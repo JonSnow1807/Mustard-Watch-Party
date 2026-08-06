@@ -13,7 +13,8 @@
 // Binary frames (little-endian):
 //   C→S 0x01 ClockPing   [t0 f64]
 //   S→C 0x02 ClockPong   [t0 f64][t1 f64][t2 f64]
-//   C→S 0x03 Control     [intent u8][mediaTime f64][roomLen u8][room...]
+//   C→S 0x03 Control     [intent u8][mediaTime f64][roomLen u8][room...][cmdLen u8][cmdId...]
+//                          (cmdLen+cmdId optional - old frames end at room)
 //   S→C 0x04 Timeline    [seq u32][epoch f64][isPlaying u8][mediaTime f64][stampedAt f64][reason u8]
 //   C→S 0x05 Join        [roomLen u8][room...]
 //   S→C 0x06 JoinAck     (Timeline payload)
@@ -53,6 +54,11 @@ var reasonCodes = map[string]uint8{
 	"play": 0, "pause": 1, "seek": 2, "join": 3, "snapshot": 4, "succession": 5,
 }
 
+// mirror of CMD_DEDUP_TTL_MS in room-state.store.ts: a correctness
+// parameter (formal/SyncExactlyOnce.tla earlyevict), far above every
+// redelivery window in this system
+const cmdDedupTTLMS = 15 * 60 * 1000
+
 type luaTimeline struct {
 	Seq        int     `json:"seq"`
 	StoreEpoch string  `json:"storeEpoch"`
@@ -60,6 +66,9 @@ type luaTimeline struct {
 	MediaTime  float64 `json:"mediaTime"`
 	StampedAt  float64 `json:"stampedAt"`
 	Reason     string  `json:"reason"`
+	// set by apply_control.lua when the cmdId was already applied: answer
+	// the sender only, never rebroadcast
+	Dup bool `json:"dup"`
 }
 
 func (t luaTimeline) toWire() timeline {
@@ -298,9 +307,20 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			room := string(data[11 : 11+n])
+			// optional idempotency key: absent on old frames, bounded like
+			// the Node gateway bounds it (it becomes a Redis key suffix)
+			cmdId := ""
+			if len(data) > 11+n {
+				cl := int(data[11+n])
+				if cl == 0 || cl > 64 || len(data) < 12+n+cl {
+					continue
+				}
+				cmdId = string(data[12+n : 12+n+cl])
+			}
 			raw, ok := luaString(s.applyControl.Run(ctx, s.rdb,
-				[]string{"room:" + room + ":tl"}, intent,
-				strconv.FormatFloat(mediaTime, 'f', -1, 64), "relay").Result())
+				[]string{"room:" + room + ":tl", "room:" + room + ":cmd:" + cmdId},
+				intent, strconv.FormatFloat(mediaTime, 'f', -1, 64), "relay",
+				cmdId, strconv.Itoa(cmdDedupTTLMS)).Result())
 			if !ok {
 				if !c.trySend([]byte{0x07, 0}) {
 					return
@@ -309,7 +329,15 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			var tl luaTimeline
 			if json.Unmarshal([]byte(raw), &tl) == nil {
-				s.broadcast(room, encodeTimeline(0x04, tl.toWire()))
+				if tl.Dup {
+					// already applied: the original commit broadcast to the
+					// room, so only the sender gets a targeted re-anchor
+					if !c.trySend(encodeTimeline(0x04, tl.toWire())) {
+						return
+					}
+				} else {
+					s.broadcast(room, encodeTimeline(0x04, tl.toWire()))
+				}
 			}
 		}
 	}

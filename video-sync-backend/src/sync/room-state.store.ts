@@ -25,18 +25,44 @@ export const SWEEP_DEDUP_PERIOD_MS = SWEEP_INTERVAL_MS;
  */
 export type ApplyOutcome =
   | { kind: 'committed'; timeline: Timeline }
+  /**
+   * The command's cmdId was already applied: the store did NOT commit
+   * again, and `timeline` is the current committed state - answer the
+   * caller with it (their targeted re-anchor), but do not broadcast: the
+   * original commit already did.
+   */
+  | { kind: 'duplicate'; timeline: Timeline }
   | { kind: 'forwarded' }
   | { kind: 'missing' };
 
+/**
+ * How long the store remembers an applied cmdId. This is a CORRECTNESS
+ * parameter, not a tuning knob (formal/SyncExactlyOnce.tla, the earlyevict
+ * config): it must exceed the client's maximum redelivery window. The
+ * client enforces that window by only ever sending a control on a live
+ * connection - no send-buffering, so nothing can flush an old command
+ * after a long reconnect - which leaves the residual redelivery sources
+ * as ioredis resending an EVAL whose reply was lost (seconds) and the
+ * actor plane's forward publish being redelivered (seconds). Fifteen
+ * minutes is orders of magnitude above both.
+ */
+export const CMD_DEDUP_TTL_MS = 15 * 60_000;
+
 export interface RoomStateStore {
   get(roomCode: string): Promise<Timeline | null>;
-  /** Restamp a control intent and commit it with the next seq. */
+  /**
+   * Restamp a control intent and commit it with the next seq. `cmdId`, when
+   * present, is checked-and-recorded ATOMICALLY with the commit: a repeat of
+   * an applied id returns `duplicate` with the current state instead of
+   * committing again.
+   */
   applyControl(
     roomCode: string,
     intent: ControlIntent,
     mediaTime: number,
     serverNow: number,
     by: string,
+    cmdId?: string,
   ): Promise<ApplyOutcome>;
   /** Re-anchor the projection (periodic sweep); returns the committed state. */
   applySnapshot(roomCode: string, serverNow: number): Promise<Timeline | null>;
@@ -59,6 +85,9 @@ export const ROOM_STATE_STORE = Symbol('ROOM_STATE_STORE');
 @Injectable()
 export class InMemoryRoomStateStore implements RoomStateStore {
   private rooms = new Map<string, Timeline>();
+  /** roomCode -> cmdId -> expiry; mirrors the Redis SET NX PX semantics so
+   *  CI without Redis exercises the same dedup contract. */
+  private cmdSeen = new Map<string, Map<string, number>>();
 
   // Single-process: JS execution is the serializer, so plain sync mutation
   // inside async methods is atomic per call.
@@ -72,9 +101,23 @@ export class InMemoryRoomStateStore implements RoomStateStore {
     mediaTime: number,
     serverNow: number,
     by: string,
+    cmdId?: string,
   ): Promise<ApplyOutcome> {
     const prev = this.rooms.get(roomCode);
     if (!prev) return Promise.resolve({ kind: 'missing' });
+    if (cmdId) {
+      const seen = this.cmdSeen.get(roomCode) ?? new Map<string, number>();
+      // lazy expiry, same effect as PX: an expired record is no record
+      for (const [id, expiresAt] of seen) {
+        if (expiresAt <= serverNow) seen.delete(id);
+      }
+      if (seen.has(cmdId)) {
+        this.cmdSeen.set(roomCode, seen);
+        return Promise.resolve({ kind: 'duplicate', timeline: prev });
+      }
+      seen.set(cmdId, serverNow + CMD_DEDUP_TTL_MS);
+      this.cmdSeen.set(roomCode, seen);
+    }
     const next: Timeline = {
       ...applyControl(prev, intent, mediaTime, serverNow, by),
       seq: prev.seq + 1,
@@ -117,6 +160,7 @@ export class InMemoryRoomStateStore implements RoomStateStore {
   }
 
   clear(roomCode: string): Promise<void> {
+    this.cmdSeen.delete(roomCode);
     this.rooms.delete(roomCode);
     return Promise.resolve();
   }

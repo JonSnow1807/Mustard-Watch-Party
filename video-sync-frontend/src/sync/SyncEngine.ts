@@ -133,11 +133,21 @@ export class SyncEngine {
   /** Explicit user gesture: play/pause/scrub. Wait-for-broadcast — the
    * player is NOT touched here; everyone converges from sync:timeline. */
   sendIntent(intent: ControlIntent, mediaTime: number): void {
+    // Send only on a live connection — NEVER buffer. socket.io would queue
+    // this while disconnected and flush it after reconnect, delivering an
+    // arbitrarily old command; the dedup TTL's soundness rests on a bounded
+    // redelivery window (formal/SyncExactlyOnce.tla), and "no buffering" is
+    // how the client enforces it. A dropped gesture is visible (nothing
+    // happens, the user presses again — a NEW command with a NEW id).
+    if (!this.socket.connected) return;
     this.socket.emit(SYNC_EVENTS.control, {
       v: 1,
       roomCode: this.roomCode,
       intent,
       mediaTime: Math.max(0, mediaTime),
+      // idempotency key: the store applies each id at most once, so a
+      // redelivered copy re-anchors the sender instead of re-committing
+      cmdId: crypto.randomUUID(),
     });
   }
 
