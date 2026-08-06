@@ -67,6 +67,27 @@ export const SCENARIOS: Record<string, ScenarioSpec> = {
     impairment: { tool: 'netem', netemSpec: 'delay 60ms 40ms 25% loss 2%' },
     durationS: 240,
   },
+  // HONESTY NOTE for S8/S9: netem duplicate/reorder operate on TCP
+  // SEGMENTS, and TCP dedupes and re-orders its own stream - the app never
+  // sees a duplicated or reordered message from these. What they actually
+  // stress is TCP-level pathology: duplicate-ACK processing and
+  // head-of-line blocking on reassembly, i.e. latency variance. The
+  // app-level duplicate/reorder proof is the bot fleet's --dup-controls
+  // injection (SYNC_DESIGN 2a), not a transport toxic.
+  S8: {
+    id: 'S8',
+    title: '25ms + 5% TCP-segment duplication (netem) — dup-ACK pathology',
+    must: false,
+    impairment: { tool: 'netem', netemSpec: 'delay 25ms duplicate 5%' },
+    durationS: 240,
+  },
+  S9: {
+    id: 'S9',
+    title: '40ms with 25% segments sent ahead (netem reorder) — HoL blocking',
+    must: false,
+    impairment: { tool: 'netem', netemSpec: 'delay 40ms reorder 25% 50%' },
+    durationS: 240,
+  },
 };
 
 // Deterministic scripted timeline (seconds from scenario start).

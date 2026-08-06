@@ -91,6 +91,20 @@ flowchart LR
   control event with a monotone `seq`. Clients drop stale `(storeEpoch, seq)`.
 - **Wait-for-broadcast control**: the button-presser converges from the same
   broadcast as everyone else — echo storms are structurally impossible.
+- **Exactly-once control commands**: client-minted idempotency keys, deduped
+  atomically inside the same Lua script as the commit (Stripe's model), with
+  the design model-checked first — `formal/SyncExactlyOnce.tla` proves
+  at-most-once application under duplication and reordering, and three
+  committed must-fail configs pin why the dedup must be atomic, why the TTL
+  is a correctness parameter, and why sweep commits must be logged. Proven
+  live by injection: duplicates sent with the same key produce **zero extra
+  commits** on both the Socket.IO and binary-relay planes
+  ([artifacts](docs/measurements/exactly-once/)).
+- **Append-only command log + replay reconciliation**: every commit also
+  appends to a per-room stream in the same atomic step; a reconciler checks
+  every retained transition against an independently-written legal-transition
+  contract and compares the newest entry to live state — **measured drift
+  rate: 0**, gated nightly over real fleet traffic.
 - **Clock discipline**: NTP-style offset over a Socket.IO ack, median-of-
   best-RTT filtering, slew-not-step; validated by bot fleets with injected
   ±1s offsets and ±80ppm skews, recovered to a θ-error P95 of ~3ms

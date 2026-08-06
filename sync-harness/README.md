@@ -102,6 +102,16 @@ platform-independent.
 | S5 | 25ms + 5% loss | netem | must |
 | S6 | asym 120ms up / 20ms down | Toxiproxy | must |
 | S7 | 60±40ms + 2% loss | netem | optional |
+| S8 | 25ms + 5% TCP-segment duplication | netem | optional† |
+| S9 | 40ms, 25% segments sent ahead (reorder) | netem | optional† |
+
+† S8/S9 are **TCP-pathology** scenarios, stated plainly: netem's duplicate
+and reorder act on TCP segments, and TCP dedupes and re-orders its own
+stream — the application never sees a duplicated or reordered message from
+them. They stress dup-ACK processing and head-of-line blocking (latency
+variance). The app-level duplicate proof is the bot fleet's
+`--dup-controls` injection, which bypasses what TCP hides
+(`docs/measurements/exactly-once/`).
 
 Test video: Big Buck Bunny (Blender Foundation official upload, CC-BY,
 embeddable, strong audio transients) — pinned in `src/scenarios.ts`.

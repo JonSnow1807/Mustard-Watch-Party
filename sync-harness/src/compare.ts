@@ -45,7 +45,7 @@ const after = loadRuns(afterDir);
 const fmt = (s: number | undefined | null): string =>
   s === undefined || s === null || !Number.isFinite(s) ? '—' : s >= 10 ? `${s.toFixed(1)}s` : `${Math.round(s * 1000)}ms`;
 
-const scenarioOrder = ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'];
+const scenarioOrder = ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9'];
 const rows: string[] = [
   '| scenario (one-way impairment) | baseline P50 / P95 | overhauled P50 / P95 / P99 | convergence after seek |',
   '|---|---|---|---|',
