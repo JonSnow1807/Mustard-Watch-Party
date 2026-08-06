@@ -77,11 +77,20 @@ jobs:
           # is LATCHED - re-probing after a successful break re-rolls the
           # dice, which is the same flapping-predicate bug as probing only
           # nginx, one layer up.
+          # The deadline bounds when a new probe pass may START; a pass in
+          # flight when it expires may still succeed (bounded overshoot:
+          # one pass, <= 4x5s of curl timeouts). A successful probe is
+          # ground truth that the lab is up - rejecting it because the
+          # stopwatch expired mid-pass would fail a healthy boot to honor
+          # an arbitrary number. The sleep is capped to the remaining
+          # budget so it cannot overshoot at all.
           booted=0
           deadline=$(( SECONDS + 360 ))
           while [ "$SECONDS" -lt "$deadline" ]; do
             if ready; then booted=1; break; fi
-            sleep 3
+            remaining=$(( deadline - SECONDS ))
+            [ "$remaining" -le 0 ] && break
+            sleep $(( remaining < 3 ? remaining : 3 ))
           done
           [ "$booted" = 1 ] || {
             echo "lab never reached redis=ok on every instance; per-port /health:"
