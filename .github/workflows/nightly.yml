@@ -54,25 +54,35 @@ jobs:
           # `up -d` returns before the backends are up: they wait on the
           # migrate one-shot, which waits on postgres's healthcheck, so on a
           # cold runner readiness lands 2+ minutes later. The old wait allowed
-          # exactly 120s and both nightly failures died with curl exit 22 a
-          # fraction of a second before the backends logged "started" - a
-          # fixed window that close to the boot time is a coin flip, not a
-          # gate. Budget ~6 minutes and require redis=ok (same deep-health
-          # rule as ci.yml): this job exists to exercise the Lua store, and
-          # a 200 with status=degraded would pass a bare -f probe while
-          # testing the wrong path.
+          # exactly 120s and both scheduled failures exhausted it moments
+          # before the backends came up. A dispatch of the first fix then
+          # exposed the second mechanism: probing ONLY nginx (least_conn)
+          # makes readiness a coin flip while the backends boot - one probe
+          # lands on the single healthy backend and "succeeds", the next
+          # lands on a booting one and 502s. A readiness predicate behind a
+          # load balancer must require EVERY instance, or it flaps.
+          # Budget ~6 minutes, probe all three backends directly plus nginx,
+          # and require redis=ok (same deep-health rule as ci.yml): this job
+          # exists to exercise the Lua store, and a 200 with status=degraded
+          # would pass a bare -f probe while testing the wrong path.
           ready() {
-            curl -sf --max-time 5 http://localhost:3300/health 2>/dev/null \
-              | grep -Eq '"redis"[[:space:]]*:[[:space:]]*"ok"'
+            for p in 3301 3302 3303 3300; do
+              curl -sf --max-time 5 "http://localhost:$p/health" 2>/dev/null \
+                | grep -Eq '"redis"[[:space:]]*:[[:space:]]*"ok"' || return 1
+            done
           }
           for i in $(seq 1 120); do
             ready && break
             sleep 3
           done
           ready || {
-            echo "lab never reached redis=ok; last /health:"
-            curl -s --max-time 5 http://localhost:3300/health || echo "(no response)"
-            echo; docker compose -f docker-compose.lab.yml ps
+            echo "lab never reached redis=ok on every instance; per-port /health:"
+            for p in 3301 3302 3303 3300; do
+              printf '%s: ' "$p"
+              curl -s --max-time 5 "http://localhost:$p/health" || printf '(no response)'
+              echo
+            done
+            docker compose -f docker-compose.lab.yml ps
             exit 1
           }
       - run: npm ci
