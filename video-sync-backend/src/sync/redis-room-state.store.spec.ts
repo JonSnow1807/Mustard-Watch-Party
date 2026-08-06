@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import { RedisRoomStateStore } from './redis-room-state.store';
 import type { Timeline } from '../shared/sync-protocol';
+import { checkChain, type LogEntry } from '../shared/sync-core/replay';
 import { SWEEP_DEDUP_PERIOD_MS } from './room-state.store';
 
 /**
@@ -240,6 +241,46 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
       cmdId: 'cmd-ttl',
     });
     expect(replay.kind).toBe('committed'); // which is why TTL >> redelivery window
+  });
+
+  it('every commit lands in the append-only log; duplicates never do', async () => {
+    if (!available) return;
+    const a = make();
+    const c = raw();
+    const r = `${room}-log`;
+    await playingRoom(a, r);
+    await a.applyControl(r, 'seek', 300, Date.now(), 'u1', { cmdId: 'log-1' });
+    await a.applyControl(r, 'seek', 300, Date.now(), 'u1', { cmdId: 'log-1' });
+    await a.applySnapshot(r, Date.now());
+
+    const rawLog = (await c.xrange(`room:${r}:log`, '-', '+')) as Array<
+      [string, string[]]
+    >;
+    // init + play (from playingRoom) + ONE seek (dup absorbed) + sweep
+    expect(rawLog).toHaveLength(4);
+    const log: LogEntry[] = rawLog.map(([, f]) => {
+      const m = new Map<string, string>();
+      for (let i = 0; i < f.length; i += 2) m.set(f[i], f[i + 1]);
+      return {
+        seq: Number(m.get('seq')),
+        storeEpoch: m.get('storeEpoch') ?? '',
+        videoId: m.get('videoId') || null,
+        isPlaying: m.get('isPlaying') === '1',
+        mediaTime: Number(m.get('mediaTime')),
+        stampedAt: Number(m.get('stampedAt')),
+        reason: m.get('reason') ?? '',
+        by: m.get('by') || undefined,
+        cmdId: m.get('cmdId') || undefined,
+      };
+    });
+    // the retained chain is contract-legal end to end (TransitionContract),
+    // and the deduped delivery is nowhere in it
+    expect(checkChain(log).violations).toEqual([]);
+    expect(log.filter((e) => e.cmdId === 'log-1')).toHaveLength(1);
+    // and the newest entry IS the live state (ReplayReconstructs)
+    const live = await a.get(r);
+    expect(log[log.length - 1].seq).toBe(live!.seq);
+    expect(log[log.length - 1].mediaTime).toBeCloseTo(live!.mediaTime, 6);
   });
 
   it('never advances a paused room', async () => {

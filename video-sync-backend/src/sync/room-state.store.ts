@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
 import { applyControl, snapshot } from '../shared/sync-core/timeline';
+import type { LogEntry } from '../shared/sync-core/replay';
 
 /** Repair-sweep period. Each instance runs this timer for its local rooms. */
 export const SWEEP_INTERVAL_MS = 10_000;
@@ -91,6 +92,31 @@ export class InMemoryRoomStateStore implements RoomStateStore {
   /** roomCode -> cmdId -> expiry; mirrors the Redis SET NX PX semantics so
    *  CI without Redis exercises the same dedup contract. */
   private cmdSeen = new Map<string, Map<string, number>>();
+  /** append-only per-room log of committed transitions, mirroring the Lua
+   *  XADD (bounded like MAXLEN ~): the replay checker's CI-without-Redis
+   *  substrate */
+  private logs = new Map<string, LogEntry[]>();
+
+  private appendLog(roomCode: string, tl: Timeline, cmdId?: string): void {
+    const log = this.logs.get(roomCode) ?? [];
+    log.push({
+      seq: tl.seq,
+      storeEpoch: tl.storeEpoch,
+      videoId: tl.videoId,
+      isPlaying: tl.isPlaying,
+      mediaTime: tl.mediaTime,
+      stampedAt: tl.stampedAt,
+      reason: tl.reason,
+      by: tl.by,
+      cmdId,
+    });
+    if (log.length > 1024) log.shift();
+    this.logs.set(roomCode, log);
+  }
+
+  getLog(roomCode: string): LogEntry[] {
+    return this.logs.get(roomCode) ?? [];
+  }
 
   // Single-process: JS execution is the serializer, so plain sync mutation
   // inside async methods is atomic per call.
@@ -127,6 +153,7 @@ export class InMemoryRoomStateStore implements RoomStateStore {
       seq: prev.seq + 1,
     };
     this.rooms.set(roomCode, next);
+    this.appendLog(roomCode, next, cmdId);
     return Promise.resolve({ kind: 'committed', timeline: next });
   }
 
@@ -135,6 +162,7 @@ export class InMemoryRoomStateStore implements RoomStateStore {
     if (!prev) return Promise.resolve(null);
     const next: Timeline = { ...snapshot(prev, serverNow), seq: prev.seq + 1 };
     this.rooms.set(roomCode, next);
+    this.appendLog(roomCode, next);
     return Promise.resolve(next);
   }
 
@@ -160,10 +188,12 @@ export class InMemoryRoomStateStore implements RoomStateStore {
       reason: 'join',
     };
     this.rooms.set(roomCode, created);
+    this.appendLog(roomCode, created);
     return Promise.resolve(created);
   }
 
   clear(roomCode: string): Promise<void> {
+    this.logs.delete(roomCode);
     this.cmdSeen.delete(roomCode);
     this.rooms.delete(roomCode);
     return Promise.resolve();

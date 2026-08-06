@@ -1,4 +1,5 @@
--- Fenced create-if-absent. KEYS[1]=lease, KEYS[2]=timeline.
+-- Fenced create-if-absent. KEYS[1]=lease, KEYS[2]=timeline,
+-- KEYS[3]=append-only command log.
 -- ARGV: instanceId, fence, mediaTime, videoId, ttlMs
 -- Atomicity matters as much as fencing: without the create-if-absent check
 -- INSIDE the script, N concurrent joins each saw "no state yet" and each
@@ -42,4 +43,10 @@ redis.call('HSET', KEYS[2],
   'isPlaying', '0', 'mediaTime', ARGV[3],
   'stampedAt', tostring(now), 'reason', 'join', 'by', '')
 redis.call('PEXPIRE', KEYS[2], ARGV[5])
+-- the fence-epoch's birth entry anchors the replay chain
+redis.call('XADD', KEYS[3], 'MAXLEN', '~', 1024, '*',
+  'seq', 0, 'storeEpoch', ARGV[2], 'videoId', ARGV[4],
+  'isPlaying', '0', 'mediaTime', ARGV[3],
+  'stampedAt', tostring(now), 'reason', 'join', 'by', '', 'cmdId', '')
+redis.call('PEXPIRE', KEYS[3], ARGV[5])
 return encode(0, ARGV[4], '0', ARGV[3], tostring(now), 'join')

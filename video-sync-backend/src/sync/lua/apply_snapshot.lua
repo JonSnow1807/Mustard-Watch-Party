@@ -35,4 +35,5 @@ tl.lastSweepWindow = window
 tl.reason = 'snapshot'
 tl.by = ''
 save_tl(KEYS[1], tl, 86400000)
+log_tl(KEYS[2], tl, '')
 return encode(tl)

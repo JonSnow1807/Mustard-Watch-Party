@@ -60,6 +60,7 @@ interface RedisWithActor extends Redis {
   actorInit(
     leaseKey: string,
     timelineKey: string,
+    logKey: string,
     instanceId: string,
     fence: string,
     mediaTime: string,
@@ -70,6 +71,7 @@ interface RedisWithActor extends Redis {
     leaseKey: string,
     timelineKey: string,
     cmdKey: string,
+    logKey: string,
     instanceId: string,
     fence: string,
     isPlaying: string,
@@ -137,11 +139,11 @@ export class ActorRoomStateStore
       lua: read('actor_reclaim.lua'),
     });
     kv.defineCommand('actorInit', {
-      numberOfKeys: 2,
+      numberOfKeys: 3,
       lua: read('actor_init.lua'),
     });
     kv.defineCommand('actorCommit', {
-      numberOfKeys: 3,
+      numberOfKeys: 4,
       lua: read('actor_commit.lua'),
     });
     this.kv = kv as RedisWithActor;
@@ -192,6 +194,10 @@ export class ActorRoomStateStore
   }
   private timelineKey(roomCode: string): string {
     return `room:${roomCode}:tl`;
+  }
+
+  private logKey(roomCode: string): string {
+    return `room:${roomCode}:log`;
   }
   private forwardChannel(instanceId: string): string {
     return `actor:fwd:${instanceId}`;
@@ -262,6 +268,7 @@ export class ActorRoomStateStore
       // command across handoff - but this key can, and it lives in Redis
       // rather than owner memory precisely so a handoff cannot forget it
       `room:${roomCode}:cmd:${cmdId ?? ''}`,
+      this.logKey(roomCode),
       this.instanceId,
       fence,
       next.isPlaying ? '1' : '0',
@@ -478,6 +485,7 @@ export class ActorRoomStateStore
       const raw = await this.kv.actorInit(
         this.leaseKey(roomCode),
         this.timelineKey(roomCode),
+        this.logKey(roomCode),
         this.instanceId,
         lease.epoch,
         String(mediaTime),

@@ -37,14 +37,24 @@ interface RedisWithCommands extends Redis {
   mustardApplyControl(
     key: string,
     cmdKey: string,
+    logKey: string,
     intent: string,
     mediaTime: string,
     by: string,
     cmdId: string,
     dedupTtlMs: string,
   ): Promise<string | null>;
-  mustardApplySnapshot(key: string, periodMs: string): Promise<string | null>;
-  mustardInit(key: string, videoId: string, mediaTime: string): Promise<string>;
+  mustardApplySnapshot(
+    key: string,
+    logKey: string,
+    periodMs: string,
+  ): Promise<string | null>;
+  mustardInit(
+    key: string,
+    logKey: string,
+    videoId: string,
+    mediaTime: string,
+  ): Promise<string>;
 }
 
 @Injectable()
@@ -53,19 +63,23 @@ export class RedisRoomStateStore implements RoomStateStore {
 
   constructor(@Inject(REDIS_KV) redis: Redis) {
     redis.defineCommand('mustardApplyControl', {
-      numberOfKeys: 2,
+      numberOfKeys: 3,
       lua: LUA_APPLY_CONTROL,
     });
     redis.defineCommand('mustardApplySnapshot', {
-      numberOfKeys: 1,
+      numberOfKeys: 2,
       lua: LUA_APPLY_SNAPSHOT,
     });
-    redis.defineCommand('mustardInit', { numberOfKeys: 1, lua: LUA_INIT });
+    redis.defineCommand('mustardInit', { numberOfKeys: 2, lua: LUA_INIT });
     this.redis = redis as RedisWithCommands;
   }
 
   private key(roomCode: string): string {
     return `room:${roomCode}:tl`;
+  }
+
+  private logKey(roomCode: string): string {
+    return `room:${roomCode}:log`;
   }
 
   private parse(json: string | null): Timeline | null {
@@ -104,6 +118,7 @@ export class RedisRoomStateStore implements RoomStateStore {
       this.key(roomCode),
       // the dedup record; the script never touches it when cmdId is ''
       `room:${roomCode}:cmd:${cmdId ?? ''}`,
+      this.logKey(roomCode),
       intent,
       String(mediaTime),
       by,
@@ -137,6 +152,7 @@ export class RedisRoomStateStore implements RoomStateStore {
     // their callers skip broadcasting.
     const result = await this.redis.mustardApplySnapshot(
       this.key(roomCode),
+      this.logKey(roomCode),
       String(SWEEP_DEDUP_PERIOD_MS),
     );
     return this.parse(result);
@@ -151,6 +167,7 @@ export class RedisRoomStateStore implements RoomStateStore {
   ): Promise<Timeline> {
     const result = await this.redis.mustardInit(
       this.key(roomCode),
+      this.logKey(roomCode),
       videoId ?? '',
       String(mediaTime),
     );

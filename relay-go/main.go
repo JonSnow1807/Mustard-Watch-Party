@@ -281,7 +281,8 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 			room := string(data[2 : 2+n])
 			s.joinRoom(c, room)
 			raw, ok := luaString(s.initRoom.Run(ctx, s.rdb,
-				[]string{"room:" + room + ":tl"}, "", "0").Result())
+				[]string{"room:" + room + ":tl", "room:" + room + ":log"},
+				"", "0").Result())
 			if !ok {
 				log.Printf("init failed for room %s", room)
 				continue
@@ -406,7 +407,8 @@ func main() {
 				// most one sweep per room per aligned window no matter how
 				// many instances call it, and returns nil to the losers
 				raw, ok := luaString(snapshotScript.Run(context.Background(), s.rdb,
-					[]string{"room:" + room + ":tl"}, sweepDedupPeriodMS).Result())
+					[]string{"room:" + room + ":tl", "room:" + room + ":log"},
+					sweepDedupPeriodMS).Result())
 				if !ok {
 					continue
 				}
