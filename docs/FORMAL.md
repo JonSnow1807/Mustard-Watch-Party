@@ -220,30 +220,48 @@ delivery picks any pending command, so reordering needs no extra machinery.
 The store's apply is **one atomic step** containing the dedup check, the
 commit, the log append, and the dedup record — because in the implementation
 all four live inside the same Lua script, and Redis's single-threaded
-execution is what makes the composition atomic. Dedup entries can be
-**evicted** (a TTL), and the repair sweep commits re-anchored snapshots that
-may or may not be logged. Exactly-once is therefore proven as a composition:
-at-least-once delivery (retry) with at-most-once application (atomic dedup)
-— never as a property of the network.
+execution is what makes the composition atomic. Exactly-once is therefore
+proven as a composition: at-least-once delivery (retry) with at-most-once
+application (atomic dedup) — never as a property of the network.
+
+**Time is concrete where it matters.** Dedup records expire a fixed `Ttl`
+after the apply — a plain clock, exactly what `SET .. PX` gives the
+implementation, with no oracle about in-flight copies. Sending, resending,
+network duplication, and *delivery* are all bounded by `RetryWindow` after
+first issue: past the client's retry deadline nothing carries the command
+any more. That bound is an **assumption the implementation must enforce** —
+the client abandons unacked commands older than the window instead of
+letting an arbitrarily old send-buffer flush — and it is what makes any
+finite TTL sound: with an unbounded retry window, no TTL is safe, and the
+spec would say so.
 
 ## Properties and teeth
 
-| config | switches | result |
+| config | constants | result |
 |---|---|---|
-| `SyncExactlyOnce.cfg` | all guards on | **green**: `TypeOK`, `AtMostOnce`, `TransitionContract`, `ReplayReconstructs`, `AckedWasApplied`, and liveness `EventuallyExactlyOnce` — 281,111 states, 98,103 distinct, depth 17 |
+| `SyncExactlyOnce.cfg` (safety) | `Ttl=2 > RetryWindow=1`, eviction reachable | **green**: `TypeOK`, `AtMostOnce`, `TransitionContract`, `ReplayReconstructs`, `AckedWasApplied` — 1,559,644 states, 628,684 distinct |
+| `SyncExactlyOnce_live.cfg` (liveness) | window spans the model clock | **green**: `EventuallyExactlyOnce` — 371,055 states, 144,147 distinct |
 | `SyncExactlyOnce_nodedup.cfg` | `DedupOn = FALSE` | **must fail** `AtMostOnce`: a retried command applies twice |
-| `SyncExactlyOnce_earlyevict.cfg` | `SafeEviction = FALSE` | **must fail** `AtMostOnce`: an entry evicted while a duplicate is still in flight re-applies |
+| `SyncExactlyOnce_earlyevict.cfg` | `Ttl=1 <= RetryWindow=2` | **must fail** `AtMostOnce`: the record expires while a copy can still arrive and the late duplicate re-applies |
 | `SyncExactlyOnce_nosnaplog.cfg` | `LogSnapshots = FALSE` | **must fail** `ReplayReconstructs`: unlogged sweep commits leave the log unable to rebuild live state |
+
+Liveness lives in its own config because a retry window that closes
+mid-model legitimately *abandons* an unacked command — at-most-once by
+design, not a stuck system — so "eventually applied exactly once" is only a
+theorem while the client is still trying.
 
 The three failure configs are the spec keeping its teeth, and each pins a
 real implementation constraint:
 
 1. **The dedup must be atomic with the commit** — a check outside the Lua
    script reintroduces the race the guard exists to close.
-2. **The dedup TTL is a correctness parameter, not a tuning knob.** It must
-   exceed the client's maximum redelivery window; shorter, and the spec
-   shows the exact double-apply. "SET NX with some TTL" is not a design
-   until the TTL is justified against the retry policy.
+2. **The dedup TTL is a correctness parameter, not a tuning knob.** The
+   relation is modeled with concrete clocks: `Ttl > RetryWindow` is checked
+   green, and `Ttl <= RetryWindow` is a committed counterexample (apply at
+   t, record expires at t+`Ttl`, duplicate arrives inside the still-open
+   window). "SET NX with some TTL" is not a design until the TTL is
+   justified against the enforced retry deadline — and the deadline must be
+   enforced: the client abandons unacked commands older than the window.
 3. **The command log must include the repair sweep's snapshot commits.**
    Sweeps bump `seq` and re-anchor the projection; a log of user commands
    alone cannot replay to live state, so reconciliation built on it would

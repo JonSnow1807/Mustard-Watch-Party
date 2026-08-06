@@ -16,13 +16,17 @@
 (* Three switches make the spec keep its teeth - each OFF position is a    *)
 (* committed config whose named failure pins a real design constraint:     *)
 (*                                                                         *)
-(*   DedupOn      = FALSE  ->  AtMostOnce fails: a retried command applies *)
+(*   DedupOn = FALSE       ->  AtMostOnce fails: a retried command applies *)
 (*                             twice. (SyncExactlyOnce_nodedup.cfg)        *)
-(*   SafeEviction = FALSE  ->  AtMostOnce fails: a dedup entry evicted     *)
-(*                             (TTL) while a duplicate is still in flight  *)
-(*                             re-applies. The implementation's TTL must   *)
-(*                             exceed the client's maximum redelivery      *)
-(*                             window. (SyncExactlyOnce_earlyevict.cfg)    *)
+(*   Ttl <= RetryWindow    ->  AtMostOnce fails: a dedup entry expires     *)
+(*                             while a copy can still arrive, and the      *)
+(*                             late duplicate re-applies. The TTL and the  *)
+(*                             client's retry deadline are modeled as      *)
+(*                             CONCRETE clock bounds, so the proof is the  *)
+(*                             time relation itself: Ttl > RetryWindow is  *)
+(*                             checked green, Ttl <= RetryWindow is a      *)
+(*                             committed counterexample.                   *)
+(*                             (SyncExactlyOnce_earlyevict.cfg)            *)
 (*   LogSnapshots = FALSE  ->  ReplayReconstructs fails: the repair        *)
 (*                             sweep's snapshot commits bump seq and       *)
 (*                             re-anchor the projection, so a log that     *)
@@ -44,7 +48,11 @@ CONSTANTS
   MaxTime,       \* bound on the abstract clock
   MaxSends,      \* per-command bound on channel insertions (issue+retry+dup)
   DedupOn,       \* the store atomically checks-and-records command ids
-  SafeEviction,  \* dedup entries evicted only when no copy can still arrive
+  Ttl,           \* clock units a dedup record lives after the apply
+  RetryWindow,   \* clock units after ISSUE during which a copy can still
+                 \* be (re)sent or delivered - the client abandons unacked
+                 \* commands past this deadline, which is what makes any
+                 \* finite TTL sound at all
   LogSnapshots   \* sweep commits are appended to the log
 
 Intents == {"play", "pause", "seek"}
@@ -57,13 +65,15 @@ VARIABLES
   chan,       \* [Cmds -> Nat]: copies in flight. A bag: delivery picks ANY
               \* command with a copy pending, so reordering is inherent.
   acked,      \* commands whose commit the client has observed (stops retry)
+  issuedAt,   \* [Cmds -> 0..MaxTime]: when the command was first sent
   dedup,      \* ids the store remembers (the SET NX record)
+  evictAt,    \* [Cmds -> Nat]: when c's dedup record expires (apply + Ttl)
   applyCount, \* [Cmds -> Nat]: ground truth - how often each cmd applied
   store,      \* [seq, playing, pos, anchor]
   log         \* append-only sequence of committed transitions
 
-vars == <<now, intentOf, posOf, sends, chan, acked, dedup, applyCount,
-          store, log>>
+vars == <<now, intentOf, posOf, sends, chan, acked, issuedAt, dedup, evictAt,
+          applyCount, store, log>>
 
 InitStore == [seq |-> 0, playing |-> FALSE, pos |-> 0, anchor |-> 0]
 
@@ -106,7 +116,9 @@ Init ==
   /\ sends = [c \in Cmds |-> 0]
   /\ chan = [c \in Cmds |-> 0]
   /\ acked = {}
+  /\ issuedAt = [c \in Cmds |-> 0]
   /\ dedup = {}
+  /\ evictAt = [c \in Cmds |-> 0]
   /\ applyCount = [c \in Cmds |-> 0]
   /\ store = InitStore
   /\ log = << >>
@@ -114,8 +126,8 @@ Init ==
 Tick ==
   /\ now < MaxTime
   /\ now' = now + 1
-  /\ UNCHANGED <<intentOf, posOf, sends, chan, acked, dedup, applyCount,
-                 store, log>>
+  /\ UNCHANGED <<intentOf, posOf, sends, chan, acked, issuedAt, dedup,
+                 evictAt, applyCount, store, log>>
 
 (* The client mints an id and sends: payload chosen once, fixed forever. *)
 Issue(c) ==
@@ -124,9 +136,10 @@ Issue(c) ==
   /\ \E i \in Intents, p \in Positions :
        /\ intentOf' = [intentOf EXCEPT ![c] = i]
        /\ posOf' = [posOf EXCEPT ![c] = p]
+  /\ issuedAt' = [issuedAt EXCEPT ![c] = now]
   /\ sends' = [sends EXCEPT ![c] = @ + 1]
   /\ chan' = [chan EXCEPT ![c] = @ + 1]
-  /\ UNCHANGED <<now, acked, dedup, applyCount, store, log>>
+  /\ UNCHANGED <<now, acked, dedup, evictAt, applyCount, store, log>>
 
 (* The client has not observed the commit, so it sends the SAME command
    again. This is the socket.io send-buffer flushing after a reconnect as
@@ -135,34 +148,46 @@ Issue(c) ==
 Retry(c) ==
   /\ intentOf[c] # "unissued"
   /\ c \notin acked
+  /\ now <= issuedAt[c] + RetryWindow
   /\ sends[c] < MaxSends
   /\ sends' = [sends EXCEPT ![c] = @ + 1]
   /\ chan' = [chan EXCEPT ![c] = @ + 1]
-  /\ UNCHANGED <<now, intentOf, posOf, acked, dedup, applyCount, store, log>>
+  /\ UNCHANGED <<now, intentOf, posOf, acked, issuedAt, dedup, evictAt,
+                 applyCount, store, log>>
 
 (* Infrastructure-level duplication of an in-flight copy. *)
 NetworkDup(c) ==
   /\ chan[c] >= 1
+  /\ now <= issuedAt[c] + RetryWindow
   /\ sends[c] < MaxSends
   /\ sends' = [sends EXCEPT ![c] = @ + 1]
   /\ chan' = [chan EXCEPT ![c] = @ + 1]
-  /\ UNCHANGED <<now, intentOf, posOf, acked, dedup, applyCount, store, log>>
+  /\ UNCHANGED <<now, intentOf, posOf, acked, issuedAt, dedup, evictAt,
+                 applyCount, store, log>>
 
 (* The store's apply script: ONE atomic step containing the dedup check,
    the commit, the log append, and the dedup record - because in the
    implementation all four live inside the same Lua script.  Delivery picks
    any pending command, so reordering needs no extra machinery. *)
+(* Delivery is bounded by the same window: past the client's retry
+   deadline nothing carries the command any more - the send buffer died
+   with the page, the connection is gone. This is the assumption that
+   makes any finite TTL sound; the implementation must ENFORCE it by
+   abandoning unacked commands older than the window rather than letting
+   an arbitrarily old buffer flush. *)
 Deliver(c) ==
   /\ chan[c] >= 1
+  /\ now <= issuedAt[c] + RetryWindow
   /\ chan' = [chan EXCEPT ![c] = @ - 1]
   /\ IF DedupOn /\ c \in dedup
      THEN \* duplicate: dropped by the guard, nothing else moves
-          UNCHANGED <<store, log, applyCount, dedup>>
+          UNCHANGED <<store, log, applyCount, dedup, evictAt>>
      ELSE /\ store' = Apply(store, intentOf[c], posOf[c], now)
           /\ log' = Append(log, CmdEntry(c, now))
           /\ applyCount' = [applyCount EXCEPT ![c] = @ + 1]
           /\ dedup' = dedup \cup {c}
-  /\ UNCHANGED <<now, intentOf, posOf, sends, acked>>
+          /\ evictAt' = [evictAt EXCEPT ![c] = now + Ttl]
+  /\ UNCHANGED <<now, intentOf, posOf, sends, acked, issuedAt>>
 
 (* The client observes the committed broadcast (or the ack) and stops
    retrying. Broadcast loss only delays this - Retry covers the gap. *)
@@ -170,23 +195,19 @@ Ack(c) ==
   /\ applyCount[c] >= 1
   /\ c \notin acked
   /\ acked' = acked \cup {c}
-  /\ UNCHANGED <<now, intentOf, posOf, sends, chan, dedup, applyCount,
-                 store, log>>
+  /\ UNCHANGED <<now, intentOf, posOf, sends, chan, issuedAt, dedup,
+                 evictAt, applyCount, store, log>>
 
-(* A copy of c can still reach the store if one is in flight, or if the
-   client may still resend it. Eviction while that holds re-opens the
-   double-apply window - which is exactly what a TTL shorter than the
-   client's maximum redelivery window does in production. *)
-CanStillArrive(c) ==
-  \/ chan[c] >= 1
-  \/ (c \notin acked /\ sends[c] < MaxSends)
-
+(* The dedup record expires Ttl units after the apply - a plain clock,
+   exactly what SET .. PX gives the implementation, with no oracle about
+   in-flight copies. Whether this is safe is precisely the Ttl-vs-
+   RetryWindow relation the configs check. *)
 Evict(c) ==
   /\ c \in dedup
-  /\ SafeEviction => ~CanStillArrive(c)
+  /\ now >= evictAt[c]
   /\ dedup' = dedup \ {c}
-  /\ UNCHANGED <<now, intentOf, posOf, sends, chan, acked, applyCount,
-                 store, log>>
+  /\ UNCHANGED <<now, intentOf, posOf, sends, chan, acked, issuedAt,
+                 evictAt, applyCount, store, log>>
 
 (* The repair sweep commits a re-anchored snapshot (seq+1). Whether it is
    LOGGED is the design decision the nosnaplog config exists to test.
@@ -199,8 +220,8 @@ Sweep ==
   /\ store.anchor # now
   /\ store' = Snap(store, now)
   /\ log' = IF LogSnapshots THEN Append(log, SnapEntry(now)) ELSE log
-  /\ UNCHANGED <<now, intentOf, posOf, sends, chan, acked, dedup,
-                 applyCount>>
+  /\ UNCHANGED <<now, intentOf, posOf, sends, chan, acked, issuedAt,
+                 dedup, evictAt, applyCount>>
 
 Next ==
   \/ Tick
@@ -222,7 +243,9 @@ TypeOK ==
   /\ sends \in [Cmds -> 0..MaxSends]
   /\ chan \in [Cmds -> 0..MaxSends]
   /\ acked \subseteq Cmds
+  /\ issuedAt \in [Cmds -> 0..MaxTime]
   /\ dedup \subseteq Cmds
+  /\ evictAt \in [Cmds -> 0..(MaxTime + Ttl)]
   /\ applyCount \in [Cmds -> 0..MaxSends]
   /\ store \in [seq : Nat, playing : BOOLEAN, pos : Nat, anchor : 0..MaxTime]
   /\ Len(log) <= store.seq
