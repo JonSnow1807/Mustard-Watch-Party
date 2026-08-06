@@ -201,3 +201,68 @@ Stated here rather than left for a reader to infer from the constants.
 neutralizes zombies *and* the client ordering rule proven above. One
 mechanism, two guarantees, which is why plane B needs no new client-side
 concept.
+
+# Exactly-once command application
+
+`formal/SyncExactlyOnce.tla` — the third spec, written **before** the
+idempotency-key implementation it constrains, the same spec-first order as
+plane B.
+
+## What is modeled
+
+Every control command carries a client-minted id. The client **retries** a
+command until it observes the commit — which is at-least-once delivery, and
+is deliberately how the model gets its duplicates: a socket.io send-buffer
+flushing after a reconnect *is* a retry, whether or not anyone calls it that.
+On top of that the channel can duplicate in-flight copies outright, and
+delivery picks any pending command, so reordering needs no extra machinery.
+
+The store's apply is **one atomic step** containing the dedup check, the
+commit, the log append, and the dedup record — because in the implementation
+all four live inside the same Lua script, and Redis's single-threaded
+execution is what makes the composition atomic. Dedup entries can be
+**evicted** (a TTL), and the repair sweep commits re-anchored snapshots that
+may or may not be logged. Exactly-once is therefore proven as a composition:
+at-least-once delivery (retry) with at-most-once application (atomic dedup)
+— never as a property of the network.
+
+## Properties and teeth
+
+| config | switches | result |
+|---|---|---|
+| `SyncExactlyOnce.cfg` | all guards on | **green**: `TypeOK`, `AtMostOnce`, `TransitionContract`, `ReplayReconstructs`, `AckedWasApplied`, and liveness `EventuallyExactlyOnce` — 281,111 states, 98,103 distinct, depth 17 |
+| `SyncExactlyOnce_nodedup.cfg` | `DedupOn = FALSE` | **must fail** `AtMostOnce`: a retried command applies twice |
+| `SyncExactlyOnce_earlyevict.cfg` | `SafeEviction = FALSE` | **must fail** `AtMostOnce`: an entry evicted while a duplicate is still in flight re-applies |
+| `SyncExactlyOnce_nosnaplog.cfg` | `LogSnapshots = FALSE` | **must fail** `ReplayReconstructs`: unlogged sweep commits leave the log unable to rebuild live state |
+
+The three failure configs are the spec keeping its teeth, and each pins a
+real implementation constraint:
+
+1. **The dedup must be atomic with the commit** — a check outside the Lua
+   script reintroduces the race the guard exists to close.
+2. **The dedup TTL is a correctness parameter, not a tuning knob.** It must
+   exceed the client's maximum redelivery window; shorter, and the spec
+   shows the exact double-apply. "SET NX with some TTL" is not a design
+   until the TTL is justified against the retry policy.
+3. **The command log must include the repair sweep's snapshot commits.**
+   Sweeps bump `seq` and re-anchor the projection; a log of user commands
+   alone cannot replay to live state, so reconciliation built on it would
+   report phantom drift.
+
+`TransitionContract` is double-entry bookkeeping: the legal-transition
+contract (a seek never flips play state; a pause freezes at the commanded
+frame, not the projection; a snapshot moves the projection by exactly
+nothing; `seq` increments by exactly one) is written independently of the
+`Apply`/`Snap` definitions, so if either side drifts, TLC reports the
+disagreement rather than trusting the model's own construction.
+
+## Composition with the other specs
+
+This spec is single-epoch and single-store on purpose: `SyncActor.tla` owns
+instance fencing and lease handoff, `SyncTimeline.tla` owns client-side
+`(storeEpoch, seq)` ordering under lossy fanout. The seam between them is a
+real implementation obligation this spec makes visible rather than proves:
+**the dedup record must survive owner handoff** on the actor plane, or a
+command applied by the old owner can be re-applied by the new one. That
+lives with the fencing machinery, and is called out in COORDINATION.md
+rather than silently assumed here.

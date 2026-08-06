@@ -37,6 +37,15 @@ jobs:
           fi
           java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncActor.cfg SyncActor.tla
           java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncActor_live.cfg SyncActor.tla
+          # exactly-once: the guarded design must pass; each of the three
+          # degraded designs must still FAIL on its named property, or the
+          # spec has lost its teeth
+          java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncExactlyOnce.cfg SyncExactlyOnce.tla
+          for bad in nodedup earlyevict nosnaplog; do
+            if java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config "SyncExactlyOnce_${bad}.cfg" SyncExactlyOnce.tla; then
+              echo "SyncExactlyOnce_${bad} unexpectedly passed - the spec lost its teeth"; exit 1
+            fi
+          done
 
   lab-50:
     runs-on: ubuntu-latest
