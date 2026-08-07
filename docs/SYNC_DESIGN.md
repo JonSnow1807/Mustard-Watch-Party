@@ -152,6 +152,39 @@ truncation is legal, holes are not. Deduplicated deliveries never append:
 the log records **commits, not deliveries**. The nightly runs the
 reconciler over the 50-bot fleet's actual traffic, gated.
 
+## 2c. set-video, and fencing position commands by video
+
+Changing the room's video is a control (`set-video`), not a REST write:
+committed by the store with the §2a machinery, broadcast on
+`sync:timeline`, every participant switches together into the canonical
+fresh state — **paused at 0** (a new video never autoplays; the log
+contract of §2b holds `set-video` to exactly that, and it is the one
+transition allowed to change `videoId` mid-epoch). The room row's
+`videoUrl` is persisted *from* the committed timeline, so REST reads and
+rehydration converge on what the room actually shows.
+
+Exactly-once delivery is not enough here, because a position command's
+correctness depends on a **precondition**: which video it was about. A
+seek to minute 37 of video A, in flight while someone switches the room to
+video B, arrives well-formed, authorized, deduplicated — and yanks
+everyone to minute 37 of the wrong video. So every position command
+carries the `videoId` its sender had applied (`forVideoId`), and the store
+refuses a stale fence *atomically with the commit*, answering the sender
+with the current timeline — the re-anchor it was missing is the remedy, so
+the `stale-video` rejection stays silent on the client.
+
+Two ordering decisions inside the atomic script are model-checked
+(`formal/SyncSetVideo.tla`, FORMAL.md): the dup **lookup** precedes the
+fence (an applied command retried after a switch is truthfully a
+duplicate), and the dedup **record** follows it (a fenced command was
+never applied, and recording its id would turn a later retry into a
+claimed apply that never happened — the `earlyrecord` counterexample,
+which is why the Lua's former `SET NX` became GET → fence → SET).
+`set-video` itself is unfenced: it carries no position, and a "stale"
+switch is still exactly what its sender meant. Unfenced commands (older
+clients, the relay's binary frames) keep legacy semantics — the field is
+optional on the wire, the same compatibility pattern as `cmdId`.
+
 ## 3. Clock sync
 
 NTP-style over a Socket.IO ack: client stamps t0/t3, the server ack carries
@@ -246,11 +279,13 @@ threshold and then seeking.
 ## 6. Protocol
 
 Five events: `sync:clock` (ack: `{t0}`→`{t0,t1,t2}`), `sync:control`
-(`{roomCode, intent, mediaTime, cmdId?}` — the optional idempotency key of
-§2a; identity comes only from the JWT-verified socket), `sync:timeline`
-(the only state message), `sync:control-rejected`
-(`not-controller` / `rate-limited` / `room-not-found`), `room:controller`
-(succession/reclaim). A 10s server sweep re-anchors playing rooms as the
+(`{roomCode, intent, mediaTime, cmdId?, videoUrl?, forVideoId?}` —
+`cmdId` is §2a's optional idempotency key, `videoUrl` is `set-video`'s
+payload admitted by the same shared rule as the REST DTOs, `forVideoId`
+is §2c's optional video fence; identity comes only from the JWT-verified
+socket), `sync:timeline` (the only state message), `sync:control-rejected`
+(`not-controller` / `rate-limited` / `room-not-found` / `stale-video` /
+`invalid-video-url`), `room:controller` (succession/reclaim). A 10s server sweep re-anchors playing rooms as the
 repair channel for lost broadcasts; redundancy is harmless because clients
 order by `(storeEpoch, seq)`.
 

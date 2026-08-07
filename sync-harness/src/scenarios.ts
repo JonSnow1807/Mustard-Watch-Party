@@ -1,4 +1,9 @@
 import type { ScenarioSpec } from './types.js';
+import {
+  classifyMediaSource,
+  isAcceptableVideoUrl,
+  type MediaSource,
+} from '../../shared/media-source';
 
 // Impairment values are ONE-WAY, PER-DIRECTION delays. A netem `delay X` on
 // the proxy container applies to both legs of every round trip, so it adds
@@ -104,5 +109,37 @@ export const TIMELINE = {
 
 // Big Buck Bunny, Blender Foundation's official upload: CC-BY, embeddable,
 // low-monetization, strong audio transients (also suits the M10 audio pass).
-export const TEST_VIDEO_ID = 'aqz-KE-bpKQ';
-export const TEST_VIDEO_URL = `https://www.youtube.com/watch?v=${TEST_VIDEO_ID}`;
+const DEFAULT_VIDEO_URL = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ';
+
+/**
+ * The video a run measures. HARNESS_VIDEO_URL selects the source arm for
+ * the source matrix (file/hls/vimeo instead of the default YouTube), and
+ * it is classified HERE, once, with the same shared rule the app enforces:
+ * a URL the app would refuse dies at startup with the classification in
+ * the error - not forty minutes into a run as a black-frame measurement
+ * of nothing.
+ */
+export const TEST_VIDEO_URL =
+  process.env.HARNESS_VIDEO_URL ?? DEFAULT_VIDEO_URL;
+const classified = classifyMediaSource(TEST_VIDEO_URL);
+// the ADMISSION rule, not just classification: the player attempts
+// admissible-but-unknown URLs and fails visibly, which for a measurement
+// run means forty minutes of black frames - so the harness refuses at
+// startup everything the app would refuse at the door, plus nothing else
+if (!isAcceptableVideoUrl(TEST_VIDEO_URL) || classified.kind === 'none') {
+  throw new Error(
+    `HARNESS_VIDEO_URL fails the app's admission rule: "${TEST_VIDEO_URL}"`,
+  );
+}
+export const TEST_VIDEO_SOURCE: Exclude<MediaSource, { kind: 'none' }> =
+  classified;
+
+/**
+ * Provider id where one exists, the raw URL otherwise - what RunMeta
+ * stamps as videoId. Derived from the classification instead of hardcoded
+ * so the stamp can never disagree with what the run actually played.
+ */
+export const TEST_VIDEO_ID =
+  TEST_VIDEO_SOURCE.kind === 'youtube' || TEST_VIDEO_SOURCE.kind === 'vimeo'
+    ? TEST_VIDEO_SOURCE.videoId
+    : TEST_VIDEO_URL;

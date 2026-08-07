@@ -13,7 +13,13 @@ import {
   waitForShim,
   type HarnessClient,
 } from './browser.js';
-import { SCENARIOS, TEST_VIDEO_ID, TEST_VIDEO_URL, TIMELINE } from './scenarios.js';
+import {
+  SCENARIOS,
+  TEST_VIDEO_ID,
+  TEST_VIDEO_SOURCE,
+  TEST_VIDEO_URL,
+  TIMELINE,
+} from './scenarios.js';
 import { computeStats } from './stats.js';
 import { applyLatency, resetProxy, toxiproxyUp, TOXIPROXY_LISTEN_PORT } from './toxiproxy.js';
 import { writeRun } from './report.js';
@@ -169,6 +175,8 @@ async function runScenario(s: ScenarioSpec, attempt = 1): Promise<boolean> {
       startedAt: new Date(scenarioStart).toISOString(),
       clients: N_CLIENTS,
       videoId: TEST_VIDEO_ID,
+      videoUrl: TEST_VIDEO_URL,
+      videoSource: TEST_VIDEO_SOURCE.kind,
       wsUrl,
       hardware: `${hostname()} · ${process.arch} · node ${process.version}`,
       engine: ENGINE,

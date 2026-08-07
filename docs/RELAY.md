@@ -30,6 +30,16 @@ passes the key into the same `apply_control.lua`, so both planes dedup
 identically — verified by the `--dup-controls` conformance run (4 injected
 duplicates, 0 double-applies, on this plane's binary framing).
 
+The relay does NOT speak `set-video` or the video fence
+(`docs/SYNC_DESIGN.md` §2c): its binary control frame carries only
+play/pause/seek, and its five-ARGV `apply_control.lua` calls leave the
+fence flag absent — which the Lua reads as *unfenced*, the legacy
+semantics old Node clients get too. Deliberate: the shared Lua evolves,
+the relay's calls stay valid, and nothing on this plane changed when
+set-video landed. Relay clients in a room whose video switches keep
+following the timeline (the `videoId` field has always ridden every
+broadcast); they just cannot initiate a switch.
+
 *(10 bots × 120s each, re-measured after the simulated-player fix described
 in `docs/SYNC_DESIGN.md` §8. **[lab]** — these two fleet runs were not
 committed; the table is reproducible from the harness, not citable.)*
