@@ -17,6 +17,7 @@
     "@types/node": "^16.18.126",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "@vimeo/player": "^2.30.4",
     "axios": "^1.10.0",
     "hls.js": "^1.6.17",
     "react": "^19.1.0",
@@ -64,6 +65,7 @@
   },
   "devDependencies": {
     "@types/react-router-dom": "^5.3.3",
-    "@types/simple-peer": "^9.11.8"
+    "@types/simple-peer": "^9.11.8",
+    "@types/vimeo__player": "^2.18.3"
   }
 }

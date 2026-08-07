@@ -19,6 +19,22 @@ jest.mock('../sync/audio-truth', () => ({
   },
 }));
 
+// the real SDK's constructor fetches from vimeo.com; mount wiring has its
+// own test (VimeoMount.test.tsx), here it only needs to render
+jest.mock('@vimeo/player', () => ({
+  __esModule: true,
+  default: class {
+    on() {}
+    off() {}
+    ready() {
+      return new Promise(() => {});
+    }
+    destroy() {
+      return Promise.resolve();
+    }
+  },
+}));
+
 const renderPlayer = (videoUrl: string) =>
   render(<EnhancedVideoPlayer videoUrl={videoUrl} roomCode="TEST01" isHost />);
 
@@ -62,11 +78,10 @@ test('a remote file URL is attempted, and its error fails visibly', () => {
   expect(screen.queryByTestId('html5-video')).toBeNull();
 });
 
-test('a Vimeo URL shows the not-yet-supported card', () => {
+test('a Vimeo URL mounts the Vimeo player with controls', () => {
   renderPlayer('https://vimeo.com/76979871');
-  expect(screen.getByTestId('failure-card')).toHaveTextContent(
-    "Vimeo isn't supported yet",
-  );
+  expect(screen.getByTestId('vimeo-mount')).toBeInTheDocument();
+  expect(screen.getByTestId('play-button')).toBeInTheDocument();
 });
 
 test('a hostile scheme never reaches a media element', () => {
