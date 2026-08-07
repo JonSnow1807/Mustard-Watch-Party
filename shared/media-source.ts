@@ -19,7 +19,11 @@ export type MediaSource =
   | { kind: 'youtube'; videoId: string }
   | { kind: 'vimeo'; videoId: string; hash?: string } // hash: unlisted-video key
   | { kind: 'hls'; url: string }
-  | { kind: 'file'; url: string; container: 'mp4' | 'webm' | 'ogg' | 'unknown' };
+  | {
+      kind: 'file';
+      url: string;
+      container: 'mp4' | 'webm' | 'ogg' | 'unknown';
+    };
 
 /**
  * Bounds what a videoUrl may look like at the door (REST create/update and
@@ -45,7 +49,12 @@ const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 const RELATIVE_BASE = 'https://relative.invalid/';
 
 // Hostnames checked AFTER stripping a leading "www.".
-const YT_HOSTS = ['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com'];
+const YT_HOSTS = [
+  'youtube.com',
+  'm.youtube.com',
+  'music.youtube.com',
+  'youtube-nocookie.com',
+];
 
 function hostOf(u: URL): string {
   const h = u.hostname.toLowerCase();
@@ -65,7 +74,10 @@ function extractYouTubeId(u: URL, host: string): string | null {
   if (segs[0] === 'watch') return u.searchParams.get('v');
   if (
     segs.length >= 2 &&
-    (segs[0] === 'embed' || segs[0] === 'shorts' || segs[0] === 'live' || segs[0] === 'v')
+    (segs[0] === 'embed' ||
+      segs[0] === 'shorts' ||
+      segs[0] === 'live' ||
+      segs[0] === 'v')
   ) {
     return segs[1];
   }
@@ -96,10 +108,10 @@ function classifyVimeo(u: URL, host: string): MediaSource {
 /** Extension rules run on URL.pathname only - `?signature=` query strings never interfere. */
 function byExtension(u: URL, raw: string): MediaSource | null {
   const p = u.pathname.toLowerCase();
-  if (p.slice(-5) === '.m3u8') return { kind: 'hls', url: raw };
-  if (p.slice(-4) === '.mp4') return { kind: 'file', url: raw, container: 'mp4' };
-  if (p.slice(-5) === '.webm') return { kind: 'file', url: raw, container: 'webm' };
-  if (p.slice(-4) === '.ogg') return { kind: 'file', url: raw, container: 'ogg' };
+  if (p.endsWith('.m3u8')) return { kind: 'hls', url: raw };
+  if (p.endsWith('.mp4')) return { kind: 'file', url: raw, container: 'mp4' };
+  if (p.endsWith('.webm')) return { kind: 'file', url: raw, container: 'webm' };
+  if (p.endsWith('.ogg')) return { kind: 'file', url: raw, container: 'ogg' };
   return null;
 }
 
@@ -114,10 +126,14 @@ function byExtension(u: URL, raw: string): MediaSource | null {
  *  3. YouTube/Vimeo by hostname; a provider host WITHOUT an extractable id
  *     is none/unsupported - a <video> fetch against a provider page is
  *     doomed, so don't attempt it
- *  4. pathname extension: .m3u8 -> hls; .mp4/.webm/.ogg -> file
- *  5. anything else that parsed -> file/unknown (attempt-and-fail-visibly)
+ *  4. non-http(s) scheme -> none/unsupported (javascript:, data:, blob:
+ *     all parse, but must never become a media element src)
+ *  5. pathname extension: .m3u8 -> hls; .mp4/.webm/.ogg -> file
+ *  6. anything else that parsed -> file/unknown (attempt-and-fail-visibly)
  */
-export function classifyMediaSource(raw: string | null | undefined): MediaSource {
+export function classifyMediaSource(
+  raw: string | null | undefined,
+): MediaSource {
   const s = (raw !== null && raw !== undefined ? raw : '').trim();
   if (s === '') return { kind: 'none', reason: 'empty' };
   if (YT_ID.test(s)) return { kind: 'youtube', videoId: s };
@@ -142,7 +158,19 @@ export function classifyMediaSource(raw: string | null | undefined): MediaSource
     }
     return { kind: 'none', reason: 'unsupported' };
   }
-  if (host === 'vimeo.com' || host === 'player.vimeo.com') return classifyVimeo(u, host);
+  if (host === 'vimeo.com' || host === 'player.vimeo.com')
+    return classifyVimeo(u, host);
+
+  // Only schemes a media element can fetch may become a src: javascript:,
+  // data: and blob: all parse. isAcceptableVideoUrl also refuses them at
+  // the shape floor, but classifyMediaSource runs on STORED values too
+  // (legacy rooms predate admission), so the guard must live here as well.
+  // Before byExtension on purpose - javascript:x.mp4 must not classify by
+  // its extension. Relative inputs resolve against RELATIVE_BASE (https:)
+  // and pass untouched.
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    return { kind: 'none', reason: 'unsupported' };
+  }
 
   const ext = byExtension(u, s);
   if (ext !== null) return ext;
