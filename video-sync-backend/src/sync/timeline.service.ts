@@ -7,6 +7,11 @@ import { ROOM_STATE_STORE, RoomStateStore } from './room-state.store';
 
 export type ControlResult =
   | { ok: true; timeline: Timeline }
+  /**
+   * cmdId already applied: `timeline` is current state for a TARGETED reply
+   * to the sender - the original commit already broadcast to the room.
+   */
+  | { ok: true; timeline: Timeline; duplicate: true }
   /** the actor plane forwarded this intent; the room's owner broadcasts it */
   | { ok: true; timeline: null; forwarded: true }
   | { ok: false; reason: 'not-controller' | 'rate-limited' | 'room-not-found' };
@@ -137,6 +142,10 @@ export class TimelineService {
     intent: ControlIntent,
     mediaTime: number,
     now: number,
+    cmdId?: string,
+    /** the true originating socket; differs from socketId on the owner's
+     *  side of a forward, where socketId is synthetic */
+    originSocketId?: string,
   ): Promise<ControlResult> {
     const meta = this.meta.get(roomCode);
     if (!meta) return { ok: false, reason: 'room-not-found' };
@@ -152,11 +161,16 @@ export class TimelineService {
       mediaTime,
       now,
       userId,
+      { cmdId, originSocketId },
     );
     if (outcome.kind === 'missing')
       return { ok: false, reason: 'room-not-found' };
     if (outcome.kind === 'forwarded') {
       return { ok: true, timeline: null, forwarded: true };
+    }
+    if (outcome.kind === 'duplicate') {
+      // nothing new was committed, so nothing to persist or broadcast
+      return { ok: true, timeline: outcome.timeline, duplicate: true };
     }
     this.schedulePersist(roomCode);
     return { ok: true, timeline: outcome.timeline };

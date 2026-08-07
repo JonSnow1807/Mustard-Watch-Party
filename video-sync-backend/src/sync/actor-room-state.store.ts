@@ -11,7 +11,11 @@ import type Redis from 'ioredis';
 import { REDIS_KV, REDIS_PUB, REDIS_SUB } from '../redis/redis.module';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
 import { applyControl, snapshot } from '../shared/sync-core/timeline';
-import { ApplyOutcome, RoomStateStore } from './room-state.store';
+import {
+  CMD_DEDUP_TTL_MS,
+  ApplyOutcome,
+  RoomStateStore,
+} from './room-state.store';
 
 /**
  * Coordination plane B: single-owner room actors with lease fencing.
@@ -65,6 +69,7 @@ interface RedisWithActor extends Redis {
   actorCommit(
     leaseKey: string,
     timelineKey: string,
+    cmdKey: string,
     instanceId: string,
     fence: string,
     isPlaying: string,
@@ -73,6 +78,8 @@ interface RedisWithActor extends Redis {
     by: string,
     videoId: string,
     ttlMs: string,
+    cmdId: string,
+    dedupTtlMs: string,
   ): Promise<string | null>;
 }
 
@@ -81,6 +88,13 @@ export interface ForwardedControl {
   intent: ControlIntent;
   mediaTime: number;
   by: string;
+  /** rides the forward so the OWNER's fenced commit can dedup it - the
+   *  forward publish itself can be redelivered (pubsub client resends) */
+  cmdId?: string;
+  /** the ORIGINATING socket, preserved across forwards so a duplicate can
+   *  be answered to that socket alone (socket-id rooms span instances via
+   *  the adapter) instead of broadcast to the room */
+  originSocketId?: string;
 }
 
 @Injectable()
@@ -127,7 +141,7 @@ export class ActorRoomStateStore
       lua: read('actor_init.lua'),
     });
     kv.defineCommand('actorCommit', {
-      numberOfKeys: 2,
+      numberOfKeys: 3,
       lua: read('actor_commit.lua'),
     });
     this.kv = kv as RedisWithActor;
@@ -238,10 +252,16 @@ export class ActorRoomStateStore
     roomCode: string,
     fence: string,
     next: Omit<Timeline, 'seq'>,
-  ): Promise<Timeline | null> {
+    cmdId?: string,
+  ): Promise<{ timeline: Timeline; dup: boolean } | null> {
     const raw = await this.kv.actorCommit(
       this.leaseKey(roomCode),
       this.timelineKey(roomCode),
+      // fence-INDEPENDENT dedup record, same namespace as plane A: seq
+      // restarts when the fence advances, so (epoch, seq) cannot identify a
+      // command across handoff - but this key can, and it lives in Redis
+      // rather than owner memory precisely so a handoff cannot forget it
+      `room:${roomCode}:cmd:${cmdId ?? ''}`,
       this.instanceId,
       fence,
       next.isPlaying ? '1' : '0',
@@ -250,6 +270,8 @@ export class ActorRoomStateStore
       next.by ?? '',
       next.videoId ?? '',
       String(KEY_TTL_MS),
+      cmdId ?? '',
+      String(CMD_DEDUP_TTL_MS),
     );
     if (!raw) {
       // fenced out: this instance is a zombie for this room
@@ -257,10 +279,16 @@ export class ActorRoomStateStore
       this.logger.warn({ roomCode, fence }, 'actor: commit fenced out');
       return null;
     }
-    const committed = JSON.parse(raw) as Timeline;
+    const parsed = JSON.parse(raw) as Timeline & {
+      dup?: true;
+      videoId?: string;
+    };
+    const committed: Timeline = { ...parsed, videoId: parsed.videoId ?? null };
+    const dup = parsed.dup === true;
+    delete (committed as Timeline & { dup?: true }).dup;
     const entry = this.owned.get(roomCode);
     if (entry) entry.timeline = committed;
-    return committed;
+    return { timeline: committed, dup };
   }
 
   /**
@@ -290,9 +318,10 @@ export class ActorRoomStateStore
     mediaTime: number,
     serverNow: number,
     by: string,
+    opts?: { cmdId?: string; originSocketId?: string },
   ): Promise<ApplyOutcome> {
     return this.enqueue(roomCode, () =>
-      this.applyControlSerial(roomCode, intent, mediaTime, serverNow, by),
+      this.applyControlSerial(roomCode, intent, mediaTime, serverNow, by, opts),
     );
   }
 
@@ -302,7 +331,10 @@ export class ActorRoomStateStore
     mediaTime: number,
     serverNow: number,
     by: string,
+    opts?: { cmdId?: string; originSocketId?: string },
   ): Promise<ApplyOutcome> {
+    const cmdId = opts?.cmdId;
+    const originSocketId = opts?.originSocketId;
     let entry = this.owned.get(roomCode);
     if (!entry) {
       const lease = await this.claim(roomCode);
@@ -310,7 +342,14 @@ export class ActorRoomStateStore
         // someone else owns this room: forward and let them broadcast
         const delivered = await this.pub.publish(
           this.forwardChannel(lease.owner),
-          JSON.stringify({ roomCode, intent, mediaTime, by }),
+          JSON.stringify({
+            roomCode,
+            intent,
+            mediaTime,
+            by,
+            cmdId,
+            originSocketId,
+          }),
         );
         if (delivered > 0) return { kind: 'forwarded' };
         // Nobody is subscribed: the owner died between our lease read and
@@ -334,7 +373,14 @@ export class ActorRoomStateStore
           // P07: a live owner exists after all - forward rather than drop
           const second = await this.pub.publish(
             this.forwardChannel(retaken.owner),
-            JSON.stringify({ roomCode, intent, mediaTime, by }),
+            JSON.stringify({
+              roomCode,
+              intent,
+              mediaTime,
+              by,
+              cmdId,
+              originSocketId,
+            }),
           );
           return second > 0 ? { kind: 'forwarded' } : { kind: 'missing' };
         }
@@ -353,8 +399,14 @@ export class ActorRoomStateStore
 
     // serialize locally against the in-memory timeline, then commit fenced
     const next = applyControl(entry.timeline, intent, mediaTime, serverNow, by);
-    const committed = await this.commit(roomCode, entry.fence, next);
-    if (committed) return { kind: 'committed', timeline: committed };
+    const committed = await this.commit(roomCode, entry.fence, next, cmdId);
+    if (committed?.dup) {
+      // cmdId already applied (possibly by the PREVIOUS owner before a
+      // handoff - the record lives in Redis, not owner memory, precisely so
+      // it survives that): answer with current state, commit nothing
+      return { kind: 'duplicate', timeline: committed.timeline };
+    }
+    if (committed) return { kind: 'committed', timeline: committed.timeline };
     // Fenced out: another instance took ownership while we held stale
     // authority. The user's intent must not evaporate - forward it to the
     // new owner exactly as a non-owner would.
@@ -367,14 +419,23 @@ export class ActorRoomStateStore
         roomCode,
         nowLease.epoch,
         applyControl(fresh, intent, mediaTime, serverNow, by),
+        cmdId,
       );
+      if (retry?.dup) return { kind: 'duplicate', timeline: retry.timeline };
       return retry
-        ? { kind: 'committed', timeline: retry }
+        ? { kind: 'committed', timeline: retry.timeline }
         : { kind: 'missing' };
     }
     const delivered = await this.pub.publish(
       this.forwardChannel(nowLease.owner),
-      JSON.stringify({ roomCode, intent, mediaTime, by }),
+      JSON.stringify({
+        roomCode,
+        intent,
+        mediaTime,
+        by,
+        cmdId,
+        originSocketId,
+      }),
     );
     return delivered > 0 ? { kind: 'forwarded' } : { kind: 'missing' };
   }
@@ -391,7 +452,8 @@ export class ActorRoomStateStore
         roomCode,
         entry.fence,
         snapshot(entry.timeline, serverNow),
-      );
+        // sweeps carry no cmdId: they are the system's own commits
+      ).then((r) => r?.timeline ?? null);
     });
   }
 

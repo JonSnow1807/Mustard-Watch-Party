@@ -13,6 +13,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRoom } from '../app-api.js';
 import { percentile } from '../stats.js';
+import type { ControlIntent } from '../../../shared/sync-protocol';
 import { BotClient } from './bot-client.js';
 import { mulberry32 } from './sim-player.js';
 
@@ -23,6 +24,7 @@ interface Args {
   wsUrl: string;
   controller: 'reactive' | 'predictive';
   plane: 'node' | 'relay';
+  dupControls: boolean;
 }
 
 function parseArgs(): Args {
@@ -37,8 +39,13 @@ function parseArgs(): Args {
     wsUrl: get('--ws') ?? 'http://localhost:3000',
     controller: (get('--controller') ?? 'reactive') as 'reactive' | 'predictive',
     plane: (get('--plane') ?? 'node') as 'node' | 'relay',
+    // exactly-once proof mode: every control sent twice with the same cmdId
+    dupControls: process.argv.includes('--dup-controls'),
   };
 }
+
+import { execSync } from 'node:child_process';
+import { cpus } from 'node:os';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -68,6 +75,7 @@ async function main(): Promise<void> {
         seed: 1000 + i,
         controller: args.controller,
         plane: args.plane,
+        duplicateControls: args.dupControls,
         player: {
           playbackSkew: (rng() - 0.5) * 160e-6,
           // A/B fairness: both controller arms face fractional-capable
@@ -106,12 +114,20 @@ async function main(): Promise<void> {
     if (!tl) return 0;
     return tl.mediaTime + (tl.isPlaying ? (Date.now() - tl.stampedAt) / 1000 : 0);
   };
+  // the double-apply tripwire needs the ground truth of how many control
+  // COMMANDS were issued: each sendIntent is one command (its duplicate
+  // twin in --dup-controls mode shares the cmdId, so it must NOT commit)
+  let scriptedControls = 0;
+  const command = (intent: ControlIntent, mediaTime: number): void => {
+    scriptedControls += 1;
+    commander.sendIntent(room.code, intent, mediaTime);
+  };
   const events: Array<{ atS: number; run: () => void }> = [
-    { atS: 5, run: () => commander.sendIntent(room.code, 'play', 0) },
-    { atS: 30, run: () => commander.sendIntent(room.code, 'seek', 300) },
+    { atS: 5, run: () => command('play', 0) },
+    { atS: 30, run: () => command('seek', 300) },
     { atS: 40, run: () => bots[Math.min(2, bots.length - 1)].scriptedStall(4000) },
-    { atS: 50, run: () => commander.sendIntent(room.code, 'pause', projectedNow()) },
-    { atS: 55, run: () => commander.sendIntent(room.code, 'play', projectedNow()) },
+    { atS: 50, run: () => command('pause', projectedNow()) },
+    { atS: 55, run: () => command('play', projectedNow()) },
   ];
   for (const e of events) {
     const wait = t0 + e.atS * 1000 - Date.now();
@@ -175,6 +191,14 @@ async function main(): Promise<void> {
   const seqDuplicates = reports.reduce((sum, r) => sum + r.seqDuplicates, 0);
   const reconnects = reports.reduce((sum, r) => sum + r.reconnects, 0);
   const rejoinFailures = reports.reduce((sum, r) => sum + r.rejoinFailures, 0);
+  const dupControlsSent = reports.reduce((sum, r) => sum + r.dupControlsSent, 0);
+  // union across the fleet: a control commit any bot observed. A duplicate
+  // that double-applies mints an extra (epoch,seq) with a control reason -
+  // contiguous seq, so seqGaps stays clean, but this count exceeds the
+  // number of commands actually issued
+  const controlCommitsObserved = new Set(
+    reports.flatMap((r) => r.controlCommits),
+  ).size;
   const handlerErrors = reports.flatMap((r) => r.handlerErrors);
   const thetaP95 = percentile(
     [...thetaErrors].sort((a, b) => a - b),
@@ -183,6 +207,17 @@ async function main(): Promise<void> {
 
   const summary = {
     runId,
+    // provenance: an earlier audit found bot-fleet numbers published without
+    // a citable artifact; a summary that names its build and hardware can be
+    // committed under docs/measurements and pass the two-tier convention.
+    // A dirty tree is STAMPED as dirty - a SHA that does not contain the
+    // code that produced the run is worse than no SHA.
+    gitSha:
+      execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim() +
+      (execSync('git status --porcelain', { encoding: 'utf8' }).trim()
+        ? '-dirty'
+        : ''),
+    hardware: `${cpus().length} cores (${cpus()[0]?.model ?? 'unknown'})`,
     controller: args.controller,
     plane: args.plane,
     n: args.n,
@@ -204,6 +239,12 @@ async function main(): Promise<void> {
     // the gap metric's range - so a non-zero count here means the seqGaps
     // number above is an UNDER-count, not a clean bill of health
     rejoinFailures,
+    // duplicate-injection mode: extra same-cmdId sends. With dedup working,
+    // these produce ZERO extra seqs - any double-apply shows as a phantom
+    // seq in the integrity counters
+    dupControlsSent,
+    scriptedControls,
+    controlCommitsObserved,
     handlerErrors: handlerErrors.length,
     rejectedControls: reports.reduce((s, r) => s + r.rejected, 0),
   };
@@ -226,6 +267,18 @@ async function main(): Promise<void> {
     // failing re-joins silently shrink what the gap check can see, so the
     // gate has to treat them as a failure rather than trust a clean seqGaps
     if (rejoinFailures > 0) failures.push(`${rejoinFailures} failed re-joins (gap metric is blind past these)`);
+    // exact equality, both directions: MORE commits than commands means a
+    // duplicate was applied; FEWER means a command never committed - e.g.
+    // the transport dropped it while disconnected (by design, no buffering),
+    // which silently changes the scenario the run claims to have measured
+    if (controlCommitsObserved > scriptedControls)
+      failures.push(
+        `${controlCommitsObserved} control commits for ${scriptedControls} commands - a duplicate was APPLIED`,
+      );
+    else if (controlCommitsObserved < scriptedControls)
+      failures.push(
+        `${controlCommitsObserved} control commits for ${scriptedControls} commands - a command was LOST`,
+      );
     if (failures.length > 0) {
       console.error('[gate] FAILED:\n  ' + failures.join('\n  '));
       process.exit(1);

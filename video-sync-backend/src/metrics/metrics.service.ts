@@ -59,6 +59,15 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  // no cmdId label on purpose: client-controlled strings in label values
+  // are an unbounded-cardinality DoS
+  readonly controlDedupHits = new Counter({
+    name: 'control_dedup_hits_total',
+    help: 'control commands answered from the idempotency record',
+    labelNames: ['type'],
+    registers: [this.registry],
+  });
+
   readonly redisOpDuration = new Histogram({
     name: 'redis_op_duration_seconds',
     help: 'state-store operation latency',

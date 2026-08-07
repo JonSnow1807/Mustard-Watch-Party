@@ -81,6 +81,19 @@ classes of duplicated work that a shared-store plane has to notice and
 patch one at a time. Recorded because the A/B's conclusion would otherwise
 read as more settled than one single-instance test can make it.
 
+## Idempotency across handoff
+
+The exactly-once work (SYNC_DESIGN §2a) has one plane-B-specific obligation:
+the dedup record must survive an owner change. seq restarts when the fence
+advances, so `(epoch, seq)` cannot identify a command across handoff — the
+`cmdId` record can, because it is keyed fence-independently and lives in
+Redis rather than owner memory. The check sits inside `actor_commit.lua`'s
+fenced atomic step, and a duplicate is answered with current state rather
+than `false` — `false` means fenced-out, and the caller drops ownership on
+it. A command applied by the old owner, redelivered to the new owner via
+the (redeliverable) forward channel, is answered as a duplicate; the spec
+test pins it.
+
 ## Two bugs the implementation surfaced
 
 1. **Non-atomic init.** 25 concurrent joins each passed a "no state yet"
