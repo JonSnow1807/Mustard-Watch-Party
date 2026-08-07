@@ -51,11 +51,59 @@ jobs:
       - name: boot the 3-instance lab
         run: |
           docker compose -f docker-compose.lab.yml up -d --build
-          for i in $(seq 1 60); do
-            curl -sf http://localhost:3300/health && break
-            sleep 2
+          # `up -d` returns before the backends are up: they wait on the
+          # migrate one-shot, which waits on postgres's healthcheck, so on a
+          # cold runner readiness lands 2+ minutes later. The old wait allowed
+          # exactly 120s and both scheduled failures exhausted it moments
+          # before the backends came up. A dispatch of the first fix then
+          # exposed the second mechanism: probing ONLY nginx (least_conn)
+          # makes readiness a coin flip while the backends boot - one probe
+          # lands on the single healthy backend and "succeeds", the next
+          # lands on a booting one and 502s. A readiness predicate behind a
+          # load balancer must require EVERY instance, or it flaps.
+          # Budget ~6 minutes, probe all three backends directly plus nginx,
+          # and require redis=ok (same deep-health rule as ci.yml): this job
+          # exists to exercise the Lua store, and a 200 with status=degraded
+          # would pass a bare -f probe while testing the wrong path.
+          # Wall-clock deadline, not an iteration count, and the result is
+          # LATCHED - re-probing after a successful break re-rolls the dice,
+          # the same flapping-predicate bug as probing only nginx, one layer
+          # up. The gate's contract is "every instance proven healthy WITHIN
+          # the budget": each curl's timeout is capped to the remaining
+          # budget (a pass cannot run long past expiry), a pass that has not
+          # completed when the budget expires does not count, and the sleep
+          # cannot overshoot. The wait's worst case is exactly the number it
+          # advertises.
+          booted=0
+          deadline=$(( SECONDS + 360 ))
+          ready() {
+            local p rem
+            for p in 3301 3302 3303 3300; do
+              rem=$(( deadline - SECONDS ))
+              [ "$rem" -ge 1 ] || return 1
+              curl -sf --max-time $(( rem < 5 ? rem : 5 )) \
+                "http://localhost:$p/health" 2>/dev/null \
+                | grep -Eq '"redis"[[:space:]]*:[[:space:]]*"ok"' || return 1
+            done
+            # the whole pass must complete inside the budget to count
+            [ "$SECONDS" -lt "$deadline" ]
+          }
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if ready; then booted=1; break; fi
+            remaining=$(( deadline - SECONDS ))
+            [ "$remaining" -le 0 ] && break
+            sleep $(( remaining < 3 ? remaining : 3 ))
           done
-          curl -sf http://localhost:3300/health
+          [ "$booted" = 1 ] || {
+            echo "lab never reached redis=ok on every instance; per-port /health:"
+            for p in 3301 3302 3303 3300; do
+              printf '%s: ' "$p"
+              curl -s --max-time 5 "http://localhost:$p/health" || printf '(no response)'
+              echo
+            done
+            docker compose -f docker-compose.lab.yml ps
+            exit 1
+          }
       - run: npm ci
         working-directory: sync-harness
       - name: multi-instance proofs
