@@ -41,7 +41,13 @@ async function main(): Promise<void> {
   });
 
   const contexts: import('playwright').BrowserContext[] = [];
-  const open = async (user: typeof alice) => {
+  // Recording starts when a CONTEXT is created, and the two videos are
+  // aligned in post by their own t=0 - so the contexts must be created
+  // back-to-back, and every slow step (page load, join, HUD render) must
+  // run in parallel afterwards. The first cut of this script opened the
+  // windows sequentially, which time-shifted the composite by several
+  // seconds and made perfectly-synced players LOOK seconds apart.
+  const makeContext = async (user: typeof alice) => {
     const context = await browser.newContext({
       viewport: { width: 640, height: 640 },
       recordVideo: { dir: OUT, size: { width: 640, height: 640 } },
@@ -50,6 +56,9 @@ async function main(): Promise<void> {
     await context.addInitScript((u) => {
       window.localStorage.setItem('user', JSON.stringify(u));
     }, user);
+    return context;
+  };
+  const setupPage = async (context: import('playwright').BrowserContext) => {
     const page = await context.newPage();
     await page.goto(`${FRONTEND}/room/${room.code}?debug=1`, {
       waitUntil: 'domcontentloaded',
@@ -60,13 +69,49 @@ async function main(): Promise<void> {
     // joining can auto-scroll to the roster/chat; the recording must show
     // the player and the HUD, so pin the viewport to the top
     await page.evaluate(() => window.scrollTo(0, 0));
-    return { context, page };
+    return page;
   };
 
+  /**
+   * Both pages flash a small corner marker at the SAME host wall-clock
+   * instant (both browsers run on this machine, so Date.now() is one
+   * physical clock). The composition step finds the flash in each video
+   * and aligns on it - sub-frame ground truth instead of trusting the two
+   * recordings to have started together. The marker sits in the bottom
+   *-right corner and is cropped out of the published composite.
+   */
+  const scheduleFlash = (page: import('playwright').Page, atMs: number) =>
+    page.evaluate((t) => {
+      const d = document.createElement('div');
+      d.id = '__demo_sync_marker';
+      Object.assign(d.style, {
+        position: 'fixed',
+        right: '0',
+        bottom: '0',
+        width: '24px',
+        height: '24px',
+        background: '#000',
+        zIndex: '99999',
+      });
+      document.body.appendChild(d);
+      setTimeout(() => {
+        d.style.background = '#ff0040';
+        setTimeout(() => {
+          d.style.background = '#000';
+        }, 800);
+      }, Math.max(0, t - Date.now()));
+    }, atMs);
+
   try {
-    const a = await open(alice);
-    const b = await open(bob);
-    await sleep(4000); // both players cued, HUDs visible
+    const ctxA = await makeContext(alice);
+    const ctxB = await makeContext(bob); // milliseconds after A, not seconds
+    const [pageA, pageB] = await Promise.all([setupPage(ctxA), setupPage(ctxB)]);
+    const a = { context: ctxA, page: pageA };
+    const b = { context: ctxB, page: pageB };
+
+    const flashAt = Date.now() + 1500;
+    await Promise.all([scheduleFlash(a.page, flashAt), scheduleFlash(b.page, flashAt)]);
+    await sleep(4000); // flash lands here; both players cued, HUDs visible
     // re-pin after late layout/join side effects
     await a.page.evaluate(() => window.scrollTo(0, 0));
     await b.page.evaluate(() => window.scrollTo(0, 0));
