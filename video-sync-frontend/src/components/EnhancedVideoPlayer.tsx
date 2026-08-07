@@ -434,12 +434,13 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
           />
         );
         break;
-      case 'hls': // plain <video> until hls.js lands: Safari plays it
-      case 'file': // natively, everywhere else fails into the card
+      case 'hls':
+      case 'file':
         mount = (
           <Html5Mount
             key={source.url}
             url={source.url}
+            hls={source.kind === 'hls'}
             onAdapter={handleAdapter}
             onFailure={handleFailure}
           />
