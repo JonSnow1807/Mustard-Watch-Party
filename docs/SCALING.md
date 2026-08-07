@@ -15,8 +15,13 @@ carries exactly the state the script returned, never a local copy.
 
 Measured on the live 3-instance lab **[lab]** — `verify-m6.ts` prints this
 and asserts on it, but writes no artifact: a 10-control blast split across
-two instances produced 13 broadcasts (10 controls plus re-anchor sweeps),
-13 unique seqs, strictly monotone.
+two instances is assigned **unique, contiguous** seqs (that is the
+serialization claim, and the gate). Arrival order at any one subscriber is
+*not* asserted: the broadcasts originate from two publisher instances, the
+adapter gives no cross-publisher ordering, and clients order by
+`(storeEpoch, seq)` precisely because of that — an earlier version of the
+check gated on arrival monotonicity, which passed for weeks on timing luck
+and failed on the first CI runner that interleaved the publishers.
 
 **Rejected alternative — in-memory authority with pub/sub invalidation:**
 requires room→instance ownership (leases, failover, fencing, split-brain
