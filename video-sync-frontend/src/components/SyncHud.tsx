@@ -26,7 +26,7 @@ const fmt = (n: number, digits = 0): string =>
  * chrome: everything shown comes straight from the engine's telemetry.
  */
 export const SyncHud: React.FC<{ status: EngineStatus }> = ({ status }) => (
-  <Hud>
+  <Hud data-testid="sync-hud">
     {[
       `state  ${status.ctrlState}${status.roomPlaying ? '' : ' (room paused)'}`,
       `drift  ${fmt(status.driftMs)}ms`,

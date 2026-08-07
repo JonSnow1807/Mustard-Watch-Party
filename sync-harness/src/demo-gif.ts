@@ -25,25 +25,28 @@ async function main(): Promise<void> {
     'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
   );
 
-  const browser: Browser = await chromium
-    .launch({
-      channel: 'chrome',
-      headless: false,
-      args: [
-        '--autoplay-policy=no-user-gesture-required',
-        '--mute-audio',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-      ],
-    })
-    .catch(() => chromium.launch({ headless: false }));
+  // no Chromium fallback: the artifact's claim is "two real Chrome
+  // clients", so a machine without Chrome must fail the recording, not
+  // quietly produce a different one
+  const browser: Browser = await chromium.launch({
+    channel: 'chrome',
+    headless: false,
+    args: [
+      '--autoplay-policy=no-user-gesture-required',
+      '--mute-audio',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+    ],
+  });
 
+  const contexts: import('playwright').BrowserContext[] = [];
   const open = async (user: typeof alice) => {
     const context = await browser.newContext({
       viewport: { width: 640, height: 640 },
-      recordVideo: { dir: OUT, size: { width: 640, height: 560 } },
+      recordVideo: { dir: OUT, size: { width: 640, height: 640 } },
     });
+    contexts.push(context);
     await context.addInitScript((u) => {
       window.localStorage.setItem('user', JSON.stringify(u));
     }, user);
@@ -51,41 +54,49 @@ async function main(): Promise<void> {
     await page.goto(`${FRONTEND}/room/${room.code}?debug=1`, {
       waitUntil: 'domcontentloaded',
     });
-    await page.waitForFunction(() => Boolean((window as any).__mustardSync), undefined, {
-      timeout: 30000,
-    });
+    // the shim existing does not mean the HUD has rendered - wait for the
+    // overlay the recording exists to show
+    await page.getByTestId('sync-hud').waitFor({ state: 'visible', timeout: 30000 });
     // joining can auto-scroll to the roster/chat; the recording must show
     // the player and the HUD, so pin the viewport to the top
     await page.evaluate(() => window.scrollTo(0, 0));
     return { context, page };
   };
 
-  const a = await open(alice);
-  const b = await open(bob);
-  await sleep(4000); // both players cued, HUDs visible
-  // re-pin after late layout/join side effects
-  await a.page.evaluate(() => window.scrollTo(0, 0));
-  await b.page.evaluate(() => window.scrollTo(0, 0));
+  try {
+    const a = await open(alice);
+    const b = await open(bob);
+    await sleep(4000); // both players cued, HUDs visible
+    // re-pin after late layout/join side effects
+    await a.page.evaluate(() => window.scrollTo(0, 0));
+    await b.page.evaluate(() => window.scrollTo(0, 0));
 
-  // Alice drives; Bob only watches - every transition below reaches his
-  // window through the same sync:timeline broadcast Alice converges from.
-  await a.page.getByTestId('play-button').first().click();
-  await sleep(9000); // both playing, HUD drift settling to tens of ms
+    // Alice drives; Bob only watches - every transition below reaches his
+    // window through the same sync:timeline broadcast Alice converges from.
+    await a.page.getByTestId('play-button').first().click();
+    await sleep(9000); // both playing, HUD drift settling to tens of ms
 
-  // seek: click 60% into the progress bar
-  const bar = a.page.getByTestId('progress-bar').first();
-  const box = await bar.boundingBox();
-  if (box) await a.page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
-  await sleep(9000);
+    // seek: click 60% into the progress bar. A missing bar is a failed
+    // recording, not a skippable step - a demo without the seek transition
+    // silently records a different demo.
+    const bar = a.page.getByTestId('progress-bar').first();
+    const box = await bar.boundingBox();
+    if (!box) throw new Error('progress bar not visible; seek is required');
+    await a.page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
+    await sleep(9000);
 
-  await a.page.getByTestId('play-button').first().click(); // pause
-  await sleep(4000);
-  await a.page.getByTestId('play-button').first().click(); // resume
-  await sleep(8000);
-
-  await a.context.close(); // flushes the videos
-  await b.context.close();
-  await browser.close();
+    await a.page.getByTestId('play-button').first().click(); // pause
+    await sleep(4000);
+    await a.page.getByTestId('play-button').first().click(); // resume
+    await sleep(8000);
+  } finally {
+    // context.close() is what flushes recorded videos - it must run on the
+    // failure path too, or a crashed take leaves nothing to inspect
+    for (const c of contexts) {
+      await c.close().catch(() => undefined);
+    }
+    await browser.close().catch(() => undefined);
+  }
   console.log(`videos in ${OUT}`);
 }
 
