@@ -61,9 +61,12 @@ measured), and no correction mechanism existed
 ([baseline findings](docs/measurements/baseline/README.md)).
 
 Protocol-level, on the production multi-instance plane: 100 clients in one
-room hold P95 147ms (P50 67ms); a 10-cell load sweep (10→250 clients × 1/3 instances)
-locates the knee: **one instance breaches the event-loop-lag SLO at 250
-clients in a room (130ms), where three instances hold 76ms**
+room hold P95 149ms (P50 70ms); a 10-cell load sweep (10→250 clients × 1/3
+instances) finds **no SLO breach up to 250 clients in one room on either
+topology**, with zero seq gaps or reorders on every cell. An earlier sweep
+had measured a one-instance event-loop-lag knee at 250 (130ms); a controlled
+re-run did not reproduce it (42ms), so the knee is above 250 and honestly
+*unlocated* — both runs are committed
 ([scaling results](docs/SCALING.md#5-load-characterization)).
 
 ## How it works
@@ -115,9 +118,11 @@ Full design: [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md) ·
 - Path asymmetry biases the clock estimate by asym/2 — fundamental to any
   NTP-family scheme; scenario S6 measures it rather than hiding it.
 - Background tabs suspend and resync on focus.
-- Capacity is measured, not extrapolated: a single instance breaches the
-  event-loop-lag SLO at **250 clients in one room**; three instances carry
-  that load comfortably. Beyond 250/room is untested on this hardware.
+- Capacity is measured, not extrapolated: **no SLO breach up to 250 clients
+  in one room** on either topology in the current sweep. An earlier sweep
+  measured a single-instance lag breach at 250 that a controlled re-run did
+  not reproduce — both runs are committed, the attribution is withdrawn, and
+  the knee is above 250 and unlocated. Beyond 250/room is untested.
 
 ## Reproduce the numbers
 

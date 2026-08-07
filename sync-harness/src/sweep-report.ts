@@ -21,6 +21,9 @@ interface CellResult {
     driftMs?: { p50: number; p95: number; p99: number };
     slopeMsPerMin?: number;
     seqGaps?: number;
+    seqReorders?: number;
+    seqDuplicates?: number;
+    rejoinFailures?: number;
   } | null;
   servers: Record<string, { lagP99MaxMs: number; cpuCoresAvg: number; rssMaxMb: number }>;
   loadGenLoad1PerCore: number;
@@ -51,6 +54,13 @@ const rows = summary.results.map((r) => ({
   p99: r.botSummary?.driftMs?.p99 ?? null,
   lagMax: Math.max(...Object.values(r.servers).map((s) => s.lagP99MaxMs), 0),
   cpuTotal: Object.values(r.servers).reduce((s, x) => s + x.cpuCoresAvg, 0),
+  // integrity counters get their own column: an earlier sweep committed a
+  // non-zero seqGaps that no table column showed, and a number that lives
+  // only inside the artifact is invisible to a table reader
+  gaps: r.botSummary?.seqGaps ?? null,
+  reorders: r.botSummary?.seqReorders ?? null,
+  dups: r.botSummary?.seqDuplicates ?? null,
+  rejoinFailures: r.botSummary?.rejoinFailures ?? null,
   selfSkewed: r.loadGenSelfSkewed,
   sloOk: r.sloDriftOk && r.sloLagOk,
 }));
@@ -93,13 +103,27 @@ const fmt = (x: number | null): string => (x === null ? '—' : `${Math.round(x)
 const lines = [
   `Sweep \`${summary.sweepId}\` · ${summary.hardware} · ${summary.durationSPerCell}s cells · SHA \`${summary.gitSha.slice(0, 10)}\``,
   '',
-  '| topology | clients | drift P50 | P95 | P99 | lag p99 max | server CPU (cores) | SLO | load-gen |',
-  '|---|---|---|---|---|---|---|---|---|',
+  '| topology | clients | drift P50 | P95 | P99 | lag p99 max | server CPU (cores) | gaps/reord/dups | SLO | load-gen |',
+  '|---|---|---|---|---|---|---|---|---|---|',
   ...rows.map(
     (r) =>
-      `| ${r.topology} | ${r.n} | ${fmt(r.p50)} | ${fmt(r.p95)} | ${fmt(r.p99)} | ${fmt(r.lagMax)} | ${r.cpuTotal.toFixed(2)} | ${r.sloOk ? 'ok' : 'BREACH'} | ${r.selfSkewed ? 'SELF-SKEWED' : 'valid'} |`,
+      // a failed re-join leaves that bot deaf: every seq after its drop falls
+      // outside the gap metric's observable range, so a clean gap count over
+      // deaf bots is a lower bound, not integrity - mark the cell
+      `| ${r.topology} | ${r.n} | ${fmt(r.p50)} | ${fmt(r.p95)} | ${fmt(r.p99)} | ${fmt(r.lagMax)} | ${r.cpuTotal.toFixed(2)} | ${r.gaps ?? '—'}/${r.reorders ?? '—'}/${r.dups ?? '—'}${(r.rejoinFailures ?? 0) > 0 ? ` ⚠ ${r.rejoinFailures} deaf` : ''} | ${r.sloOk ? 'ok' : 'BREACH'} | ${r.selfSkewed ? 'SELF-SKEWED' : 'valid'} |`,
   ),
 ];
+
+const deaf = rows.filter((r) => (r.rejoinFailures ?? 0) > 0);
+if (deaf.length > 0) {
+  lines.push(
+    '',
+    `⚠ ${deaf.length} cell(s) had bots that failed to re-join after a ` +
+      'reconnect. A deaf bot cannot observe the seqs it misses, so its gap ' +
+      'count is a lower bound and the integrity column for those cells is ' +
+      'incomplete, not clean.',
+  );
+}
 
 // knee: smallest N with an SLO breach on a valid cell, per topology
 for (const topo of ['1 instance', '3 instances']) {

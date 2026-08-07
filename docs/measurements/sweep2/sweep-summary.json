@@ -1,0 +1,479 @@
+{
+ "sweepId": "sweep-mshvizoy (+sweep-mshw7yw5 size-10 re-run)",
+ "gitSha": "c52162d4cffff7eae0f537908e31379f103b5fc3",
+ "hardware": "10 cores (Apple M2 Pro)",
+ "durationSPerCell": 120,
+ "results": [
+  {
+   "label": "one-10",
+   "n": 10,
+   "rooms": 1,
+   "ws": "http://localhost:3301",
+   "botSummary": {
+    "runId": "bots-mshw7z6y",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 10,
+    "durationS": 120,
+    "steadySamples": 3518,
+    "driftMs": {
+     "p50": 75.65925562342812,
+     "p95": 116.05946912724008,
+     "p99": 315.47040930593084
+    },
+    "slopeMsPerMin": 1.2642913839385983,
+    "thetaErrorP95Ms": 2.6923828125,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 0,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b1": {
+     "lagP99MaxMs": 16.605183,
+     "cpuCoresAvg": 0.019775131812389147,
+     "rssMaxMb": 169.488384,
+     "clientsMax": 10
+    }
+   },
+   "loadGenLoad1PerCore": 0.36201171875,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  },
+  {
+   "label": "three-10",
+   "n": 10,
+   "rooms": 1,
+   "ws": "http://localhost:3300",
+   "botSummary": {
+    "runId": "bots-mshwakht",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 10,
+    "durationS": 120,
+    "steadySamples": 3518,
+    "driftMs": {
+     "p50": 73.69505527998399,
+     "p95": 117.09041554491861,
+     "p99": 314.2804796206633
+    },
+    "slopeMsPerMin": 1.4894451652025964,
+    "thetaErrorP95Ms": 2.22509765625,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 84,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b1": {
+     "lagP99MaxMs": 16.662527,
+     "cpuCoresAvg": 0.011977607650718864,
+     "rssMaxMb": 160.063488,
+     "clientsMax": 4
+    },
+    "b2": {
+     "lagP99MaxMs": 18.022399,
+     "cpuCoresAvg": 0.01133951733157835,
+     "rssMaxMb": 167.583744,
+     "clientsMax": 3
+    },
+    "b3": {
+     "lagP99MaxMs": 16.695294999999998,
+     "cpuCoresAvg": 0.011878474854424703,
+     "rssMaxMb": 166.043648,
+     "clientsMax": 3
+    }
+   },
+   "loadGenLoad1PerCore": 0.444482421875,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  },
+  {
+   "label": "one-25",
+   "n": 25,
+   "rooms": 1,
+   "ws": "http://localhost:3301",
+   "botSummary": {
+    "runId": "bots-mshvllq1",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 25,
+    "durationS": 120,
+    "steadySamples": 8828,
+    "driftMs": {
+     "p50": 73.27355533220725,
+     "p95": 119.98951448629214,
+     "p99": 226.12646118221846
+    },
+    "slopeMsPerMin": -10.344957116285514,
+    "thetaErrorP95Ms": 4.75341796875,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 0,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b1": {
+     "lagP99MaxMs": 17.285119,
+     "cpuCoresAvg": 0.03885511496167945,
+     "rssMaxMb": 152.952832,
+     "clientsMax": 25
+    }
+   },
+   "loadGenLoad1PerCore": 0.44677734375,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  },
+  {
+   "label": "three-25",
+   "n": 25,
+   "rooms": 1,
+   "ws": "http://localhost:3300",
+   "botSummary": {
+    "runId": "bots-mshvo79a",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 25,
+    "durationS": 120,
+    "steadySamples": 8839,
+    "driftMs": {
+     "p50": 72.77123050261025,
+     "p95": 140.81384365312033,
+     "p99": 317.18954917892006
+    },
+    "slopeMsPerMin": -0.9772716648171809,
+    "thetaErrorP95Ms": 3.2012939453125,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 170,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b1": {
+     "lagP99MaxMs": 16.728063000000002,
+     "cpuCoresAvg": 0.016888757455599594,
+     "rssMaxMb": 148.975616,
+     "clientsMax": 8
+    },
+    "b3": {
+     "lagP99MaxMs": 16.678911,
+     "cpuCoresAvg": 0.02021011462463763,
+     "rssMaxMb": 139.116544,
+     "clientsMax": 8
+    },
+    "b2": {
+     "lagP99MaxMs": 16.613375,
+     "cpuCoresAvg": 0.020123504714937842,
+     "rssMaxMb": 140.013568,
+     "clientsMax": 9
+    }
+   },
+   "loadGenLoad1PerCore": 0.422607421875,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  },
+  {
+   "label": "one-50",
+   "n": 50,
+   "rooms": 1,
+   "ws": "http://localhost:3301",
+   "botSummary": {
+    "runId": "bots-mshvqsnf",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 50,
+    "durationS": 120,
+    "steadySamples": 17658,
+    "driftMs": {
+     "p50": 57.513225970808435,
+     "p95": 140.3467202945876,
+     "p99": 263.2686366369921
+    },
+    "slopeMsPerMin": -0.7964714237687076,
+    "thetaErrorP95Ms": 2.8409423828125,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 0,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b1": {
+     "lagP99MaxMs": 19.824639,
+     "cpuCoresAvg": 0.0679063054507286,
+     "rssMaxMb": 165.326848,
+     "clientsMax": 50
+    }
+   },
+   "loadGenLoad1PerCore": 0.282861328125,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  },
+  {
+   "label": "three-50",
+   "n": 50,
+   "rooms": 1,
+   "ws": "http://localhost:3300",
+   "botSummary": {
+    "runId": "bots-mshvteq0",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 50,
+    "durationS": 120,
+    "steadySamples": 17661,
+    "driftMs": {
+     "p50": 54.75206643717456,
+     "p95": 140.3676136166041,
+     "p99": 261.86120037811554
+    },
+    "slopeMsPerMin": -1.4636513106324855,
+    "thetaErrorP95Ms": 2.9412841796875,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 396,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b3": {
+     "lagP99MaxMs": 16.596991,
+     "cpuCoresAvg": 0.02781165239412218,
+     "rssMaxMb": 147.402752,
+     "clientsMax": 17
+    },
+    "b2": {
+     "lagP99MaxMs": 16.580607,
+     "cpuCoresAvg": 0.02919838559194962,
+     "rssMaxMb": 147.80416,
+     "clientsMax": 16
+    },
+    "b1": {
+     "lagP99MaxMs": 22.069247,
+     "cpuCoresAvg": 0.024776898470560797,
+     "rssMaxMb": 155.746304,
+     "clientsMax": 17
+    }
+   },
+   "loadGenLoad1PerCore": 0.3169921875,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  },
+  {
+   "label": "one-100",
+   "n": 100,
+   "rooms": 1,
+   "ws": "http://localhost:3301",
+   "botSummary": {
+    "runId": "bots-mshvw0cx",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 100,
+    "durationS": 120,
+    "steadySamples": 35383,
+    "driftMs": {
+     "p50": 69.98253373637908,
+     "p95": 148.7440512104854,
+     "p99": 330.3635880757625
+    },
+    "slopeMsPerMin": -7.053293868852961,
+    "thetaErrorP95Ms": 3.4814453125,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 0,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b1": {
+     "lagP99MaxMs": 32.325631,
+     "cpuCoresAvg": 0.14431183718353505,
+     "rssMaxMb": 189.005824,
+     "clientsMax": 100
+    }
+   },
+   "loadGenLoad1PerCore": 0.28779296875,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  },
+  {
+   "label": "three-100",
+   "n": 100,
+   "rooms": 1,
+   "ws": "http://localhost:3300",
+   "botSummary": {
+    "runId": "bots-mshvyns4",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 100,
+    "durationS": 120,
+    "steadySamples": 35273,
+    "driftMs": {
+     "p50": 67.95184031210866,
+     "p95": 151.0830842954647,
+     "p99": 331.38531679696825
+    },
+    "slopeMsPerMin": -3.2475997691904013,
+    "thetaErrorP95Ms": 2.9583740234375,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 670,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b3": {
+     "lagP99MaxMs": 17.416191,
+     "cpuCoresAvg": 0.03910108222042638,
+     "rssMaxMb": 162.533376,
+     "clientsMax": 33
+    },
+    "b2": {
+     "lagP99MaxMs": 16.637951,
+     "cpuCoresAvg": 0.046220942923078184,
+     "rssMaxMb": 161.398784,
+     "clientsMax": 34
+    },
+    "b1": {
+     "lagP99MaxMs": 22.757375,
+     "cpuCoresAvg": 0.047625871649823834,
+     "rssMaxMb": 189.566976,
+     "clientsMax": 33
+    }
+   },
+   "loadGenLoad1PerCore": 0.2833984375,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  },
+  {
+   "label": "one-250",
+   "n": 250,
+   "rooms": 1,
+   "ws": "http://localhost:3301",
+   "botSummary": {
+    "runId": "bots-mshw1a1n",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 250,
+    "durationS": 120,
+    "steadySamples": 88414,
+    "driftMs": {
+     "p50": 63.376172019616206,
+     "p95": 158.41566550773223,
+     "p99": 339.7345542023231
+    },
+    "slopeMsPerMin": -4.318054156533435,
+    "thetaErrorP95Ms": 6.80126953125,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 0,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b1": {
+     "lagP99MaxMs": 42.336255,
+     "cpuCoresAvg": 0.4852944197956156,
+     "rssMaxMb": 232.603648,
+     "clientsMax": 250
+    }
+   },
+   "loadGenLoad1PerCore": 0.28994140625,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  },
+  {
+   "label": "three-250",
+   "n": 250,
+   "rooms": 1,
+   "ws": "http://localhost:3300",
+   "botSummary": {
+    "runId": "bots-mshw44u0",
+    "controller": "reactive",
+    "plane": "node",
+    "n": 250,
+    "durationS": 120,
+    "steadySamples": 88421,
+    "driftMs": {
+     "p50": 69.45883806361053,
+     "p95": 158.46545333801032,
+     "p99": 339.8923829676619
+    },
+    "slopeMsPerMin": -4.257326644801651,
+    "thetaErrorP95Ms": 3.3944091796875,
+    "seqGaps": 0,
+    "seqReorders": 0,
+    "seqDuplicates": 1668,
+    "reconnects": 0,
+    "rejoinFailures": 0,
+    "handlerErrors": 0,
+    "rejectedControls": 0
+   },
+   "servers": {
+    "b3": {
+     "lagP99MaxMs": 21.118975000000002,
+     "cpuCoresAvg": 0.09692836236265054,
+     "rssMaxMb": 190.078976,
+     "clientsMax": 82
+    },
+    "b2": {
+     "lagP99MaxMs": 22.003711,
+     "cpuCoresAvg": 0.10503834588871294,
+     "rssMaxMb": 188.424192,
+     "clientsMax": 84
+    },
+    "b1": {
+     "lagP99MaxMs": 65.24108700000001,
+     "cpuCoresAvg": 0.15896643635142246,
+     "rssMaxMb": 205.561856,
+     "clientsMax": 84
+    }
+   },
+   "loadGenLoad1PerCore": 0.291748046875,
+   "loadGenSelfSkewed": false,
+   "sloDriftOk": true,
+   "sloLagOk": true,
+   "error": null
+  }
+ ],
+ "note": "size-10 cells are from a re-run minutes later against the warmed lab: the first pass ran ~2 minutes after compose-up and three-10 failed at bot REGISTRATION with a 502 from nginx (backends still booting) before any measurement began; one-10 was re-run alongside it so the size-10 row is a single-conditions pair."
+}
