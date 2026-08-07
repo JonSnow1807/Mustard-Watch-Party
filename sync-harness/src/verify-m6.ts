@@ -56,8 +56,24 @@ function connect(base: string, user: User): Promise<Socket> {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 500,
     });
-    s.once('connect', () => resolve(s));
-    s.once('connect_error', reject);
+    // Model the real client: individual connect attempts may fail (the load
+    // balancer can hand the first attempt to a just-killed upstream) and
+    // reconnection retries through. Rejecting on the FIRST connect_error
+    // contradicted the reconnection config right above, and crashed the
+    // kill -9 check on CI when nginx stalled on the dead upstream. Only an
+    // overall deadline is fatal.
+    const deadline = setTimeout(() => {
+      s.disconnect();
+      reject(new Error(`connect deadline (60s) to ${base}`));
+    }, 60_000);
+    s.on('connect_error', (e: Error) => {
+      console.log(`  (connect attempt to ${base} failed: ${e.message} - retrying)`);
+    });
+    s.once('connect', () => {
+      clearTimeout(deadline);
+      s.off('connect_error');
+      resolve(s);
+    });
   });
 }
 
