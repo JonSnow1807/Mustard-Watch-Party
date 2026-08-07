@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSocket } from '../contexts/SocketContext';
 import styled from '@emotion/styled';
 import { toast } from 'react-hot-toast';
@@ -7,11 +7,12 @@ import {
   type EngineAdapter,
   type EngineStatus,
 } from '../sync/SyncEngine';
-import { YouTubeAdapter } from '../sync/YouTubeAdapter';
-import { Html5Adapter } from '../sync/Html5Adapter';
-import { AudioTruthProbe } from '../sync/audio-truth';
+import { classifyMediaSource } from '../shared/media-source';
 import { SYNC_EVENTS } from '../shared/sync-protocol';
 import { SyncHud } from './SyncHud';
+import { FailureCard } from './player/FailureCard';
+import { YouTubeMount } from './player/YouTubeMount';
+import { Html5Mount } from './player/Html5Mount';
 
 const PlayerContainer = styled.div`
   width: 100%;
@@ -29,14 +30,6 @@ const VideoWrapper = styled.div`
   padding-bottom: 56.25%;
   background: #000;
   overflow: hidden;
-`;
-
-const PlayerDiv = styled.div`
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
 `;
 
 const GestureChip = styled.button`
@@ -280,6 +273,14 @@ const EMPTY_STATUS: EngineStatus = {
   seeksIssued: 0,
 };
 
+/**
+ * The player SHELL: engine lifecycle, controls, HUD, failure card. Which
+ * player actually renders is decided by classifyMediaSource - the same
+ * classification the backend validates against, so a URL the API admitted
+ * always lands on a mount (or the explicit not-yet-supported card), never
+ * on undefined behavior. Mounts report an EngineAdapter up when drivable;
+ * adapter presence is the shell's readiness.
+ */
 export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   videoUrl,
   roomCode,
@@ -287,8 +288,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   allowGuestControl = false
 }) => {
   const { socket, connected } = useSocket();
-  const [videoId, setVideoId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   const [syncEnabled, setSyncEnabled] = useState(true);
   const syncEnabledRef = useRef(true);
   const [status, setStatus] = useState<EngineStatus>(EMPTY_STATUS);
@@ -296,33 +297,14 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     () => new URLSearchParams(window.location.search).get('debug') === '1',
   );
 
-  const playerRef = useRef<YTPlayer | null>(null);
   const engineRef = useRef<SyncEngine | null>(null);
   const adapterRef = useRef<EngineAdapter | null>(null);
-  const mediaRef = useRef<HTMLVideoElement | null>(null);
-  const probeRef = useRef<AudioTruthProbe | null>(null);
-  // a same-origin media file drives the HTML5 path: the sync core is
-  // player-agnostic, and only a same-origin element can be audio-tapped
-  const isDirectMedia = /^\/?media\/.+\.(mp4|webm|ogg)$/i.test(videoUrl ?? '');
   const canControl = isHost || allowGuestControl;
 
-  // Extract YouTube video ID
-  const getYouTubeId = useCallback((url: string): string | null => {
-    if (!url) return null;
+  const source = useMemo(() => classifyMediaSource(videoUrl), [videoUrl]);
 
-    const patterns = [
-      /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
-      /(?:https?:\/\/)?(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]{11})/,
-      /(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
-      /^([a-zA-Z0-9_-]{11})$/
-    ];
-
-    for (const pattern of patterns) {
-      const match = url.match(pattern);
-      if (match?.[1]) return match[1];
-    }
-    return null;
-  }, []);
+  // a failure belongs to one attempted source; the next video starts clean
+  useEffect(() => setFailure(null), [videoUrl]);
 
   // Engine lifecycle: starts with the socket (before the player is ready, so
   // no room-joined timeline is ever missed) and adopts the adapter later.
@@ -353,8 +335,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       unsubscribe();
       engine.dispose();
       engineRef.current = null;
-      // adapterRef is owned by the player effect below - clearing it here
-      // orphaned a live adapter (and its poll timer) on every reconnect
+      // adapterRef is owned by the active mount - clearing it here orphaned
+      // a live adapter (and its poll timer) on every reconnect
     };
   }, [socket, roomCode]);
 
@@ -367,90 +349,16 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // HTML5 bootstrap (audio-truth + player-agnostic proof)
-  useEffect(() => {
-    if (!isDirectMedia) return;
-    const el = mediaRef.current;
-    if (!el) return;
-    const adapter = new Html5Adapter(el);
+  // Mount callbacks: stable so mounts don't remount on shell re-renders
+  const handleAdapter = useCallback((adapter: EngineAdapter | null) => {
     adapterRef.current = adapter;
-    engineRef.current?.attachAdapter(adapter);
-    setIsReady(true);
-    const probe = new AudioTruthProbe(el);
-    probeRef.current = probe;
-    void probe.start();
-    return () => {
-      probe.stop();
-      probeRef.current = null;
-      adapterRef.current = null;
-      setIsReady(false);
-    };
-  }, [isDirectMedia, videoUrl]);
+    if (adapter) engineRef.current?.attachAdapter(adapter);
+    setIsReady(adapter !== null);
+  }, []);
 
-  // Player bootstrap
-  useEffect(() => {
-    if (isDirectMedia) return;
-    const id = getYouTubeId(videoUrl);
-    setVideoId(id);
-    if (!id) return;
-
-    let cancelled = false;
-    const initializePlayer = (vid: string) => {
-      if (cancelled) return;
-      playerRef.current = new window.YT.Player('youtube-player', {
-        videoId: vid,
-        playerVars: {
-          autoplay: 0,
-          controls: 0,
-          disablekb: 1,
-          modestbranding: 1,
-          rel: 0,
-          iv_load_policy: 3,
-          enablejsapi: 1,
-          origin: window.location.origin,
-          playsinline: 1,
-        },
-        events: {
-          onReady: (event) => {
-            playerRef.current = event.target;
-            setIsReady(true);
-            const adapter = new YouTubeAdapter(event.target);
-            adapterRef.current = adapter;
-            engineRef.current?.attachAdapter(adapter);
-          },
-        },
-      });
-    };
-
-    const API_SRC = 'https://www.youtube.com/iframe_api';
-    const onApiReady = () => initializePlayer(id);
-    if (window.YT?.Player) {
-      initializePlayer(id);
-    } else {
-      // the API script is global: appending it twice re-runs it and races
-      if (!document.querySelector(`script[src="${API_SRC}"]`)) {
-        const tag = document.createElement('script');
-        tag.src = API_SRC;
-        document.head.appendChild(tag);
-      }
-      window.onYouTubeIframeAPIReady = onApiReady;
-    }
-
-    return () => {
-      // a late API load would otherwise build an orphan player (and an
-      // undisposed adapter poll timer) after this effect is gone
-      cancelled = true;
-      if (window.onYouTubeIframeAPIReady === onApiReady) {
-        window.onYouTubeIframeAPIReady = undefined;
-      }
-      adapterRef.current?.dispose();
-      adapterRef.current = null;
-      playerRef.current?.destroy?.();
-      setIsReady(false);
-    };
-    // intentional: the player re-initializes only when the video changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoUrl]);
+  const handleFailure = useCallback((reason: string) => {
+    setFailure(reason);
+  }, []);
 
   // ---- gesture-only intents (wait-for-broadcast: the player is never
   // touched here; everyone converges from the sync:timeline broadcast) ----
@@ -502,24 +410,85 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (isDirectMedia) {
-    return (
-      <PlayerContainer>
-        <VideoWrapper>
-          <video
-            ref={mediaRef}
-            src={videoUrl}
-            playsInline
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-            }}
+  // What fills the 16:9 area. null mount = nothing playable = no controls.
+  let mount: React.ReactNode = null;
+  let card: React.ReactNode = null;
+  if (failure) {
+    card = (
+      <FailureCard
+        title="Couldn't play this video"
+        detail={failure}
+        url={videoUrl}
+      />
+    );
+  } else {
+    switch (source.kind) {
+      case 'youtube':
+        // key: a new video id must tear the old player down, not mutate it
+        mount = (
+          <YouTubeMount
+            key={source.videoId}
+            videoId={source.videoId}
+            onAdapter={handleAdapter}
+            onFailure={handleFailure}
           />
-          {showHud && <SyncHud status={status} />}
-        </VideoWrapper>
+        );
+        break;
+      case 'hls': // plain <video> until hls.js lands: Safari plays it
+      case 'file': // natively, everywhere else fails into the card
+        mount = (
+          <Html5Mount
+            key={source.url}
+            url={source.url}
+            onAdapter={handleAdapter}
+            onFailure={handleFailure}
+          />
+        );
+        break;
+      case 'vimeo':
+        card = (
+          <FailureCard
+            title="Vimeo isn't supported yet"
+            detail="Vimeo playback is on the roadmap; pick a YouTube or direct video URL for now."
+            url={videoUrl}
+          />
+        );
+        break;
+      case 'none':
+        card =
+          source.reason === 'empty' ? (
+            <FailureCard
+              title="No video yet"
+              detail="Add a video URL in the room settings to start watching together."
+            />
+          ) : (
+            <FailureCard
+              title="This video URL can't be played"
+              detail="It isn't an http(s) video link a player could fetch."
+              url={videoUrl}
+            />
+          );
+        break;
+    }
+  }
+
+  const shownTime = status.roomPlaying
+    ? status.projectedS
+    : status.timeline?.mediaTime ?? 0;
+
+  return (
+    <PlayerContainer>
+      <VideoWrapper>
+        {mount ?? card}
+        {mount && status.needsGesture && (
+          <GestureChip onClick={() => engineRef.current?.resumeFromGesture()}>
+            ▶ Click to join playback
+          </GestureChip>
+        )}
+        {showHud && <SyncHud status={status} />}
+      </VideoWrapper>
+
+      {mount && (
         <Controls>
           <ControlRow>
             <PlayButton
@@ -531,6 +500,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
               {status.roomPlaying ? '⏸' : '▶'}
               {status.roomPlaying ? 'Pause' : 'Play'}
             </PlayButton>
+
             <ProgressContainer>
               <ProgressBar
                 data-testid="progress-bar"
@@ -540,109 +510,41 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
                 <ProgressFill
                   progress={
                     status.durationS > 0
-                      ? Math.min(
-                          100,
-                          ((status.roomPlaying
-                            ? status.projectedS
-                            : (status.timeline?.mediaTime ?? 0)) /
-                            status.durationS) *
-                            100,
-                        )
+                      ? Math.min(100, (shownTime / status.durationS) * 100)
                       : 0
                   }
                 />
               </ProgressBar>
             </ProgressContainer>
+
+            <TimeDisplay>
+              {formatTime(shownTime)} / {formatTime(status.durationS)}
+            </TimeDisplay>
           </ControlRow>
+
+          <StatusRow>
+            <StatusGroup>
+              <StatusItem type={connected ? 'success' : 'error'}>
+                <StatusDot color={connected ? '#6366f1' : '#f87171'} />
+                {connected ? 'Connected' : 'Disconnected'}
+              </StatusItem>
+
+              <CollaborativeIndicator enabled={allowGuestControl}>
+                {allowGuestControl ? '👥 Collaborative' : '👑 Host Only'}
+              </CollaborativeIndicator>
+            </StatusGroup>
+
+            <StatusGroup>
+              <StatusItem type="info">
+                {Number.isFinite(status.rttMs) ? `${Math.round(status.rttMs)}ms` : '—'}
+              </StatusItem>
+              <ControlButton active={syncEnabled} onClick={handleSyncToggle}>
+                🔗 Sync {syncEnabled ? 'ON' : 'OFF'}
+              </ControlButton>
+            </StatusGroup>
+          </StatusRow>
         </Controls>
-      </PlayerContainer>
-    );
-  }
-
-  if (!videoId) {
-    return (
-      <PlayerContainer>
-        <div style={{ padding: '60px', textAlign: 'center', color: '#2d3748' }}>
-          <h3>No Video Selected</h3>
-          <p style={{ color: '#718096' }}>
-            Please provide a valid YouTube URL
-          </p>
-        </div>
-      </PlayerContainer>
-    );
-  }
-
-  const shownTime = status.roomPlaying
-    ? status.projectedS
-    : status.timeline?.mediaTime ?? 0;
-
-  return (
-    <PlayerContainer>
-      <VideoWrapper>
-        <PlayerDiv id="youtube-player" />
-        {status.needsGesture && (
-          <GestureChip onClick={() => engineRef.current?.resumeFromGesture()}>
-            ▶ Click to join playback
-          </GestureChip>
-        )}
-        {showHud && <SyncHud status={status} />}
-      </VideoWrapper>
-
-      <Controls>
-        <ControlRow>
-          <PlayButton
-            data-testid="play-button"
-            onClick={handlePlayPause}
-            canControl={canControl}
-            disabled={!isReady}
-          >
-            {status.roomPlaying ? '⏸' : '▶'}
-            {status.roomPlaying ? 'Pause' : 'Play'}
-          </PlayButton>
-
-          <ProgressContainer>
-            <ProgressBar
-              data-testid="progress-bar"
-              onClick={handleProgressClick}
-              canControl={canControl}
-            >
-              <ProgressFill
-                progress={
-                  status.durationS > 0
-                    ? Math.min(100, (shownTime / status.durationS) * 100)
-                    : 0
-                }
-              />
-            </ProgressBar>
-          </ProgressContainer>
-
-          <TimeDisplay>
-            {formatTime(shownTime)} / {formatTime(status.durationS)}
-          </TimeDisplay>
-        </ControlRow>
-
-        <StatusRow>
-          <StatusGroup>
-            <StatusItem type={connected ? 'success' : 'error'}>
-              <StatusDot color={connected ? '#6366f1' : '#f87171'} />
-              {connected ? 'Connected' : 'Disconnected'}
-            </StatusItem>
-
-            <CollaborativeIndicator enabled={allowGuestControl}>
-              {allowGuestControl ? '👥 Collaborative' : '👑 Host Only'}
-            </CollaborativeIndicator>
-          </StatusGroup>
-
-          <StatusGroup>
-            <StatusItem type="info">
-              {Number.isFinite(status.rttMs) ? `${Math.round(status.rttMs)}ms` : '—'}
-            </StatusItem>
-            <ControlButton active={syncEnabled} onClick={handleSyncToggle}>
-              🔗 Sync {syncEnabled ? 'ON' : 'OFF'}
-            </ControlButton>
-          </StatusGroup>
-        </StatusRow>
-      </Controls>
+      )}
     </PlayerContainer>
   );
 };
