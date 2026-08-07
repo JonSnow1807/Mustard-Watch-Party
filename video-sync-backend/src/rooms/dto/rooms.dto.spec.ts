@@ -77,6 +77,12 @@ describe('CreateRoomDto through the production pipe', () => {
     ['whitespace-only name (empty after trim)', { ...base, name: '   ' }],
     ['missing userId', { name: 'movie night' }],
     ['non-string tag', { ...base, tags: [42] }],
+    // null is NOT absent: @IsOptional would wave these through to Prisma
+    // (a 500 on the non-nullable column); SkipIfAbsent makes them a 400
+    ['null name', { ...base, name: null }],
+    ['null videoUrl (only "" clears)', { ...base, videoUrl: null }],
+    ['null isPublic', { ...base, isPublic: null }],
+    ['null tags', { ...base, tags: null }],
   ])('refuses %s', async (_name, body) => {
     await expect(asCreate(body)).rejects.toThrow(BadRequestException);
   });
@@ -103,5 +109,14 @@ describe('UpdateRoomDto through the production pipe', () => {
       BadRequestException,
     );
     await expect(asUpdate({ name: '' })).rejects.toThrow(BadRequestException);
+  });
+
+  it('refuses null fields - null is a value, not an absence', async () => {
+    // name: null would reach Prisma as a non-nullable column write (500);
+    // videoUrl: null would clear the video around the documented '' path
+    await expect(asUpdate({ name: null })).rejects.toThrow(BadRequestException);
+    await expect(asUpdate({ videoUrl: null })).rejects.toThrow(
+      BadRequestException,
+    );
   });
 });

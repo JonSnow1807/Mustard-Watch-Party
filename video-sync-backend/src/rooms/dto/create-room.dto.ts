@@ -4,10 +4,10 @@ import {
   IsArray,
   IsBoolean,
   IsNotEmpty,
-  IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
+import { SkipIfAbsent } from './skip-if-absent.decorator';
 import { IsRoomVideoUrl } from './room-video-url.decorator';
 
 const trim = ({ value }: { value: unknown }) =>
@@ -36,28 +36,28 @@ export class CreateRoomDto {
   // the shared admission rule. Trimmed first - the rule is strict about
   // surrounding whitespace by design, so the DTO owns the trim.
   @Transform(trim)
-  @IsOptional()
+  @SkipIfAbsent()
   @IsRoomVideoUrl()
   videoUrl?: string;
 
-  @IsOptional()
+  @SkipIfAbsent()
   @IsBoolean()
   isPublic?: boolean;
 
   @Transform(trim)
-  @IsOptional()
+  @SkipIfAbsent()
   @IsString()
   @MaxLength(500)
   description?: string;
 
-  @IsOptional()
+  @SkipIfAbsent()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
   @MaxLength(40, { each: true })
   tags?: string[];
 
-  @IsOptional()
+  @SkipIfAbsent()
   @IsBoolean()
   allowGuestControl?: boolean;
 }
