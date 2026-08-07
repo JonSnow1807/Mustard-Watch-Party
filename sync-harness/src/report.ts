@@ -11,6 +11,14 @@ import {
 
 const fmtMs = (s: number): string => (Number.isFinite(s) ? `${Math.round(s * 1000)}ms` : 'n/a');
 
+// Same guard for values already in milliseconds. percentile() over an empty
+// array is NaN, which .toFixed renders as "NaN" in the report and JSON
+// serializes as null - a run with too few playing samples to measure the
+// noise floor must SAY so, not print garbage.
+const fmtRawMs = (v: number, digits: number): string =>
+  Number.isFinite(v) ? `${v.toFixed(digits)}ms` : 'n/a';
+
+
 export async function writeRun(
   dir: string,
   meta: RunMeta,
@@ -100,8 +108,8 @@ ${stats.convergenceAfterEventsS
 
 ## getCurrentTime noise floor
 
-Plateau length P50/P95: ${stats.noiseFloor.plateauMsP50.toFixed(0)}ms / ${stats.noiseFloor.plateauMsP95.toFixed(0)}ms.
-Per-50ms increment P50/P95: ${(stats.noiseFloor.incrementP50 * 1000).toFixed(1)}ms / ${(stats.noiseFloor.incrementP95 * 1000).toFixed(1)}ms.
+Plateau length P50/P95: ${fmtRawMs(stats.noiseFloor.plateauMsP50, 0)} / ${fmtRawMs(stats.noiseFloor.plateauMsP95, 0)}.
+Per-50ms increment P50/P95: ${fmtRawMs(stats.noiseFloor.incrementP50 * 1000, 1)} / ${fmtRawMs(stats.noiseFloor.incrementP95 * 1000, 1)}.
 
 ![CDF](charts/drift-cdf.svg)
 ![Time series](charts/drift-timeseries.svg)

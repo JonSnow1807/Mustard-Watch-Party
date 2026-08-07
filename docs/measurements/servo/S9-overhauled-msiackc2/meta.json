@@ -1,0 +1,21 @@
+{
+  "runId": "S9-overhauled-msiackc2",
+  "scenario": {
+    "id": "S9",
+    "title": "40ms with 25% segments sent ahead (netem reorder) — HoL blocking",
+    "must": false,
+    "impairment": {
+      "tool": "netem",
+      "netemSpec": "delay 40ms reorder 25% 50%"
+    },
+    "durationS": 240
+  },
+  "gitSha": "2e4034c0b74c43044a0a68e2aefc564a2200e5f1",
+  "startedAt": "2026-08-07T01:48:09.635Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3102",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled",
+  "notes": "controller=predictive"
+}

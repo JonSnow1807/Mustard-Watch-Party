@@ -292,12 +292,22 @@ See `docs/measurements/` for the run directories behind every number.
 | S3 — 50±30ms jitter each way | aborted† | 68 / 118ms | **23 / 79ms** |
 | S5 — 25ms + 5% packet loss | aborted† | 60 / 97ms | **11 / 29ms** |
 | S6 — asymmetric 120/20ms | aborted† | 47 / 120ms | **10 / 86ms** |
+| S8 — 25ms + 5% TCP-segment dup‡ | not measured | 22 / 30ms | 11 / 139ms |
+| S9 — 40ms + 25% reordered-ahead‡ | not measured | 72 / 191ms | **28 / 71ms** |
 
 *Steady-state pairwise drift P50 / P95, 3 real Chrome clients, deterministic
 240s scenario, identical hardware. "Total failure" = the shipped engine's
 followers never started playing at all, recorded as a committed exhibit run.
 Runs: [`docs/measurements/`](docs/measurements/) — baseline, after
 (reactive), servo (predictive).*
+
+*‡ TCP-pathology scenarios (netem duplicate/reorder act on TCP segments,
+which TCP dedupes and re-orders itself — see the harness README): they
+stress dup-ACK processing and head-of-line blocking, not app-level
+duplication, which the injection harness proves separately. Single runs
+each, two honest wrinkles stated rather than averaged: S8's servo P95
+(139ms) is worse than the reactive arm's (30ms), and S9's reactive seek
+convergence took 17s where the servo took 1s.*
 
 *† Under S3/S5/S6 the baseline engine failed the player-health gate on both
 attempts — the same signature as S2 — so the run aborted before writing a
