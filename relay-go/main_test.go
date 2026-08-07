@@ -39,6 +39,7 @@ func TestParseControlBoundaries(t *testing.T) {
 		{"bad intent", frame(9, 42, "r1", nil), false, ""},
 		{"negative mediaTime", frame(0, -1, "r1", nil), false, ""},
 		{"NaN mediaTime", frame(0, math.NaN(), "r1", nil), false, ""},
+		{"+Inf mediaTime", frame(0, math.Inf(1), "r1", nil), false, ""},
 		{"short frame", []byte{0x03, 0}, false, ""},
 	}
 	for _, c := range cases {
