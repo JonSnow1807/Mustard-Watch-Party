@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/api';
 import { toast } from 'react-hot-toast';
 import styled from '@emotion/styled';
+import { isAcceptableVideoUrl } from '../shared/media-source';
 
 const Container = styled.div`
   max-width: 700px;
@@ -304,11 +305,19 @@ export const CreateRoomPage: React.FC = () => {
       return;
     }
 
+    // the same shared admission rule the backend DTO enforces - refused
+    // here it is instant feedback instead of a 400
+    const videoUrl = formData.videoUrl.trim();
+    if (videoUrl && !isAcceptableVideoUrl(videoUrl)) {
+      toast.error("That URL can't be played - use a video link or YouTube id");
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await apiService.createRoom({
         name: formData.name,
-        videoUrl: formData.videoUrl || undefined,
+        videoUrl: videoUrl || undefined,
         userId: user.id,
         isPublic: formData.isPublic,
         description: formData.isPublic ? formData.description : undefined,

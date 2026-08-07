@@ -57,6 +57,17 @@ export function checkTransition(prev: LogEntry, next: LogEntry): string | null {
   if (next.stampedAt < prev.stampedAt) {
     return `stampedAt regressed ${prev.stampedAt} -> ${next.stampedAt}`;
   }
+  if (next.reason === 'set-video') {
+    // the ONE transition allowed to change videoId - and it must land in
+    // the canonical fresh state: paused at 0 (a new video never autoplays)
+    if (next.isPlaying) {
+      return 'set-video committed a playing state';
+    }
+    if (differs(next.mediaTime, 0)) {
+      return `set-video committed mediaTime ${next.mediaTime}, not 0`;
+    }
+    return null;
+  }
   if (next.videoId !== prev.videoId) {
     return `videoId changed mid-epoch (${prev.videoId} -> ${next.videoId})`;
   }

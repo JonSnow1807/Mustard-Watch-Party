@@ -82,6 +82,8 @@ interface RedisWithActor extends Redis {
     ttlMs: string,
     cmdId: string,
     dedupTtlMs: string,
+    videoFenced: string,
+    forVideoId: string,
   ): Promise<string | null>;
 }
 
@@ -97,6 +99,10 @@ export interface ForwardedControl {
    *  be answered to that socket alone (socket-id rooms span instances via
    *  the adapter) instead of broadcast to the room */
   originSocketId?: string;
+  /** set-video payload: the room's next videoId (null clears it) */
+  videoId?: string | null;
+  /** video fence for position commands; undefined = unfenced */
+  forVideoId?: string | null;
 }
 
 @Injectable()
@@ -267,7 +273,8 @@ export class ActorRoomStateStore
     fence: string,
     next: Omit<Timeline, 'seq'>,
     cmdId?: string,
-  ): Promise<{ timeline: Timeline; dup: boolean } | null> {
+    forVideoId?: string | null,
+  ): Promise<{ timeline: Timeline; dup: boolean; fenced: boolean } | null> {
     const raw = await this.kv.actorCommit(
       this.leaseKey(roomCode),
       this.timelineKey(roomCode),
@@ -287,6 +294,9 @@ export class ActorRoomStateStore
       String(KEY_TTL_MS),
       cmdId ?? '',
       String(CMD_DEDUP_TTL_MS),
+      // '' is the null-videoId encoding, so presence needs its own flag
+      forVideoId !== undefined ? '1' : '0',
+      forVideoId ?? '',
     );
     if (!raw) {
       // fenced out: this instance is a zombie for this room
@@ -296,14 +306,17 @@ export class ActorRoomStateStore
     }
     const parsed = JSON.parse(raw) as Timeline & {
       dup?: true;
+      fenced?: true;
       videoId?: string;
     };
     const committed: Timeline = { ...parsed, videoId: parsed.videoId ?? null };
     const dup = parsed.dup === true;
+    const fenced = parsed.fenced === true;
     delete (committed as Timeline & { dup?: true }).dup;
+    delete (committed as Timeline & { fenced?: true }).fenced;
     const entry = this.owned.get(roomCode);
     if (entry) entry.timeline = committed;
-    return { timeline: committed, dup };
+    return { timeline: committed, dup, fenced };
   }
 
   /**
@@ -333,7 +346,12 @@ export class ActorRoomStateStore
     mediaTime: number,
     serverNow: number,
     by: string,
-    opts?: { cmdId?: string; originSocketId?: string },
+    opts?: {
+      cmdId?: string;
+      originSocketId?: string;
+      videoId?: string | null;
+      forVideoId?: string | null;
+    },
   ): Promise<ApplyOutcome> {
     return this.enqueue(roomCode, () =>
       this.applyControlSerial(roomCode, intent, mediaTime, serverNow, by, opts),
@@ -346,7 +364,12 @@ export class ActorRoomStateStore
     mediaTime: number,
     serverNow: number,
     by: string,
-    opts?: { cmdId?: string; originSocketId?: string },
+    opts?: {
+      cmdId?: string;
+      originSocketId?: string;
+      videoId?: string | null;
+      forVideoId?: string | null;
+    },
   ): Promise<ApplyOutcome> {
     const cmdId = opts?.cmdId;
     const originSocketId = opts?.originSocketId;
@@ -364,6 +387,8 @@ export class ActorRoomStateStore
             by,
             cmdId,
             originSocketId,
+            videoId: opts?.videoId,
+            forVideoId: opts?.forVideoId,
           }),
         );
         if (delivered > 0) return { kind: 'forwarded' };
@@ -395,6 +420,8 @@ export class ActorRoomStateStore
               by,
               cmdId,
               originSocketId,
+              videoId: opts?.videoId,
+              forVideoId: opts?.forVideoId,
             }),
           );
           return second > 0 ? { kind: 'forwarded' } : { kind: 'missing' };
@@ -413,13 +440,30 @@ export class ActorRoomStateStore
     }
 
     // serialize locally against the in-memory timeline, then commit fenced
-    const next = applyControl(entry.timeline, intent, mediaTime, serverNow, by);
-    const committed = await this.commit(roomCode, entry.fence, next, cmdId);
+    const next = applyControl(
+      entry.timeline,
+      intent,
+      mediaTime,
+      serverNow,
+      by,
+      opts?.videoId,
+    );
+    const committed = await this.commit(
+      roomCode,
+      entry.fence,
+      next,
+      cmdId,
+      opts?.forVideoId,
+    );
     if (committed?.dup) {
       // cmdId already applied (possibly by the PREVIOUS owner before a
       // handoff - the record lives in Redis, not owner memory, precisely so
       // it survives that): answer with current state, commit nothing
       return { kind: 'duplicate', timeline: committed.timeline };
+    }
+    if (committed?.fenced) {
+      // observed video no longer current: refused, nothing recorded
+      return { kind: 'fenced', timeline: committed.timeline };
     }
     if (committed) return { kind: 'committed', timeline: committed.timeline };
     // Fenced out: another instance took ownership while we held stale
@@ -433,10 +477,12 @@ export class ActorRoomStateStore
       const retry = await this.commit(
         roomCode,
         nowLease.epoch,
-        applyControl(fresh, intent, mediaTime, serverNow, by),
+        applyControl(fresh, intent, mediaTime, serverNow, by, opts?.videoId),
         cmdId,
+        opts?.forVideoId,
       );
       if (retry?.dup) return { kind: 'duplicate', timeline: retry.timeline };
+      if (retry?.fenced) return { kind: 'fenced', timeline: retry.timeline };
       return retry
         ? { kind: 'committed', timeline: retry.timeline }
         : { kind: 'missing' };
@@ -450,6 +496,8 @@ export class ActorRoomStateStore
         by,
         cmdId,
         originSocketId,
+        videoId: opts?.videoId,
+        forVideoId: opts?.forVideoId,
       }),
     );
     return delivered > 0 ? { kind: 'forwarded' } : { kind: 'missing' };

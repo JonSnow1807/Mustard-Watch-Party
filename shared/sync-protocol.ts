@@ -29,7 +29,14 @@ export interface Timeline {
   stampedAt: number;
   /** fixed at 1 in v1; field reserved so the protocol never changes shape */
   rate: 1;
-  reason: 'play' | 'pause' | 'seek' | 'join' | 'snapshot' | 'succession';
+  reason:
+    | 'play'
+    | 'pause'
+    | 'seek'
+    | 'set-video'
+    | 'join'
+    | 'snapshot'
+    | 'succession';
   /** userId of the commander, when reason is a control intent */
   by?: string;
 }
@@ -46,11 +53,12 @@ export interface ClockPong {
   t2: number;
 }
 
-export type ControlIntent = 'play' | 'pause' | 'seek';
+export type ControlIntent = 'play' | 'pause' | 'seek' | 'set-video';
 
 /**
  * C→S control. mediaTime is the position the commander intends:
  * play = start here, pause = freeze at the frame I saw (P4), seek = go here.
+ * set-video ignores mediaTime (the new video always starts paused at 0).
  */
 export interface SyncControl {
   v: 1;
@@ -65,6 +73,21 @@ export interface SyncControl {
    * behavior. Deduped atomically inside the same Lua script as the commit.
    */
   cmdId?: string;
+  /**
+   * set-video payload: the room's next videoUrl ('' clears it). Validated
+   * at the gateway with the same shared admission rule as the REST DTOs.
+   */
+  videoUrl?: string;
+  /**
+   * Fence for position commands (play/pause/seek): the Timeline.videoId
+   * the commander had applied when it minted this command. The store
+   * refuses the command if the room's video has changed since - a seek
+   * aimed at video A must never yank video B (formal/SyncSetVideo.tla,
+   * the nofence config is the counterexample). Optional for wire compat:
+   * a command without it is unfenced, exactly the old behavior. Not sent
+   * on set-video - switching is last-writer-wins by design.
+   */
+  forVideoId?: string | null;
 }
 
 /** S→C error for rejected controls (permission, rate limit, no room). */
@@ -72,7 +95,18 @@ export interface SyncControlRejected {
   v: 1;
   roomCode: string;
   intent: ControlIntent;
-  reason: 'not-controller' | 'rate-limited' | 'room-not-found';
+  /**
+   * stale-video: the command's forVideoId no longer matches the room -
+   * refused, and a targeted sync:timeline re-anchor accompanies this
+   * event, so clients treat it silently (the re-anchor IS the remedy).
+   * invalid-video-url: a set-video whose URL failed the admission rule.
+   */
+  reason:
+    | 'not-controller'
+    | 'rate-limited'
+    | 'room-not-found'
+    | 'stale-video'
+    | 'invalid-video-url';
 }
 
 /** S→room when the active controller changes (P3 succession). */

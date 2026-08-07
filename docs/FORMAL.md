@@ -284,3 +284,55 @@ real implementation obligation this spec makes visible rather than proves:
 command applied by the old owner can be re-applied by the new one. That
 lives with the fencing machinery, and is called out in COORDINATION.md
 rather than silently assumed here.
+
+# set-video: cross-video command fencing
+
+`formal/SyncSetVideo.tla` — the fourth spec, again written **before** the
+implementation it constrains. Changing the room's video is a synced control
+(`set-video`), which creates a hazard none of the other specs cover: a
+position command (play/pause/seek) is minted against *a particular video*,
+and if the room switches while it is in flight, a well-formed, authorized,
+exactly-once-delivered command is still **wrong** — a seek to minute 37 of
+video A yanks everyone to minute 37 of video B.
+
+## What is modeled
+
+Position commands carry the videoId their minter last observed
+(`forVideoId`); set-video commands carry a target video. The channel
+retries and reorders as in the exactly-once spec. The store's apply is one
+atomic step whose INTERNAL ORDER is the design decision under test:
+
+1. dedup lookup — an already-applied id answers "duplicate"
+2. video fence (position commands only) — a stale observed video answers
+   "stale-video"
+3. commit + dedup record
+
+set-video itself is deliberately **unfenced**: it carries no position, and
+a "stale" switch is still exactly what its sender meant — last-writer-wins
+is the right semantic for changing videos.
+
+## Properties and teeth
+
+| config | switch | result |
+|---|---|---|
+| `SyncSetVideo.cfg` (safety) | fenced, correct order | **green**: `TypeOK`, `NoCrossVideoApply`, `AtMostOnce`, `DupAnswerImpliesApplied` — 26,180 states, 7,185 distinct |
+| `SyncSetVideo_live.cfg` (liveness) | fenced | **green**: `EventuallyAnswered` — fencing rejects, never strands |
+| `SyncSetVideo_nofence.cfg` | `FencingOn = FALSE` | **must fail** `NoCrossVideoApply`: the in-flight seek applies to the switched video |
+| `SyncSetVideo_earlyrecord.cfg` | `EarlyRecord = TRUE` | **must fail** `DupAnswerImpliesApplied`: recording the id before the fence check burns the id of a never-applied command; after a switch back, its retry is answered "duplicate" — a claimed apply that never happened |
+
+The earlyrecord config is the reason `apply_control.lua` and
+`actor_commit.lua` split their former `SET NX` into GET → fence → SET
+(race-free because the whole script is one atomic step). A property that is
+deliberately ABSENT: "a fenced command never applies later" is *not* an
+invariant of the design — a retry already in flight when the stale-video
+answer lands may legally apply after a switch back to its observed video;
+the fence matches again, so it is not a cross-video apply.
+
+## Composition with the other specs
+
+Dedup TTL and eviction are not remodeled here — `SyncExactlyOnce.tla` owns
+the `Ttl`-vs-`RetryWindow` relation, and fencing leaves it intact precisely
+because a fenced command records nothing. Instance fencing stays with
+`SyncActor.tla`; the video fence composes with it inside `actor_commit.lua`,
+checked against the STORED timeline rather than the owner's in-memory copy,
+which may trail a handoff.

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import styled from '@emotion/styled';
-import { apiService } from '../services/api';
 import { toast } from 'react-hot-toast';
+import { useSocket } from '../contexts/SocketContext';
+import { isAcceptableVideoUrl } from '../shared/media-source';
+import { sendSetVideo } from '../sync/SyncEngine';
 
 const SettingsContainer = styled.div`
   background: #f5f5f5;
@@ -127,20 +129,31 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
   const [maxUsers, setMaxUsers] = useState(room.maxUsers || 20);
   const [videoUrl, setVideoUrl] = useState(room.videoUrl || '');
   const [loading, setLoading] = useState(false);
+  const { socket } = useSocket();
 
-  const handleUpdateSettings = async () => {
-    setLoading(true);
-    try {
-      await apiService.updateRoom(room.code, {
-        videoUrl,
-      });
-      toast.success('Room settings updated!');
-      if (onUpdate) onUpdate();
-    } catch (error) {
-      toast.error('Failed to update settings');
-    } finally {
-      setLoading(false);
+  const handleUpdateSettings = () => {
+    // Changing the video is a SYNCED CONTROL, not a REST write: everyone in
+    // the room switches together through the sync:timeline broadcast, with
+    // the same exactly-once machinery as play/pause/seek. The server
+    // persists the room row from the committed timeline.
+    const url = videoUrl.trim();
+    if (url !== '' && !isAcceptableVideoUrl(url)) {
+      // the same shared rule the gateway enforces - refused here it is
+      // instant feedback instead of a rejected control
+      toast.error("That URL can't be played - use a video link or YouTube id");
+      return;
     }
+    setLoading(true);
+    if (socket !== null && sendSetVideo(socket, room.code, url)) {
+      // wait-for-broadcast: the player switches when sync:timeline arrives
+      toast.success('Video changed for everyone in the room');
+      if (onUpdate) onUpdate();
+    } else {
+      // dropped, never buffered: a stale reconnect flush must not change
+      // the room's video minutes later
+      toast.error('Not connected - try again in a moment');
+    }
+    setLoading(false);
   };
 
   const handleEndRoom = async () => {

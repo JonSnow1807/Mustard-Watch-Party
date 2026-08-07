@@ -44,8 +44,8 @@ jobs:
           java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncExactlyOnce.cfg SyncExactlyOnce.tla
           java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncExactlyOnce_live.cfg SyncExactlyOnce.tla
           expect_violation() {
-            local cfg="$1" prop="$2" out
-            if out=$(java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config "$cfg" SyncExactlyOnce.tla 2>&1); then
+            local cfg="$1" prop="$2" spec="$3" out
+            if out=$(java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config "$cfg" "$spec" 2>&1); then
               echo "$cfg unexpectedly passed - the spec lost its teeth"; return 1
             fi
             if ! grep -q "Invariant $prop is violated" <<<"$out"; then
@@ -53,9 +53,15 @@ jobs:
             fi
             echo "$cfg: $prop violated as designed"
           }
-          expect_violation SyncExactlyOnce_nodedup.cfg AtMostOnce
-          expect_violation SyncExactlyOnce_earlyevict.cfg AtMostOnce
-          expect_violation SyncExactlyOnce_nosnaplog.cfg ReplayReconstructs
+          expect_violation SyncExactlyOnce_nodedup.cfg AtMostOnce SyncExactlyOnce.tla
+          expect_violation SyncExactlyOnce_earlyevict.cfg AtMostOnce SyncExactlyOnce.tla
+          expect_violation SyncExactlyOnce_nosnaplog.cfg ReplayReconstructs SyncExactlyOnce.tla
+          # set-video fencing: cross-video command application and the
+          # dedup-vs-fence ordering inside the atomic apply
+          java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncSetVideo.cfg SyncSetVideo.tla
+          java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncSetVideo_live.cfg SyncSetVideo.tla
+          expect_violation SyncSetVideo_nofence.cfg NoCrossVideoApply SyncSetVideo.tla
+          expect_violation SyncSetVideo_earlyrecord.cfg DupAnswerImpliesApplied SyncSetVideo.tla
 
   lab-50:
     runs-on: ubuntu-latest

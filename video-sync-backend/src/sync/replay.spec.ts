@@ -41,6 +41,67 @@ describe('append-only log replay contract', () => {
     expect(store.getLog(r)).toHaveLength(2); // init + ONE commit
   });
 
+  it('set-video is the one legal videoId change, held to its own contract', async () => {
+    const store = new InMemoryRoomStateStore();
+    const r = 'replay-setvideo';
+    await store.init(r, 'vid', 0, 1_000);
+    await store.applyControl(r, 'play', 0, 2_000, 'u1', { cmdId: 'c1' });
+    await store.applyControl(r, 'set-video', 0, 3_000, 'u1', {
+      cmdId: 'c2',
+      videoId: 'vid-B',
+    });
+    await store.applyControl(r, 'play', 0, 4_000, 'u1', { cmdId: 'c3' });
+
+    const log = store.getLog(r);
+    const chain = checkChain(log);
+    expect(chain.violations).toEqual([]);
+
+    const base = {
+      storeEpoch: '1000',
+      videoId: 'vid',
+      isPlaying: true,
+      mediaTime: 100,
+      stampedAt: 5_000,
+      by: 'u1',
+    };
+    const prev = { ...base, seq: 3, reason: 'play' };
+    // a set-video that commits playing state, or a nonzero position, breaks
+    // the canonical-fresh-state contract
+    expect(
+      checkTransition(prev, {
+        ...base,
+        seq: 4,
+        reason: 'set-video',
+        videoId: 'vid-B',
+        isPlaying: true,
+        mediaTime: 0,
+        stampedAt: 6_000,
+      }),
+    ).toMatch(/playing state/);
+    expect(
+      checkTransition(prev, {
+        ...base,
+        seq: 4,
+        reason: 'set-video',
+        videoId: 'vid-B',
+        isPlaying: false,
+        mediaTime: 37,
+        stampedAt: 6_000,
+      }),
+    ).toMatch(/not 0/);
+    // any OTHER reason changing videoId is still illegal
+    expect(
+      checkTransition(prev, {
+        ...base,
+        seq: 4,
+        reason: 'seek',
+        videoId: 'vid-B',
+        mediaTime: 200,
+        stampedAt: 6_000,
+      }),
+    ).toMatch(/videoId changed mid-epoch/);
+  });
+
   it('the contract catches what it exists to catch', () => {
     const base = {
       storeEpoch: '1000',

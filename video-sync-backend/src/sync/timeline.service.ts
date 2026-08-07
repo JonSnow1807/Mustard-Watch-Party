@@ -12,6 +12,12 @@ export type ControlResult =
    * to the sender - the original commit already broadcast to the room.
    */
   | { ok: true; timeline: Timeline; duplicate: true }
+  /**
+   * refused: the command's forVideoId no longer matches the room's video
+   * (formal/SyncSetVideo.tla). `timeline` is current state for a TARGETED
+   * re-anchor to the sender; nothing was committed, nothing broadcasts.
+   */
+  | { ok: true; timeline: Timeline; fenced: true }
   /** the actor plane forwarded this intent; the room's owner broadcasts it */
   | { ok: true; timeline: null; forwarded: true }
   | { ok: false; reason: 'not-controller' | 'rate-limited' | 'room-not-found' };
@@ -146,6 +152,10 @@ export class TimelineService {
     /** the true originating socket; differs from socketId on the owner's
      *  side of a forward, where socketId is synthetic */
     originSocketId?: string,
+    /** set-video only: the room's next videoId (null clears it) */
+    videoId?: string | null,
+    /** video fence for position commands; undefined = unfenced */
+    forVideoId?: string | null,
   ): Promise<ControlResult> {
     const meta = this.meta.get(roomCode);
     if (!meta) return { ok: false, reason: 'room-not-found' };
@@ -161,7 +171,7 @@ export class TimelineService {
       mediaTime,
       now,
       userId,
-      { cmdId, originSocketId },
+      { cmdId, originSocketId, videoId, forVideoId },
     );
     if (outcome.kind === 'missing')
       return { ok: false, reason: 'room-not-found' };
@@ -171,6 +181,10 @@ export class TimelineService {
     if (outcome.kind === 'duplicate') {
       // nothing new was committed, so nothing to persist or broadcast
       return { ok: true, timeline: outcome.timeline, duplicate: true };
+    }
+    if (outcome.kind === 'fenced') {
+      // refused, nothing committed: targeted re-anchor only
+      return { ok: true, timeline: outcome.timeline, fenced: true };
     }
     this.schedulePersist(roomCode);
     return { ok: true, timeline: outcome.timeline };
@@ -297,6 +311,10 @@ export class TimelineService {
         data: {
           currentTime: projectMediaTime(tl, now),
           isPlaying: tl.isPlaying,
+          // the timeline is the authority for the room's video once
+          // set-video exists; persisting it keeps rehydration and the REST
+          // reads converging on what the room actually shows
+          videoUrl: tl.videoId,
           lastSyncAt: new Date(now),
         },
       });
