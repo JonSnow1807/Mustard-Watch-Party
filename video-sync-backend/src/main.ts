@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { RedisIoAdapter } from './adapters/redis-io.adapter';
 import { redisEnabled } from './redis/redis.module';
+import { VALIDATION_PIPE_OPTIONS } from './validation';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -19,8 +20,9 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Enable validation
-  app.useGlobalPipes(new ValidationPipe());
+  // The options object is shared with the DTO spec - see validation.ts for
+  // why whitelist/transform are each load-bearing
+  app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
 
   // Multi-instance plane: Redis pub/sub fanout when REDIS_URL is set
   if (redisEnabled()) {
