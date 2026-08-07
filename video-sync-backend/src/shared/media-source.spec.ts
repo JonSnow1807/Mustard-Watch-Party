@@ -176,6 +176,18 @@ describe('classifyMediaSource', () => {
       'blob:https://example.com/2f9a1c3e',
       { kind: 'none', reason: 'unsupported' },
     ],
+    // non-special schemes may carry a provider-shaped authority; the
+    // scheme guard must win over host matching
+    [
+      'javascript scheme wearing a YouTube authority',
+      'javascript://youtube.com/watch?v=aqz-KE-bpKQ',
+      { kind: 'none', reason: 'unsupported' },
+    ],
+    [
+      'ftp scheme with a media extension',
+      'ftp://example.com/movie.mp4',
+      { kind: 'none', reason: 'unsupported' },
+    ],
   ];
 
   it.each(cases)('%s', (_name, input, want) => {

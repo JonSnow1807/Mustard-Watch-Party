@@ -125,11 +125,11 @@ function byExtension(u: URL, raw: string): MediaSource | null {
  * Ordered rules:
  *  1. empty/whitespace -> none/empty ('' is the room's null sentinel)
  *  2. bare 11-char id -> youtube (legacy rooms stored ids, not URLs)
- *  3. YouTube/Vimeo by hostname; a provider host WITHOUT an extractable id
+ *  3. non-http(s) scheme -> none/unsupported (javascript:, data:, blob:
+ *     all parse, but must never become a media element src)
+ *  4. YouTube/Vimeo by hostname; a provider host WITHOUT an extractable id
  *     is none/unsupported - a <video> fetch against a provider page is
  *     doomed, so don't attempt it
- *  4. non-http(s) scheme -> none/unsupported (javascript:, data:, blob:
- *     all parse, but must never become a media element src)
  *  5. pathname extension: .m3u8 -> hls; .mp4/.webm/.ogg -> file
  *  6. anything else that parsed -> file/unknown (attempt-and-fail-visibly)
  */
@@ -149,6 +149,17 @@ export function classifyMediaSource(
     return { kind: 'none', reason: 'unsupported' };
   }
 
+  // Only schemes a media element can fetch may classify at all: javascript:,
+  // data: and blob: all parse - some even with a provider-shaped authority
+  // (javascript://youtube.com/watch?v=x has hostname "youtube.com"), so the
+  // guard runs before ANY host matching. isAcceptableVideoUrl also refuses
+  // these at the shape floor, but classifyMediaSource runs on STORED values
+  // too (legacy rooms predate admission), so the refusal must live here as
+  // well. Relative inputs resolve against RELATIVE_BASE (https:) and pass.
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    return { kind: 'none', reason: 'unsupported' };
+  }
+
   const host = hostOf(u);
   if (host === 'youtu.be' || YT_HOSTS.indexOf(host) !== -1) {
     const id = extractYouTubeId(u, host);
@@ -162,17 +173,6 @@ export function classifyMediaSource(
   }
   if (host === 'vimeo.com' || host === 'player.vimeo.com')
     return classifyVimeo(u, host);
-
-  // Only schemes a media element can fetch may become a src: javascript:,
-  // data: and blob: all parse. isAcceptableVideoUrl also refuses them at
-  // the shape floor, but classifyMediaSource runs on STORED values too
-  // (legacy rooms predate admission), so the guard must live here as well.
-  // Before byExtension on purpose - javascript:x.mp4 must not classify by
-  // its extension. Relative inputs resolve against RELATIVE_BASE (https:)
-  // and pass untouched.
-  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-    return { kind: 'none', reason: 'unsupported' };
-  }
 
   const ext = byExtension(u, s);
   if (ext !== null) return ext;
