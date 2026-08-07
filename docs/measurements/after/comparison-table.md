@@ -5,7 +5,9 @@
 | S3 — 50±30ms jitter each way | not measured | 68ms / 118ms / 119ms | 1.00s |
 | S5 — 25ms + 5% loss (netem) | not measured | 60ms / 97ms / 136ms | 0.75s |
 | S6 — asymmetric 120ms up / 20ms down | not measured | 47ms / 120ms / 121ms | 1.00s |
+| S8 — 25ms + 5% TCP-segment duplication (netem) | not measured | 22ms / 30ms / 183ms | 0.75s |
+| S9 — 40ms with 25% segments sent ahead (netem reorder) | not measured | 72ms / 191ms / 201ms | 17.00s |
 
-Steady-state hard seeks per minute — S0: 0.00 · S2: 0.00 · S3: 0.00 · S5: 0.25 · S6: 0.00.
+Steady-state hard seeks per minute — S0: 0.00 · S2: 0.00 · S3: 0.00 · S5: 0.25 · S6: 0.00 · S8: 0.00 · S9: 0.00.
 
 3 real Chrome clients, deterministic 240s scenario, Chinmays-MacBook-Pro.local · arm64 · node v20.17.0; runs committed with SHA + scenario + impairment per directory.

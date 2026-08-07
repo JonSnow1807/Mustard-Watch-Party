@@ -1,0 +1,49 @@
+[
+  {
+    "tHost": 1786067289635,
+    "client": -1,
+    "kind": "scenario-start",
+    "detail": "S9"
+  },
+  {
+    "tHost": 1786067290020,
+    "client": 0,
+    "kind": "join"
+  },
+  {
+    "tHost": 1786067295052,
+    "client": 1,
+    "kind": "join"
+  },
+  {
+    "tHost": 1786067299988,
+    "client": 2,
+    "kind": "join"
+  },
+  {
+    "tHost": 1786067319686,
+    "client": 0,
+    "kind": "play"
+  },
+  {
+    "tHost": 1786067379645,
+    "client": 0,
+    "kind": "seek",
+    "detail": "fraction=0.5"
+  },
+  {
+    "tHost": 1786067439655,
+    "client": 0,
+    "kind": "pause"
+  },
+  {
+    "tHost": 1786067444664,
+    "client": 0,
+    "kind": "play"
+  },
+  {
+    "tHost": 1786067529637,
+    "client": -1,
+    "kind": "scenario-end"
+  }
+]

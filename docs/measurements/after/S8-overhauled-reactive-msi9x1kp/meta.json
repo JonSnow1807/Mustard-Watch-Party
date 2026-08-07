@@ -1,0 +1,21 @@
+{
+  "runId": "S8-overhauled-reactive-msi9x1kp",
+  "scenario": {
+    "id": "S8",
+    "title": "25ms + 5% TCP-segment duplication (netem) — dup-ACK pathology",
+    "must": false,
+    "impairment": {
+      "tool": "netem",
+      "netemSpec": "delay 25ms duplicate 5%"
+    },
+    "durationS": 240
+  },
+  "gitSha": "2e4034c0b74c43044a0a68e2aefc564a2200e5f1",
+  "startedAt": "2026-08-07T01:36:05.915Z",
+  "clients": 3,
+  "videoId": "aqz-KE-bpKQ",
+  "wsUrl": "ws://localhost:3102",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled",
+  "notes": "controller=reactive"
+}

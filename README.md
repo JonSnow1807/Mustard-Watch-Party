@@ -9,6 +9,13 @@ claiming them.
 ![CI](https://github.com/JonSnow1807/Mustard-Watch-Party/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 
+![Two Chrome clients in one room: control from the left window, the right converges from the same broadcast — the debug HUD shows live drift in milliseconds](assets/demo.gif)
+
+*Two real Chrome clients, one room. The left window drives (play, seek,
+pause, resume); the right converges from the same `sync:timeline` broadcast
+the driver does — wait-for-broadcast, no echo. The overlay is the built-in
+debug HUD (`?debug=1`): live drift, clock offset θ, controller state.*
+
 ## The numbers (measured, not claimed)
 
 Same deterministic 3-browser scenario, same hardware, before → after the
@@ -25,12 +32,24 @@ tagged **[lab]** — see the provenance convention in
 | S3 — 50±30ms jitter each way | aborted† | 68 / 118ms | **23 / 79ms** |
 | S5 — 25ms + 5% packet loss | aborted† | 60 / 97ms | **11 / 29ms** |
 | S6 — asymmetric 120/20ms | aborted† | 47 / 120ms | **10 / 86ms** |
+| S8 — 25ms + 5% TCP-segment dup‡ | not measured | 22 / 30ms | 11 / 139ms |
+| S9 — 40ms + 25% reordered-ahead‡ | not measured | 72 / 191ms | **28 / 71ms** |
 
 *Steady-state pairwise drift P50 / P95, 3 real Chrome clients, deterministic
 240s scenario, identical hardware. "Total failure" = the shipped engine's
 followers never started playing at all, recorded as a committed exhibit run.
 Runs: [`docs/measurements/`](docs/measurements/) — baseline, after
 (reactive), servo (predictive).*
+
+*‡ S8/S9 are TCP-pathology scenarios: netem's duplicate/reorder act on TCP
+segments, which TCP itself dedupes and re-orders — the app never sees a
+duplicated or reordered message. They stress dup-ACK processing and
+head-of-line blocking (latency variance). The app-level duplicate proof is
+the injection harness ([exactly-once artifacts](docs/measurements/exactly-once/)).
+One honest wrinkle, single runs each: under S8 the servo's P95 (139ms) is
+worse than the reactive arm's (30ms), and under S9 the reactive arm took 17s
+to converge after the seek where the servo took 1s — neither is averaged
+away.*
 
 *† The baseline engine failed the harness player-health gate on both attempts
 under S3/S5/S6 — same signature as S2, followers never started — so the run
