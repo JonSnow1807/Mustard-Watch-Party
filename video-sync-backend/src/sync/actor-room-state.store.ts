@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import type Redis from 'ioredis';
-import { REDIS_KV, REDIS_PUB, REDIS_SUB } from '../redis/redis.module';
+import { REDIS_KV, REDIS_SUB } from '../redis/redis.module';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
 import { applyControl, snapshot } from '../shared/sync-core/timeline';
 import {

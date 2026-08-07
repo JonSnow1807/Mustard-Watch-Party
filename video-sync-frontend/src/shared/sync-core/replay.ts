@@ -30,11 +30,7 @@ export interface LogEntry {
   cmdId?: string;
 }
 
-const CONTROL_REASONS: ReadonlySet<string> = new Set([
-  'play',
-  'pause',
-  'seek',
-]);
+const CONTROL_REASONS: ReadonlySet<string> = new Set(['play', 'pause', 'seek']);
 
 /** float slack for the snapshot projection (Lua string arithmetic). */
 const EPS = 1e-6;
@@ -53,10 +49,7 @@ const differs = (a: number, b: number): boolean =>
  * exactly like the spec's Contract vs Apply split. Returns a violation
  * description, or null when legal.
  */
-export function checkTransition(
-  prev: LogEntry,
-  next: LogEntry,
-): string | null {
+export function checkTransition(prev: LogEntry, next: LogEntry): string | null {
   if (next.storeEpoch !== prev.storeEpoch) {
     return null; // epoch boundaries are anchored by init entries, not chained
   }
