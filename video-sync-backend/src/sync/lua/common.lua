@@ -10,8 +10,12 @@ local function load_tl(key)
   return tl
 end
 local function save_tl(key, tl, ttl)
+  -- videoId falls back to '' (the established nil-encoding) like log_tl
+  -- below: a table missing the field would make HSET raise mid-script,
+  -- losing the control - and an ioredis resend would repeat it
+  -- deterministically, bricking the room until the key's TTL
   redis.call('HSET', key,
-    'seq', tl.seq, 'storeEpoch', tl.storeEpoch, 'videoId', tl.videoId,
+    'seq', tl.seq, 'storeEpoch', tl.storeEpoch, 'videoId', tl.videoId or '',
     'isPlaying', tl.isPlaying, 'mediaTime', tl.mediaTime,
     'stampedAt', tl.stampedAt, 'reason', tl.reason, 'by', tl.by or '',
     -- which aligned time window the repair sweep last committed in. Persisted
