@@ -43,6 +43,9 @@ interface RedisWithCommands extends Redis {
     by: string,
     cmdId: string,
     dedupTtlMs: string,
+    videoId: string,
+    fenced: string,
+    forVideoId: string,
   ): Promise<string | null>;
   mustardApplySnapshot(
     key: string,
@@ -111,7 +114,12 @@ export class RedisRoomStateStore implements RoomStateStore {
     mediaTime: number,
     _serverNow: number, // stamping happens inside Lua from redis TIME (D6)
     by: string,
-    opts?: { cmdId?: string; originSocketId?: string },
+    opts?: {
+      cmdId?: string;
+      originSocketId?: string;
+      videoId?: string | null;
+      forVideoId?: string | null;
+    },
   ): Promise<ApplyOutcome> {
     const cmdId = opts?.cmdId;
     const result = await this.redis.mustardApplyControl(
@@ -124,19 +132,29 @@ export class RedisRoomStateStore implements RoomStateStore {
       by,
       cmdId ?? '',
       String(CMD_DEDUP_TTL_MS),
+      opts?.videoId ?? '',
+      // '' is the null-videoId encoding, so presence needs its own flag
+      opts?.forVideoId !== undefined ? '1' : '0',
+      opts?.forVideoId ?? '',
     );
     if (result === null) return { kind: 'missing' };
     const raw = JSON.parse(result) as Timeline & {
       dup?: true;
+      fenced?: true;
       videoId?: string;
     };
     // same normalization as parse(): Lua omits empty videoId entirely
     const timeline: Timeline = { ...raw, videoId: raw.videoId ?? null };
+    // dup/fenced markers are script-internal - strip before escape
+    delete (timeline as Timeline & { dup?: true }).dup;
+    delete (timeline as Timeline & { fenced?: true }).fenced;
     if (raw.dup) {
-      // already applied: hand back current state, commit nothing. The dup
-      // marker is script-internal - strip it before the timeline escapes.
-      delete (timeline as Timeline & { dup?: true }).dup;
+      // already applied: hand back current state, commit nothing
       return { kind: 'duplicate', timeline };
+    }
+    if (raw.fenced) {
+      // refused - observed video no longer current; nothing recorded
+      return { kind: 'fenced', timeline };
     }
     return { kind: 'committed', timeline };
   }

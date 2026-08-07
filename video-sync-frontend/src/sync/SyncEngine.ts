@@ -148,6 +148,13 @@ export class SyncEngine {
       // idempotency key: the store applies each id at most once, so a
       // redelivered copy re-anchors the sender instead of re-committing
       cmdId: crypto.randomUUID(),
+      // video fence: the videoId this client had applied when the gesture
+      // happened. If a set-video lands first, the store refuses this
+      // command instead of letting it move the new video, and answers
+      // with the timeline the sender is missing
+      // (formal/SyncSetVideo.tla). Absent before the first timeline:
+      // unfenced, the legacy semantics.
+      ...(this.timeline !== null ? { forVideoId: this.timeline.videoId } : {}),
     });
   }
 
@@ -348,4 +355,32 @@ export class SyncEngine {
     this.telemetry.uninstall();
     this.listeners.clear();
   }
+}
+
+/**
+ * Change the room's video for everyone. A standalone function rather than
+ * an engine method because its caller is the settings form, which lives
+ * outside the player that owns the engine - but the protocol assembly and
+ * the no-buffering rule stay in THIS file, next to sendIntent's.
+ *
+ * Wait-for-broadcast like every control: the local player switches when
+ * sync:timeline says so. NOT fenced - switching is last-writer-wins by
+ * design (formal/SyncSetVideo.tla). Returns false when disconnected: the
+ * command is dropped, never buffered, and the caller should say so.
+ */
+export function sendSetVideo(
+  socket: Socket,
+  roomCode: string,
+  videoUrl: string,
+): boolean {
+  if (!socket.connected) return false;
+  socket.emit(SYNC_EVENTS.control, {
+    v: 1,
+    roomCode,
+    intent: 'set-video',
+    mediaTime: 0,
+    videoUrl,
+    cmdId: crypto.randomUUID(),
+  });
+  return true;
 }

@@ -33,6 +33,14 @@ export type ApplyOutcome =
    * original commit already did.
    */
   | { kind: 'duplicate'; timeline: Timeline }
+  /**
+   * The command's forVideoId no longer matches the room's video: refused,
+   * nothing committed, cmdId NOT recorded (a fenced command was never
+   * applied, so its retry must not be answered "duplicate" -
+   * formal/SyncSetVideo.tla, the earlyrecord config). `timeline` is the
+   * current state for a targeted re-anchor; do not broadcast.
+   */
+  | { kind: 'fenced'; timeline: Timeline }
   | { kind: 'forwarded' }
   | { kind: 'missing' };
 
@@ -66,7 +74,19 @@ export interface RoomStateStore {
     mediaTime: number,
     serverNow: number,
     by: string,
-    opts?: { cmdId?: string; originSocketId?: string },
+    opts?: {
+      cmdId?: string;
+      originSocketId?: string;
+      /** set-video only: the room's next videoId (null clears it) */
+      videoId?: string | null;
+      /**
+       * Fence for position commands: the videoId the commander observed.
+       * `undefined` = unfenced (wire compat); `null` = observed no video.
+       * Checked AFTER the dup lookup and BEFORE the dedup record, all
+       * atomic with the commit (formal/SyncSetVideo.tla).
+       */
+      forVideoId?: string | null;
+    },
   ): Promise<ApplyOutcome>;
   /** Re-anchor the projection (periodic sweep); returns the committed state. */
   applySnapshot(roomCode: string, serverNow: number): Promise<Timeline | null>;
@@ -130,13 +150,20 @@ export class InMemoryRoomStateStore implements RoomStateStore {
     mediaTime: number,
     serverNow: number,
     by: string,
-    opts?: { cmdId?: string; originSocketId?: string },
+    opts?: {
+      cmdId?: string;
+      originSocketId?: string;
+      videoId?: string | null;
+      forVideoId?: string | null;
+    },
   ): Promise<ApplyOutcome> {
     const cmdId = opts?.cmdId;
     const prev = this.rooms.get(roomCode);
     if (!prev) return Promise.resolve({ kind: 'missing' });
+    const seen = this.cmdSeen.get(roomCode) ?? new Map<string, number>();
     if (cmdId) {
-      const seen = this.cmdSeen.get(roomCode) ?? new Map<string, number>();
+      // dup LOOKUP first: a command that DID apply must answer duplicate
+      // on retry even if the room's video changed since
       // lazy expiry, same effect as PX: an expired record is no record
       for (const [id, expiresAt] of seen) {
         if (expiresAt <= serverNow) seen.delete(id);
@@ -145,11 +172,22 @@ export class InMemoryRoomStateStore implements RoomStateStore {
         this.cmdSeen.set(roomCode, seen);
         return Promise.resolve({ kind: 'duplicate', timeline: prev });
       }
+    }
+    // fence BEFORE the dedup record: a fenced command was never applied
+    // and must not burn its id (formal/SyncSetVideo.tla, earlyrecord)
+    if (
+      opts?.forVideoId !== undefined &&
+      intent !== 'set-video' &&
+      prev.videoId !== opts.forVideoId
+    ) {
+      return Promise.resolve({ kind: 'fenced', timeline: prev });
+    }
+    if (cmdId) {
       seen.set(cmdId, serverNow + CMD_DEDUP_TTL_MS);
       this.cmdSeen.set(roomCode, seen);
     }
     const next: Timeline = {
-      ...applyControl(prev, intent, mediaTime, serverNow, by),
+      ...applyControl(prev, intent, mediaTime, serverNow, by, opts?.videoId),
       seq: prev.seq + 1,
     };
     this.rooms.set(roomCode, next);

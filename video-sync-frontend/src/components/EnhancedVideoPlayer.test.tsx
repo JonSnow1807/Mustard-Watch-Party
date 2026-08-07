@@ -1,11 +1,33 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { EnhancedVideoPlayer } from './EnhancedVideoPlayer';
 
-// The shell only needs the socket surface; a null socket keeps the sync
-// engine dormant so these tests exercise mount selection, not sync.
+// A null socket keeps the sync engine dormant, so most tests exercise mount
+// selection alone; the set-video test installs a socket and drives the
+// mocked engine's status stream instead.
+let mockSocket: unknown = null;
 jest.mock('../contexts/SocketContext', () => ({
-  useSocket: () => ({ socket: null, connected: false }),
+  useSocket: () => ({ socket: mockSocket, connected: false }),
+}));
+
+// captures the shell's onStatus listener so tests can push engine status
+const mockEngineState: { push: ((s: unknown) => void) | null } = {
+  push: null,
+};
+jest.mock('../sync/SyncEngine', () => ({
+  SyncEngine: class {
+    start() {}
+    dispose() {}
+    attachAdapter() {}
+    setEnabled() {}
+    sendIntent() {}
+    resumeFromGesture() {}
+    onStatus(cb: (s: unknown) => void) {
+      mockEngineState.push = cb;
+      return () => {};
+    }
+  },
+  sendSetVideo: jest.fn(),
 }));
 
 // jsdom has no AudioContext; the probe's own behavior is measured by the
@@ -37,6 +59,11 @@ jest.mock('@vimeo/player', () => ({
 
 const renderPlayer = (videoUrl: string) =>
   render(<EnhancedVideoPlayer videoUrl={videoUrl} roomCode="TEST01" isHost />);
+
+afterEach(() => {
+  mockSocket = null;
+  mockEngineState.push = null;
+});
 
 test('empty videoUrl shows the no-video card, no controls', () => {
   renderPlayer('');
@@ -82,6 +109,48 @@ test('a Vimeo URL mounts the Vimeo player with controls', () => {
   renderPlayer('https://vimeo.com/76979871');
   expect(screen.getByTestId('vimeo-mount')).toBeInTheDocument();
   expect(screen.getByTestId('play-button')).toBeInTheDocument();
+});
+
+test('a set-video timeline overrides the room prop: this client switches too', () => {
+  // socket present -> the (mocked) engine runs and its status drives the shell
+  mockSocket = { on: jest.fn(), off: jest.fn(), emit: jest.fn(), connected: true };
+  renderPlayer('https://www.youtube.com/watch?v=aqz-KE-bpKQ');
+  expect(document.getElementById('youtube-player')).toBeInTheDocument();
+
+  // the sync:timeline broadcast lands with a different video: the timeline
+  // is the authority, the stale room-row prop no longer decides the mount
+  act(() => {
+    mockEngineState.push!({
+      timeline: {
+        v: 1,
+        seq: 5,
+        storeEpoch: '1000',
+        videoId: 'https://cdn.example.com/movie.mp4',
+        isPlaying: false,
+        mediaTime: 0,
+        stampedAt: 1000,
+        rate: 1,
+        reason: 'set-video',
+      },
+      roomPlaying: false,
+      projectedS: 0,
+      durationS: 0,
+      driftMs: 0,
+      offsetMs: 0,
+      uncertaintyMs: Infinity,
+      rttMs: NaN,
+      ctrlState: 'LOCKED',
+      seq: 5,
+      fractionalRateOK: false,
+      needsGesture: false,
+      seeksIssued: 0,
+    });
+  });
+  expect(screen.getByTestId('html5-video')).toHaveAttribute(
+    'src',
+    'https://cdn.example.com/movie.mp4',
+  );
+  expect(document.getElementById('youtube-player')).toBeNull();
 });
 
 test('a hostile scheme never reaches a media element', () => {

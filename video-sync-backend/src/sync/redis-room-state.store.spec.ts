@@ -243,6 +243,80 @@ describe('RedisRoomStateStore — repair sweep dedup', () => {
     expect(replay.kind).toBe('committed'); // which is why TTL >> redelivery window
   });
 
+  it('set-video commits the new video paused at 0; a stale-fence seek is refused', async () => {
+    if (!available) return;
+    // formal/SyncSetVideo.tla against the real Lua: the seek was minted
+    // while its sender still saw the old video
+    const a = make();
+    const r = `${room}-setvideo`;
+    await playingRoom(a, r);
+
+    const switched = await a.applyControl(r, 'set-video', 0, Date.now(), 'u1', {
+      videoId: 'vid-B',
+    });
+    expect(switched.kind).toBe('committed');
+    const tl = (switched as { timeline: Timeline }).timeline;
+    expect(tl.videoId).toBe('vid-B');
+    expect(tl.isPlaying).toBe(false);
+    expect(tl.mediaTime).toBe(0);
+    expect(tl.reason).toBe('set-video');
+
+    const stale = await a.applyControl(r, 'seek', 2220, Date.now(), 'u2', {
+      cmdId: 'stale-seek',
+      forVideoId: 'vid',
+    });
+    expect(stale.kind).toBe('fenced');
+    // nothing committed; the answer re-anchors with current state
+    expect((stale as { timeline: Timeline }).timeline.seq).toBe(tl.seq);
+    // a matching fence passes
+    const fresh = await a.applyControl(r, 'seek', 1, Date.now(), 'u2', {
+      cmdId: 'fresh-seek',
+      forVideoId: 'vid-B',
+    });
+    expect(fresh.kind).toBe('committed');
+  });
+
+  it('dup lookup precedes the fence; a fenced command never burns its id', async () => {
+    if (!available) return;
+    // both ordering decisions from formal/SyncSetVideo.tla in one trace
+    const a = make();
+    const r = `${room}-fence-order`;
+    await playingRoom(a, r);
+
+    // applied under vid, then the room switches
+    const first = await a.applyControl(r, 'seek', 40, Date.now(), 'u1', {
+      cmdId: 'seek-x',
+      forVideoId: 'vid',
+    });
+    expect(first.kind).toBe('committed');
+    await a.applyControl(r, 'set-video', 0, Date.now(), 'u1', {
+      videoId: 'vid-B',
+    });
+    // retry of an APPLIED command answers duplicate even though its fence
+    // is stale now - dup lookup runs first
+    const retry = await a.applyControl(r, 'seek', 40, Date.now(), 'u1', {
+      cmdId: 'seek-x',
+      forVideoId: 'vid',
+    });
+    expect(retry.kind).toBe('duplicate');
+
+    // a NEVER-applied command is fenced, id not recorded (earlyrecord's
+    // counterexample): after switching back, its retry must apply
+    const fenced = await a.applyControl(r, 'seek', 41, Date.now(), 'u2', {
+      cmdId: 'seek-y',
+      forVideoId: 'vid',
+    });
+    expect(fenced.kind).toBe('fenced');
+    await a.applyControl(r, 'set-video', 0, Date.now(), 'u1', {
+      videoId: 'vid',
+    });
+    const retryY = await a.applyControl(r, 'seek', 41, Date.now(), 'u2', {
+      cmdId: 'seek-y',
+      forVideoId: 'vid',
+    });
+    expect(retryY.kind).toBe('committed');
+  });
+
   it('every commit lands in the append-only log; duplicates never do', async () => {
     if (!available) return;
     const a = make();

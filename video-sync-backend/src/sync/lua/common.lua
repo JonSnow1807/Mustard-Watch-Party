@@ -38,10 +38,13 @@ local function log_tl(logKey, tl, cmdId)
     'cmdId', cmdId or '')
   redis.call('PEXPIRE', logKey, 86400000)
 end
--- dup: set when answering a deduplicated command - the caller replies to
--- the sender with current state but must NOT broadcast (the original
--- commit already did). Stripped before the timeline reaches any client.
-local function encode(tl, dup)
+-- marker: 'dup' when answering a deduplicated command, 'fenced' when a
+-- position command's observed video no longer matches the room's. Both
+-- mean the same to the caller - reply to the sender with current state,
+-- commit nothing, do NOT broadcast - but they are distinct claims: dup
+-- says "this command applied", fenced says "this command never will".
+-- Stripped before the timeline reaches any client.
+local function encode(tl, marker)
   return cjson.encode({
     v = 1, seq = tonumber(tl.seq), storeEpoch = tl.storeEpoch,
     videoId = tl.videoId ~= '' and tl.videoId or nil,
@@ -49,6 +52,7 @@ local function encode(tl, dup)
     mediaTime = tonumber(tl.mediaTime),
     stampedAt = tonumber(tl.stampedAt),
     rate = 1, reason = tl.reason, by = tl.by ~= '' and tl.by or nil,
-    dup = dup or nil,
+    dup = marker == 'dup' or nil,
+    fenced = marker == 'fenced' or nil,
   })
 end

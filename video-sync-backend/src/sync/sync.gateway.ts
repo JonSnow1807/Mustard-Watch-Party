@@ -20,6 +20,10 @@ import {
   SyncControl,
 } from '../shared/sync-protocol';
 import { ClockDomainService } from '../redis/clock-domain.service';
+import {
+  VIDEO_URL_MAX_LEN,
+  isAcceptableVideoUrl,
+} from '../shared/media-source';
 import { MetricsService } from '../metrics/metrics.service';
 import { TimelineService } from './timeline.service';
 import { ActorRoomStateStore } from './actor-room-state.store';
@@ -34,6 +38,7 @@ const CONTROL_INTENTS: ReadonlyArray<SyncControl['intent']> = [
   'play',
   'pause',
   'seek',
+  'set-video',
 ];
 
 interface RoomData {
@@ -85,15 +90,21 @@ export class SyncGateway
           this.clock.now(),
           c.cmdId,
           c.originSocketId,
+          c.videoId,
+          c.forVideoId,
         );
         if (!result.ok || !result.timeline) return;
-        if ('duplicate' in result) {
-          // the forward was redelivered (or the command retried): the
-          // original commit already broadcast. Answer ONLY the originating
-          // socket - socket-id rooms span instances via the adapter, so
-          // this reaches it wherever it is connected. Broadcasting here
-          // would turn retry traffic into room-wide updates.
-          this.metrics.controlDedupHits.inc({ type: c.intent });
+        if ('duplicate' in result || 'fenced' in result) {
+          // duplicate: the forward was redelivered (or the command
+          // retried) and the original commit already broadcast. fenced:
+          // the observed video is stale and nothing committed. Either way
+          // the answer is a re-anchor to ONLY the originating socket -
+          // socket-id rooms span instances via the adapter, so this
+          // reaches it wherever it is connected. Broadcasting here would
+          // turn retry/refusal traffic into room-wide updates.
+          if ('duplicate' in result) {
+            this.metrics.controlDedupHits.inc({ type: c.intent });
+          }
           if (c.originSocketId) {
             this.server
               .to(c.originSocketId)
@@ -359,7 +370,13 @@ export class SyncGateway
         (typeof data.cmdId !== 'string' ||
           data.cmdId.length === 0 ||
           data.cmdId.length > 64 ||
-          !/^[A-Za-z0-9_-]+$/.test(data.cmdId)))
+          !/^[A-Za-z0-9_-]+$/.test(data.cmdId))) ||
+      // the fence is compared against the stored videoId, never stored
+      // itself, but an unbounded string is still not allowed on the wire
+      (data.forVideoId !== undefined &&
+        data.forVideoId !== null &&
+        (typeof data.forVideoId !== 'string' ||
+          data.forVideoId.length > VIDEO_URL_MAX_LEN))
     ) {
       client.emit(SYNC_EVENTS.controlRejected, {
         v: 1,
@@ -369,6 +386,30 @@ export class SyncGateway
       });
       stop();
       return;
+    }
+    // set-video carries the room's next videoUrl; it must pass the SAME
+    // admission rule as the REST DTOs (shared/media-source.ts) - the
+    // timeline rides every broadcast, so this bounds store and wire.
+    // '' stays admitted as "clear the video".
+    let nextVideoId: string | null | undefined;
+    if (data.intent === 'set-video') {
+      const url =
+        typeof data.videoUrl === 'string' ? data.videoUrl.trim() : null;
+      if (url === null || (url !== '' && !isAcceptableVideoUrl(url))) {
+        this.metrics.controlEvents.inc({
+          type: data.intent,
+          result: 'rejected_invalid_video_url',
+        });
+        client.emit(SYNC_EVENTS.controlRejected, {
+          v: 1,
+          roomCode: data.roomCode,
+          intent: data.intent,
+          reason: 'invalid-video-url',
+        });
+        stop();
+        return;
+      }
+      nextVideoId = url === '' ? null : url;
     }
     const userId = (client.data as AuthedSocketData).userId;
     // membership, not just authentication: without this any authenticated
@@ -396,6 +437,8 @@ export class SyncGateway
       this.clock.now(),
       data.cmdId,
       client.id,
+      nextVideoId,
+      data.forVideoId,
     );
     if (!result.ok) {
       this.metrics.controlEvents.inc({
@@ -430,6 +473,25 @@ export class SyncGateway
         result: 'duplicate',
       });
       client.emit(SYNC_EVENTS.timeline, result.timeline);
+      stop();
+      return;
+    }
+    if ('fenced' in result) {
+      // the command's observed video is no longer the room's: refused,
+      // nothing committed (formal/SyncSetVideo.tla). The re-anchor is the
+      // remedy - it carries the set-video the sender missed; the rejection
+      // event is informational and clients keep it silent.
+      this.metrics.controlEvents.inc({
+        type: data.intent,
+        result: 'fenced_stale_video',
+      });
+      client.emit(SYNC_EVENTS.timeline, result.timeline);
+      client.emit(SYNC_EVENTS.controlRejected, {
+        v: 1,
+        roomCode: data.roomCode,
+        intent: data.intent,
+        reason: 'stale-video',
+      });
       stop();
       return;
     }

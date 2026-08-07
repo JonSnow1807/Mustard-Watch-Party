@@ -302,10 +302,20 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   const adapterRef = useRef<EngineAdapter | null>(null);
   const canControl = isHost || allowGuestControl;
 
-  const source = useMemo(() => classifyMediaSource(videoUrl), [videoUrl]);
+  // Which video the room is showing: the TIMELINE is the authority once one
+  // exists - set-video switches every participant through sync:timeline -
+  // and the room row's URL only covers the gap before the first timeline
+  // arrives. Both originate from the same store, so the handover is a
+  // no-op unless a switch actually happened.
+  const activeVideoUrl =
+    status.timeline !== null ? status.timeline.videoId ?? '' : videoUrl;
+  const source = useMemo(
+    () => classifyMediaSource(activeVideoUrl),
+    [activeVideoUrl],
+  );
 
   // a failure belongs to one attempted source; the next video starts clean
-  useEffect(() => setFailure(null), [videoUrl]);
+  useEffect(() => setFailure(null), [activeVideoUrl]);
 
   // Engine lifecycle: starts with the socket (before the player is ready, so
   // no room-joined timeline is ever missed) and adopts the adapter later.
@@ -327,7 +337,13 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
           icon: '👑',
           duration: 2000,
         });
+      } else if (r.reason === 'invalid-video-url') {
+        toast.error('That video URL was refused by the server', {
+          duration: 3000,
+        });
       }
+      // 'stale-video' stays silent by design: the targeted re-anchor that
+      // accompanies it already switches this client to the video it missed
     };
     socket.on(SYNC_EVENTS.controlRejected, onRejected);
 
@@ -419,7 +435,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       <FailureCard
         title="Couldn't play this video"
         detail={failure}
-        url={videoUrl}
+        url={activeVideoUrl}
       />
     );
   } else {
@@ -469,7 +485,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
             <FailureCard
               title="This video URL can't be played"
               detail="It isn't an http(s) video link a player could fetch."
-              url={videoUrl}
+              url={activeVideoUrl}
             />
           );
         break;

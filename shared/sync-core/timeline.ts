@@ -36,6 +36,9 @@ export function isNewer(incoming: Timeline, applied: Timeline | null): boolean {
  *   NOT the projected position — projecting forward would pause at a frame
  *   the presser never saw (P4)
  * - seek: jump to the commanded position, playing state unchanged
+ * - set-video: switch to `videoId`, always paused at 0 — a new video never
+ *   autoplays (P5's spirit: entering fresh state playing surprises every
+ *   participant whose player is still mounting)
  */
 export function applyControl(
   prev: Timeline,
@@ -43,6 +46,8 @@ export function applyControl(
   mediaTime: number,
   serverNow: number,
   by: string,
+  /** set-video only: the room's next videoId (null clears it) */
+  videoId?: string | null,
 ): Omit<Timeline, 'seq'> {
   const base = {
     v: 1 as const,
@@ -63,6 +68,14 @@ export function applyControl(
         isPlaying: prev.isPlaying,
         mediaTime,
         reason: 'seek',
+      };
+    case 'set-video':
+      return {
+        ...base,
+        videoId: videoId ?? null,
+        isPlaying: false,
+        mediaTime: 0,
+        reason: 'set-video',
       };
   }
 }
