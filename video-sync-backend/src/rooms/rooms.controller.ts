@@ -9,24 +9,15 @@ import {
   Delete,
 } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
+import { CreateRoomDto } from './dto/create-room.dto';
+import { UpdateRoomDto } from './dto/update-room.dto';
 
 @Controller('rooms')
 export class RoomsController {
   constructor(private roomsService: RoomsService) {}
 
   @Post()
-  async createRoom(
-    @Body()
-    createRoomDto: {
-      name: string;
-      videoUrl?: string;
-      userId: string;
-      isPublic?: boolean;
-      description?: string;
-      tags?: string[];
-      allowGuestControl?: boolean;
-    },
-  ) {
+  async createRoom(@Body() createRoomDto: CreateRoomDto) {
     return await this.roomsService.createRoom(
       createRoomDto.userId,
       createRoomDto.name,
@@ -57,8 +48,7 @@ export class RoomsController {
   @Patch(':code')
   async updateRoom(
     @Param('code') code: string,
-    @Body()
-    updateRoomDto: { name?: string; videoUrl?: string; userId?: string },
+    @Body() updateRoomDto: UpdateRoomDto,
   ) {
     // Get room by code first to get the ID
     const room = await this.roomsService.getRoomByCode(code);
