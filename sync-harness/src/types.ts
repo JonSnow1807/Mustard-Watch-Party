@@ -55,7 +55,18 @@ export interface RunMeta {
   gitSha: string;
   startedAt: string;
   clients: number;
+  /** provider id where one exists, the raw URL otherwise; derived from
+   *  the classification, never hardcoded */
   videoId: string;
+  /** the exact URL the run measured (HARNESS_VIDEO_URL or the default).
+   *  Optional: runs committed before the source matrix lack it. */
+  videoUrl?: string;
+  /** classifier verdict for videoUrl - the source arm this run measured.
+   *  Optional for the same historical reason; absent means youtube.
+   *  ('none' cannot occur: the harness classifies-or-dies at startup.)
+   *  Inline union, not shared/media-source's MediaSource['kind']: this
+   *  file is deliberately dependency-free (see header). */
+  videoSource?: 'youtube' | 'vimeo' | 'hls' | 'file';
   wsUrl: string;
   hardware: string;
   engine: 'baseline' | 'overhauled';

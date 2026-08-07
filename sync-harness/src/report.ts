@@ -85,7 +85,7 @@ ${meta.scenario.title}
 
 - git SHA: \`${meta.gitSha}\`
 - started: ${meta.startedAt}
-- clients: ${meta.clients} · video: \`${meta.videoId}\` · ws: \`${meta.wsUrl}\`
+- clients: ${meta.clients} · video: \`${meta.videoId}\` (${meta.videoSource ?? 'youtube'}) · ws: \`${meta.wsUrl}\`
 - hardware: ${meta.hardware}
 
 ## Pairwise |drift| (steady-state windows)
