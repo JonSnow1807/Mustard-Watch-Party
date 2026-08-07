@@ -112,6 +112,46 @@ cross-language conformance (committed under
 `docs/measurements/exactly-once/`). Legacy clients without a `cmdId` keep
 the old semantics — the field is optional on the wire.
 
+## 2b. The append-only command log, and replay as reconciliation
+
+Every commit — control, repair-sweep snapshot, and epoch birth — is appended
+to a per-room Redis stream (`room:X:log`, `MAXLEN ~1024`) **inside the same
+Lua script as the commit**, so the log cannot disagree with the store about
+what happened: they are written in one atomic step, on every plane (Node,
+relay, actor). Entries are full post-states, which makes the log a
+transition relation rather than a journal to re-execute: event sourcing
+where replay is a read, and the ledger discipline is in the checking.
+
+Reconciliation (`sync-harness/src/replay-check.ts`) is the live transfer of
+the spec's two log properties:
+
+- **TransitionContract**: every consecutive retained pair must satisfy its
+  reason's contract — a seek never flips play-state, play/pause set the
+  committed play-state, a snapshot moves the projection by *exactly
+  nothing*, `seq` is contiguous, `stampedAt` monotone — checked by
+  `shared/sync-core/replay.ts`, written independently of the code that
+  produces the transitions (double-entry). Stated precisely: for control
+  commits the *committed position is the command* (entries are post-states
+  and do not retain the request separately), so the checker verifies the
+  state-machine invariants, not commanded-vs-committed position — that
+  equality is what the TLA+ spec's `Contract` covers in the model, and the
+  per-command tests cover in code.
+- **ReplayReconstructs**: the newest retained entry must *be* the live
+  state, field for field (`reason` included). Any disagreement is drift
+  between what was committed and what is served, reported per room as a
+  **measured drift rate** the way the harness reports percentiles. The
+  reconciler reads log and live state as separate commands, so it re-reads
+  until the live version is stable across the pair — a commit racing the
+  reads must not masquerade as drift.
+
+Sweep commits are logged because the spec's `nosnaplog` config proved the
+alternative: they bump `seq` and re-anchor the projection, so a log of user
+commands alone cannot rebuild live state and reconciliation would report
+phantom drift. Trimming anchors the check at the oldest retained entry —
+truncation is legal, holes are not. Deduplicated deliveries never append:
+the log records **commits, not deliveries**. The nightly runs the
+reconciler over the 50-bot fleet's actual traffic, gated.
+
 ## 3. Clock sync
 
 NTP-style over a Socket.IO ack: client stamps t0/t3, the server ack carries

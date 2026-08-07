@@ -19,6 +19,21 @@ local function save_tl(key, tl, ttl)
     'lastSweepWindow', tl.lastSweepWindow or -1)
   redis.call('PEXPIRE', key, ttl)
 end
+-- Append the committed post-state to the room's append-only log, atomic
+-- with the commit because it runs inside the same script. Auto-ID ('*') is
+-- legal in scripts on Redis >= 5 (effect-based replication; redis:7 here).
+-- MAXLEN ~ trims approximately; the replay checker anchors at the oldest
+-- retained entry, so trimming truncates history without corrupting it.
+-- Snapshot commits are logged too - formal/SyncExactlyOnce.tla's nosnaplog
+-- config is the counterexample for leaving them out.
+local function log_tl(logKey, tl, cmdId)
+  redis.call('XADD', logKey, 'MAXLEN', '~', 1024, '*',
+    'seq', tl.seq, 'storeEpoch', tl.storeEpoch, 'videoId', tl.videoId or '',
+    'isPlaying', tl.isPlaying, 'mediaTime', tl.mediaTime,
+    'stampedAt', tl.stampedAt, 'reason', tl.reason, 'by', tl.by or '',
+    'cmdId', cmdId or '')
+  redis.call('PEXPIRE', logKey, 86400000)
+end
 -- dup: set when answering a deduplicated command - the caller replies to
 -- the sender with current state but must NOT broadcast (the original
 -- commit already did). Stripped before the timeline reaches any client.

@@ -15,9 +15,12 @@ transport toxic can ever produce an application-level duplicate.
 What "absorbed" means, per plane:
 
 - **node**: the servers' `control_dedup_hits_total` advanced by exactly 4
-  during the run (scraped from the instance that held the commanding
-  sockets), and no phantom seq appeared — `seqGaps: 0` with the reorder and
-  duplicate counters showing only the expected local re-anchor traffic.
+  during the run, and the **commit-count invariant** held:
+  `controlCommitsObserved == scriptedControls` (4 == 4). That equality is
+  the proof of deduplication — a duplicate that committed would mint the
+  *next contiguous* seq, so `seqGaps: 0` alone can never show it; the gap
+  counter is kept as a separate delivery-ordering check, not as dedup
+  evidence.
 - **relay**: each duplicate was answered as a targeted re-anchor carrying
   the already-committed seq (`seqDuplicates: 4` on a single-instance plane
   that otherwise produces none), through the extended binary control frame
@@ -28,3 +31,15 @@ tree does not match) and hardware. A failed double-apply would surface as a
 phantom seq: a commit consumed by the duplicate that the room's clients
 observe as a gap. Before this design, the ioredis resend path produced
 exactly those (see SYNC_DESIGN §2a).
+
+## Replay reconciliation (`replay-reconciliation.json`)
+
+The same injection scenario re-run against a fresh keyspace on the
+command-log build (`node-25bots-dup-injection-with-log.json`, clean SHA),
+then `replay-check.ts` over the append-only logs that traffic produced:
+**12 retained entries, 11 transitions checked, 0 contract violations, 0
+drift rooms — drift rate 0**. Every retained transition satisfies its
+intent's contract (a spec-derived double-entry check), the deduplicated
+deliveries appear nowhere in the log (commits, not deliveries), and the
+newest entry is field-for-field identical to the live state. The nightly
+runs this same reconciliation, gated, over the 50-bot fleet's traffic.

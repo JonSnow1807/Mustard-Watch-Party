@@ -90,9 +90,13 @@ advances, so `(epoch, seq)` cannot identify a command across handoff — the
 Redis rather than owner memory. The check sits inside `actor_commit.lua`'s
 fenced atomic step, and a duplicate is answered with current state rather
 than `false` — `false` means fenced-out, and the caller drops ownership on
-it. A command applied by the old owner, redelivered to the new owner via
-the (redeliverable) forward channel, is answered as a duplicate; the spec
-test pins it.
+it. A command **carrying a `cmdId`**, applied by the old owner and
+redelivered to the new owner via the (redeliverable) forward channel, is
+answered as a duplicate; the spec test pins it. Legacy commands without a
+`cmdId` keep the old non-deduped semantics — the guarantee is scoped to
+id-bearing commands, on this plane as everywhere else. Forward publishes
+ride the bounded KV client rather than the unbounded pubsub client, so a
+pending publish cannot outlive the dedup record's TTL.
 
 ## Two bugs the implementation surfaced
 

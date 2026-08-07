@@ -131,6 +131,12 @@ jobs:
       - name: 50-bot fleet through nginx (gated)
         run: npx tsx src/bots/run-bots.ts --n 50 --duration 120 --ws http://localhost:3300 --gate
         working-directory: sync-harness
+      - name: replay reconciliation over the night's actual traffic
+        # TransitionContract + ReplayReconstructs (formal/SyncExactlyOnce.tla)
+        # against the append-only logs the fleet just produced: every retained
+        # transition legal, newest entry identical to live state, drift rate 0
+        run: npx tsx src/replay-check.ts --redis redis://localhost:6380 --gate
+        working-directory: sync-harness
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,5 +1,6 @@
 -- KEYS[1]=room:X:tl  KEYS[2]=room:X:cmd:<cmdId> (dedup record; unused when
--- ARGV[4] is empty)  ARGV: intent, mediaTime, by, cmdId, dedupTtlMs
+-- ARGV[4] is empty)  KEYS[3]=room:X:log (append-only command log)
+-- ARGV: intent, mediaTime, by, cmdId, dedupTtlMs
 --
 -- The idempotency check lives HERE, inside the same atomic script as the
 -- commit, because a check-then-apply split across two round trips is the
@@ -34,4 +35,5 @@ elseif intent == 'pause' then
 end
 -- seek keeps isPlaying as-is
 save_tl(KEYS[1], tl, 86400000)
+log_tl(KEYS[3], tl, ARGV[4])
 return encode(tl)

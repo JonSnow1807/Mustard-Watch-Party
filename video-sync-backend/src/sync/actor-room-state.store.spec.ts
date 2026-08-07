@@ -19,10 +19,9 @@ describe('ActorRoomStateStore — lease fencing', () => {
   const make = (id: string): ActorRoomStateStore => {
     process.env.INSTANCE_ID = id;
     const kv = new Redis(URL, { maxRetriesPerRequest: 1, lazyConnect: false });
-    const pub = new Redis(URL, { maxRetriesPerRequest: 1 });
     const sub = new Redis(URL, { maxRetriesPerRequest: 1 });
-    clients.push(kv, pub, sub);
-    return new ActorRoomStateStore(kv, pub, sub);
+    clients.push(kv, sub);
+    return new ActorRoomStateStore(kv, sub);
   };
 
   beforeAll(async () => {

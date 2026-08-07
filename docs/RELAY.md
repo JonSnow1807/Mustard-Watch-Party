@@ -19,10 +19,16 @@ JWT auth) runs against either plane via a transport abstraction
 | relay-go / raw WS / binary | 75ms | 116ms | 0 | pass |
 
 The control frame carries an optional idempotency key appended after the
-room (`[cmdLen u8][cmdId...]`; old frames end at the room and stay
-decodable). The relay passes it into the same `apply_control.lua`, so both
-planes dedup identically — verified by the `--dup-controls` conformance run
-(4 injected duplicates, 0 double-applies, on this plane's binary framing).
+room (`[cmdLen u8][cmdId...]`, ASCII `[A-Za-z0-9_-]{1,64}` — the same
+charset the Node gateway enforces, so the derived Redis key cannot alias
+another keyspace). Parsing is STRICT: a legacy frame must end exactly at
+the room and a suffixed frame exactly at the cmdId — trailing bytes are a
+malformed frame, rejected, because tolerating them lets two encoders
+disagree about where a field ends and still both "work"
+(`parseControl` in `main.go`, boundary cases in `main_test.go`). The relay
+passes the key into the same `apply_control.lua`, so both planes dedup
+identically — verified by the `--dup-controls` conformance run (4 injected
+duplicates, 0 double-applies, on this plane's binary framing).
 
 *(10 bots × 120s each, re-measured after the simulated-player fix described
 in `docs/SYNC_DESIGN.md` §8. **[lab]** — these two fleet runs were not

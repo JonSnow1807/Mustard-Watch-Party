@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import type Redis from 'ioredis';
-import { REDIS_KV, REDIS_PUB, REDIS_SUB } from '../redis/redis.module';
+import { REDIS_KV, REDIS_SUB } from '../redis/redis.module';
 import { ControlIntent, Timeline } from '../shared/sync-protocol';
 import { applyControl, snapshot } from '../shared/sync-core/timeline';
 import {
@@ -60,6 +60,7 @@ interface RedisWithActor extends Redis {
   actorInit(
     leaseKey: string,
     timelineKey: string,
+    logKey: string,
     instanceId: string,
     fence: string,
     mediaTime: string,
@@ -70,6 +71,7 @@ interface RedisWithActor extends Redis {
     leaseKey: string,
     timelineKey: string,
     cmdKey: string,
+    logKey: string,
     instanceId: string,
     fence: string,
     isPlaying: string,
@@ -123,7 +125,6 @@ export class ActorRoomStateStore
 
   constructor(
     @Inject(REDIS_KV) kv: Redis,
-    @Inject(REDIS_PUB) private pub: Redis,
     @Inject(REDIS_SUB) private sub: Redis,
   ) {
     const dir = join(__dirname, 'lua');
@@ -137,11 +138,11 @@ export class ActorRoomStateStore
       lua: read('actor_reclaim.lua'),
     });
     kv.defineCommand('actorInit', {
-      numberOfKeys: 2,
+      numberOfKeys: 3,
       lua: read('actor_init.lua'),
     });
     kv.defineCommand('actorCommit', {
-      numberOfKeys: 3,
+      numberOfKeys: 4,
       lua: read('actor_commit.lua'),
     });
     this.kv = kv as RedisWithActor;
@@ -193,6 +194,19 @@ export class ActorRoomStateStore
   private timelineKey(roomCode: string): string {
     return `room:${roomCode}:tl`;
   }
+
+  private logKey(roomCode: string): string {
+    return `room:${roomCode}:log`;
+  }
+  /**
+   * Forward publishes ride the KV client, NOT the pubsub client, on
+   * purpose: REDIS_PUB retries without bound (offline queue), so a pending
+   * PUBLISH could be delivered after the cmdId dedup record's TTL expired -
+   * re-opening the double-apply the record exists to close. The KV client's
+   * bounded retries keep the redelivery window seconds-scale, far inside
+   * the 15-minute TTL, which is exactly the Ttl > RetryWindow relation the
+   * spec's earlyevict config makes a correctness requirement.
+   */
   private forwardChannel(instanceId: string): string {
     return `actor:fwd:${instanceId}`;
   }
@@ -262,6 +276,7 @@ export class ActorRoomStateStore
       // command across handoff - but this key can, and it lives in Redis
       // rather than owner memory precisely so a handoff cannot forget it
       `room:${roomCode}:cmd:${cmdId ?? ''}`,
+      this.logKey(roomCode),
       this.instanceId,
       fence,
       next.isPlaying ? '1' : '0',
@@ -340,7 +355,7 @@ export class ActorRoomStateStore
       const lease = await this.claim(roomCode);
       if (!lease.mine) {
         // someone else owns this room: forward and let them broadcast
-        const delivered = await this.pub.publish(
+        const delivered = await this.kv.publish(
           this.forwardChannel(lease.owner),
           JSON.stringify({
             roomCode,
@@ -371,7 +386,7 @@ export class ActorRoomStateStore
         const retaken = await this.claim(roomCode);
         if (!retaken.mine) {
           // P07: a live owner exists after all - forward rather than drop
-          const second = await this.pub.publish(
+          const second = await this.kv.publish(
             this.forwardChannel(retaken.owner),
             JSON.stringify({
               roomCode,
@@ -426,7 +441,7 @@ export class ActorRoomStateStore
         ? { kind: 'committed', timeline: retry.timeline }
         : { kind: 'missing' };
     }
-    const delivered = await this.pub.publish(
+    const delivered = await this.kv.publish(
       this.forwardChannel(nowLease.owner),
       JSON.stringify({
         roomCode,
@@ -478,6 +493,7 @@ export class ActorRoomStateStore
       const raw = await this.kv.actorInit(
         this.leaseKey(roomCode),
         this.timelineKey(roomCode),
+        this.logKey(roomCode),
         this.instanceId,
         lease.epoch,
         String(mediaTime),

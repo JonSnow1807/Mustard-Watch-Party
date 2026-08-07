@@ -1,0 +1,27 @@
+{
+  "runId": "bots-msi4yfgc",
+  "gitSha": "e03d8de50b2b67d7e1461f5e8a8b91f064614298",
+  "hardware": "10 cores (Apple M2 Pro)",
+  "controller": "reactive",
+  "plane": "node",
+  "n": 25,
+  "durationS": 90,
+  "steadySamples": 5837,
+  "driftMs": {
+    "p50": 73.37686451330683,
+    "p95": 173.49908504030685,
+    "p99": 346.0004745402898
+  },
+  "slopeMsPerMin": 0,
+  "thetaErrorP95Ms": 3.0791015625,
+  "seqGaps": 0,
+  "seqReorders": 0,
+  "seqDuplicates": 118,
+  "reconnects": 0,
+  "rejoinFailures": 0,
+  "dupControlsSent": 4,
+  "scriptedControls": 4,
+  "controlCommitsObserved": 4,
+  "handlerErrors": 0,
+  "rejectedControls": 0
+}

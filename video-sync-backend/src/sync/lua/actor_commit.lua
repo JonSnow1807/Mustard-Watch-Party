@@ -1,4 +1,5 @@
--- Fenced commit. KEYS[1]=lease, KEYS[2]=timeline, KEYS[3]=cmd dedup record
+-- Fenced commit. KEYS[1]=lease, KEYS[2]=timeline, KEYS[3]=cmd dedup record,
+-- KEYS[4]=append-only command log
 -- ARGV: instanceId, fence, isPlaying, mediaTime, reason, by, videoId,
 --       ttlMs, cmdId, dedupTtlMs
 -- A commit is accepted ONLY if the caller still holds the lease at the fence
@@ -49,6 +50,13 @@ redis.call('HSET', KEYS[2],
   'isPlaying', ARGV[3], 'mediaTime', ARGV[4],
   'stampedAt', tostring(now), 'reason', ARGV[5], 'by', ARGV[6])
 redis.call('PEXPIRE', KEYS[2], ARGV[8])
+-- log atomically with the commit; duplicates return above and never land here
+redis.call('XADD', KEYS[4], 'MAXLEN', '~', 1024, '*',
+  'seq', seq, 'storeEpoch', ARGV[2], 'videoId', ARGV[7],
+  'isPlaying', ARGV[3], 'mediaTime', ARGV[4],
+  'stampedAt', tostring(now), 'reason', ARGV[5], 'by', ARGV[6],
+  'cmdId', ARGV[9])
+redis.call('PEXPIRE', KEYS[4], ARGV[8])
 return cjson.encode({
   v = 1, seq = seq, storeEpoch = ARGV[2],
   videoId = ARGV[7] ~= '' and ARGV[7] or nil,

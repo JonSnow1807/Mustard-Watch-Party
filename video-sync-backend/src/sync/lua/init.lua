@@ -7,4 +7,6 @@ local tl = {
   reason = 'join', by = '',
 }
 save_tl(KEYS[1], tl, 86400000)
+-- the epoch's birth entry anchors the replay chain for this epoch
+log_tl(KEYS[2], tl, '')
 return encode(tl)
