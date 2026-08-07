@@ -69,6 +69,10 @@ export const Html5Mount: React.FC<{ url: string } & MountProps> = ({
       );
     };
     el.addEventListener('error', onError);
+    // React assigns src during commit; this listener attaches in the
+    // passive effect. A failure in that gap fires no further event, so
+    // read the already-latched error once or the card never appears.
+    if (el.error !== null) onError();
 
     return () => {
       el.removeEventListener('error', onError);
