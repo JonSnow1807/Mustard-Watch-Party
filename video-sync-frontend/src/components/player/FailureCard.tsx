@@ -46,7 +46,9 @@ export const FailureCard: React.FC<{
   detail?: string;
   url?: string;
 }> = ({ title, detail, url }) => (
-  <Card data-testid="failure-card">
+  // role="alert": the card swaps in dynamically after a playback failure,
+  // and without a live region a screen reader never hears about it
+  <Card data-testid="failure-card" role="alert">
     <Title>{title}</Title>
     {detail && <Detail>{detail}</Detail>}
     {url && <Url>{url}</Url>}
