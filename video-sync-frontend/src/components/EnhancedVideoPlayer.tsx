@@ -13,6 +13,7 @@ import { SyncHud } from './SyncHud';
 import { FailureCard } from './player/FailureCard';
 import { YouTubeMount } from './player/YouTubeMount';
 import { Html5Mount } from './player/Html5Mount';
+import { VimeoMount } from './player/VimeoMount';
 
 const PlayerContainer = styled.div`
   width: 100%;
@@ -447,11 +448,13 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
         );
         break;
       case 'vimeo':
-        card = (
-          <FailureCard
-            title="Vimeo isn't supported yet"
-            detail="Vimeo playback is on the roadmap; pick a YouTube or direct video URL for now."
-            url={videoUrl}
+        mount = (
+          <VimeoMount
+            key={source.videoId}
+            videoId={source.videoId}
+            hash={source.hash}
+            onAdapter={handleAdapter}
+            onFailure={handleFailure}
           />
         );
         break;
