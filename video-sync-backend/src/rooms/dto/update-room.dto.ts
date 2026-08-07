@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { SkipIfAbsent } from './skip-if-absent.decorator';
 import { IsRoomVideoUrl } from './room-video-url.decorator';
 
 const trim = ({ value }: { value: unknown }) =>
@@ -16,7 +17,7 @@ const trim = ({ value }: { value: unknown }) =>
  */
 export class UpdateRoomDto {
   @Transform(trim)
-  @IsOptional()
+  @SkipIfAbsent()
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
@@ -25,7 +26,7 @@ export class UpdateRoomDto {
   // '' means "clear the video" - the settings form round-trips
   // `room.videoUrl || ''`, so a save on a room with no video sends ''.
   @Transform(trim)
-  @IsOptional()
+  @SkipIfAbsent()
   @IsRoomVideoUrl()
   videoUrl?: string;
 }
