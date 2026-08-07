@@ -201,3 +201,86 @@ Stated here rather than left for a reader to infer from the constants.
 neutralizes zombies *and* the client ordering rule proven above. One
 mechanism, two guarantees, which is why plane B needs no new client-side
 concept.
+
+# Exactly-once command application
+
+`formal/SyncExactlyOnce.tla` — the third spec, written **before** the
+idempotency-key implementation it constrains, the same spec-first order as
+plane B.
+
+## What is modeled
+
+Every control command carries a client-minted id. The client **retries** a
+command until it observes the commit — which is at-least-once delivery, and
+is deliberately how the model gets its duplicates: a socket.io send-buffer
+flushing after a reconnect *is* a retry, whether or not anyone calls it that.
+On top of that the channel can duplicate in-flight copies outright, and
+delivery picks any pending command, so reordering needs no extra machinery.
+
+The store's apply is **one atomic step** containing the dedup check, the
+commit, the log append, and the dedup record — because in the implementation
+all four live inside the same Lua script, and Redis's single-threaded
+execution is what makes the composition atomic. Exactly-once is therefore
+proven as a composition: at-least-once delivery (retry) with at-most-once
+application (atomic dedup) — never as a property of the network.
+
+**Time is concrete where it matters.** Dedup records expire a fixed `Ttl`
+after the apply — a plain clock, exactly what `SET .. PX` gives the
+implementation, with no oracle about in-flight copies. Sending, resending,
+network duplication, and *delivery* are all bounded by `RetryWindow` after
+first issue: past the client's retry deadline nothing carries the command
+any more. That bound is an **assumption the implementation must enforce** —
+the client abandons unacked commands older than the window instead of
+letting an arbitrarily old send-buffer flush — and it is what makes any
+finite TTL sound: with an unbounded retry window, no TTL is safe, and the
+spec would say so.
+
+## Properties and teeth
+
+| config | constants | result |
+|---|---|---|
+| `SyncExactlyOnce.cfg` (safety) | `Ttl=2 > RetryWindow=1`, eviction reachable | **green**: `TypeOK`, `AtMostOnce`, `TransitionContract`, `ReplayReconstructs`, `AckedWasApplied` — 1,559,644 states, 628,684 distinct |
+| `SyncExactlyOnce_live.cfg` (liveness) | window spans the model clock | **green**: `EventuallyExactlyOnce` — 371,055 states, 144,147 distinct |
+| `SyncExactlyOnce_nodedup.cfg` | `DedupOn = FALSE` | **must fail** `AtMostOnce`: a retried command applies twice |
+| `SyncExactlyOnce_earlyevict.cfg` | `Ttl=1 <= RetryWindow=2` | **must fail** `AtMostOnce`: the record expires while a copy can still arrive and the late duplicate re-applies |
+| `SyncExactlyOnce_nosnaplog.cfg` | `LogSnapshots = FALSE` | **must fail** `ReplayReconstructs`: unlogged sweep commits leave the log unable to rebuild live state |
+
+Liveness lives in its own config because a retry window that closes
+mid-model legitimately *abandons* an unacked command — at-most-once by
+design, not a stuck system — so "eventually applied exactly once" is only a
+theorem while the client is still trying.
+
+The three failure configs are the spec keeping its teeth, and each pins a
+real implementation constraint:
+
+1. **The dedup must be atomic with the commit** — a check outside the Lua
+   script reintroduces the race the guard exists to close.
+2. **The dedup TTL is a correctness parameter, not a tuning knob.** The
+   relation is modeled with concrete clocks: `Ttl > RetryWindow` is checked
+   green, and `Ttl <= RetryWindow` is a committed counterexample (apply at
+   t, record expires at t+`Ttl`, duplicate arrives inside the still-open
+   window). "SET NX with some TTL" is not a design until the TTL is
+   justified against the enforced retry deadline — and the deadline must be
+   enforced: the client abandons unacked commands older than the window.
+3. **The command log must include the repair sweep's snapshot commits.**
+   Sweeps bump `seq` and re-anchor the projection; a log of user commands
+   alone cannot replay to live state, so reconciliation built on it would
+   report phantom drift.
+
+`TransitionContract` is double-entry bookkeeping: the legal-transition
+contract (a seek never flips play state; a pause freezes at the commanded
+frame, not the projection; a snapshot moves the projection by exactly
+nothing; `seq` increments by exactly one) is written independently of the
+`Apply`/`Snap` definitions, so if either side drifts, TLC reports the
+disagreement rather than trusting the model's own construction.
+
+## Composition with the other specs
+
+This spec is single-epoch and single-store on purpose: `SyncActor.tla` owns
+instance fencing and lease handoff, `SyncTimeline.tla` owns client-side
+`(storeEpoch, seq)` ordering under lossy fanout. The seam between them is a
+real implementation obligation this spec makes visible rather than proves:
+**the dedup record must survive owner handoff** on the actor plane, or a
+command applied by the old owner can be re-applied by the new one. That
+lives with the fencing machinery, and is called out in COORDINATION.md
+rather than silently assumed here.

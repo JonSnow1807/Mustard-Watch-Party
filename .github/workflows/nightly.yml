@@ -37,6 +37,25 @@ jobs:
           fi
           java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncActor.cfg SyncActor.tla
           java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncActor_live.cfg SyncActor.tla
+          # exactly-once: both green configs must pass; each degraded design
+          # must fail on its NAMED property. Accepting any nonzero TLC exit
+          # would let a malformed config or a TLC crash impersonate the
+          # intended violation, so the exact message is asserted.
+          java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncExactlyOnce.cfg SyncExactlyOnce.tla
+          java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config SyncExactlyOnce_live.cfg SyncExactlyOnce.tla
+          expect_violation() {
+            local cfg="$1" prop="$2" out
+            if out=$(java -cp tools/tla2tools.jar tlc2.TLC -workers 4 -config "$cfg" SyncExactlyOnce.tla 2>&1); then
+              echo "$cfg unexpectedly passed - the spec lost its teeth"; return 1
+            fi
+            if ! grep -q "Invariant $prop is violated" <<<"$out"; then
+              echo "$cfg failed, but NOT on $prop - TLC output:"; tail -30 <<<"$out"; return 1
+            fi
+            echo "$cfg: $prop violated as designed"
+          }
+          expect_violation SyncExactlyOnce_nodedup.cfg AtMostOnce
+          expect_violation SyncExactlyOnce_earlyevict.cfg AtMostOnce
+          expect_violation SyncExactlyOnce_nosnaplog.cfg ReplayReconstructs
 
   lab-50:
     runs-on: ubuntu-latest
