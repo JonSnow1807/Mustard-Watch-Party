@@ -39,6 +39,6 @@ samples where a healthy run has ~2,270, plus a full re-join wave in the
 backend log. Both replacement runs were re-measured on a warm browser
 with the machine otherwise idle, and every committed run here clears
 2,000+ steady samples. The diagnostic that pinned it —
-`sync-harness/src/debug-pause.ts`, two browser clients plus a node-side
+`sync-harness/src/debug-pause.ts`, three staggered browser clients plus a node-side
 socket tap printing every timeline broadcast — is committed for the next
 time a run looks too strange to trust.

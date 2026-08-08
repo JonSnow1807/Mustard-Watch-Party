@@ -1,5 +1,5 @@
-// Repro instrumentation for the file-arm S0 anomaly: two browser clients
-// plus a node-side socket TAP in the same room that prints every
+// Repro instrumentation for the file-arm S0 anomaly: three staggered
+// browser clients plus a node-side socket TAP in the same room printing every
 // sync:timeline broadcast (seq, reason, by, isPlaying, mediaTime) and every
 // rejection - so whatever control turns the room off is caught in the act.
 //   HARNESS_VIDEO_URL=/media/clicktrack.mp4 npx tsx src/debug-pause.ts
@@ -25,7 +25,22 @@ const tap = io('ws://localhost:3000', {
   transports: ['websocket'],
   auth: { token: users[3].token },
 });
-await new Promise<void>((resolve) => tap.on('connect', () => resolve()));
+// bounded: a diagnostic that hangs before the clients even start would
+// itself need diagnosing
+await new Promise<void>((resolve, reject) => {
+  const deadline = setTimeout(
+    () => reject(new Error('tap connect deadline (15s)')),
+    15_000,
+  );
+  tap.on('connect', () => {
+    clearTimeout(deadline);
+    resolve();
+  });
+  tap.on('connect_error', (e: Error) => {
+    clearTimeout(deadline);
+    reject(e);
+  });
+});
 tap.emit('join-room', { roomCode: room.code, userId: users[3].id });
 tap.on('sync:timeline', (tl: Record<string, unknown>) => {
   console.log(
@@ -43,7 +58,7 @@ tap.on('disconnect', (reason: string) =>
 );
 tap.io.on('reconnect', () => console.log(`${ts()}s TAP reconnected`));
 
-// ---- two real clients ----
+// ---- three real clients, staggered like the scripted scenario ----
 const browser = await launchBrowser();
 const clients = [];
 const joinAt = [0, 5, 10];

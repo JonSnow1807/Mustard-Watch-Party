@@ -6,7 +6,9 @@
 # (public/media/ is gitignored) and THIS script is the provenance.
 # Same-origin keeps the hls arm audio-truth eligible.
 set -e
-SRC="${1:-../../video-sync-frontend/public/media/clicktrack.mp4}"
+# default input resolved from the script's own location - runnable from any CWD
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SRC="${1:-$HERE/../../video-sync-frontend/public/media/clicktrack.mp4}"
 OUT_DIR="$(dirname "$SRC")/hls"
 if [ ! -f "$SRC" ]; then
   echo "missing $SRC - run scripts/make-clicktrack.sh first" >&2
