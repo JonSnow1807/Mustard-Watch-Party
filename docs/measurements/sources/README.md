@@ -15,8 +15,10 @@ the main matrix; `meta.json` in each run stamps the URL measured
 | `S2-overhauled-msjpaix6` | hls | S2 | 7 / 18 / 25ms | 2,273 |
 | `S0-overhauled-msjpgb9o` | vimeo (`vimeo.com/1084537`) | S0 | 8 / 38 / 125ms | 2,280 |
 
-Fixtures are generated, not committed (`public/media/` is gitignored):
-`sync-harness/scripts/make-clicktrack.sh` then `make-hls-fixture.sh`. The
+Fixtures are generated, not committed (`public/media/` is gitignored) -
+both scripts resolve their paths from their own location, so from the
+repository root:
+`sync-harness/scripts/make-clicktrack.sh && sync-harness/scripts/make-hls-fixture.sh`. The
 Vimeo arm plays Blender's official Big Buck Bunny upload — the same
 content as the YouTube arm, so the comparison compares players, not
 videos. The Vimeo player's own CDN traffic goes direct and unimpaired,
