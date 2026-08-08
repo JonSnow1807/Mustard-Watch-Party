@@ -13,6 +13,23 @@ Prod runs **one instance of the same Redis code path** the 3-instance lab
 proved (`REDIS_URL` set ⇒ Lua store + pub/sub adapter). Scale-out is a
 dial, not a rewrite; multi-instance correctness is re-proven nightly in CI.
 
+## Live topology (deployed 2026-08-07)
+
+- **https://mustard.watch** (+ `www`) — Vercel project `mustard-watch`
+- **https://api.mustard.watch** — Render `mustard-watch-party-backend`
+  (custom domain on the onrender host below)
+- DNS at Namecheap (PremiumDNS): `A @ 76.76.21.21`,
+  `CNAME www cname.vercel-dns.com`,
+  `CNAME api mustard-watch-party-backend.onrender.com`
+- Frontend build-time envs point at `https://api.mustard.watch` — the
+  custom domain is the contract, so the onrender hostname can change
+  without a frontend rebuild.
+- Deploys: Render redeploys via the blueprint's Manual sync (public-repo
+  URL connection, no auto-deploy webhook); Vercel via CLI
+  (`vercel deploy --prod` from `video-sync-frontend`, with
+  `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` pinned - CLI 58's repo-level link
+  detection otherwise creates a project named after the monorepo root).
+
 ## One-time setup
 
 1. **Neon**: create a project → copy the pooled `DATABASE_URL`
