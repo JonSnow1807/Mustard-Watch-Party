@@ -4,232 +4,213 @@ import { useAuth } from '../contexts/AuthContext';
 import styled from '@emotion/styled';
 import SimplePeer from 'simple-peer';
 import { toast } from 'react-hot-toast';
+import {
+  color,
+  font,
+  radius,
+  button,
+  buttonSm,
+  chip,
+  chipStatic,
+  chipInteractive,
+  chipMono,
+  card,
+  sectionLabel,
+} from '../theme';
+import {
+  IconMic,
+  IconMicOff,
+  IconHeadphones,
+  IconHeadphonesOff,
+  IconLeave,
+} from './Icons';
 
 const VoiceContainer = styled.div`
-  background: #ffffff;
-  backdrop-filter: blur(20px);
-  border-radius: 16px;
-  padding: 24px;
-  margin-top: 20px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  ${card}
+  padding: 16px;
 `;
 
 const Header = styled.div`
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e2e8f0;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+`;
+
+const HeaderLeft = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 `;
 
 const Title = styled.h3`
+  ${sectionLabel}
   margin: 0;
-  color: #2d3748;
-  font-size: 1.2rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+`;
 
-  span.icon {
-    font-size: 1.4rem;
-  }
+/** Static count chip - mono because the number is a count of people in voice. */
+const CountChip = styled.span`
+  ${chip.sm}
+  ${chipStatic}
+  ${chipMono}
 `;
 
 const ControlButtons = styled.div`
   display: flex;
-  gap: 12px;
-`;
-
-const ControlButton = styled.button<{ active?: boolean; danger?: boolean; disabled?: boolean }>`
-  padding: 10px 20px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  display: flex;
   align-items: center;
   gap: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+`;
 
-  background: ${props =>
-    props.danger ? '#f87171' :
-    props.active ? '#6366f1' :
-    '#ffffff'
-  };
+const JoinButton = styled.button`
+  ${button.secondary}
+  ${buttonSm}
+`;
 
-  color: ${props => (props.danger || props.active) ? 'white' : '#2d3748'};
-  opacity: ${props => props.disabled ? 0.5 : 1};
+/**
+ * In-voice toggles: md chip-buttons, so they swap places with the sm
+ * buttons in the top bar without the row resizing. `active` means the
+ * capability is ON (mic live, ears open) and takes the mustard tint.
+ */
+const ControlButton = styled.button<{ active?: boolean }>`
+  ${chip.md}
+  ${chipInteractive}
 
-  &:hover {
-    transform: ${props => !props.disabled ? 'translateY(-1px)' : 'none'};
-    box-shadow: ${props => !props.disabled ? '0 4px 6px rgba(0, 0, 0, 0.07)' : 'none'};
-    background: ${props =>
-      props.disabled ? '' :
-      props.danger ? '#ef4444' :
-      props.active ? '#5558e3' :
-      '#f8fafc'
-    };
-  }
+  ${props =>
+    props.active
+      ? `
+    background: ${color.mustardFaint};
+    border-color: ${color.mustardDeep};
+    color: ${color.mustard};
+    &:hover {
+      background: ${color.mustardFaint};
+      border-color: ${color.mustardDeep};
+      color: ${color.mustard};
+    }
+  `
+      : ''}
 
-  &:active {
-    transform: ${props => !props.disabled ? 'translateY(0)' : 'none'};
+  &:disabled {
+    color: ${color.faint};
+    border-color: ${color.line};
+    cursor: not-allowed;
   }
 `;
 
-const StatusIndicator = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: #f8fafc;
-  border-radius: 8px;
-  font-size: 13px;
-  color: #718096;
-  border: 1px solid #e2e8f0;
+/** Leave is the same action as the room top bar's - so it is the same button. */
+const LeaveButton = styled.button`
+  ${button.danger}
+  ${buttonSm}
 `;
 
 const ParticipantsGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 16px;
-  margin-top: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
 `;
 
-const ParticipantCard = styled.div<{ isSpeaking: boolean; isMuted: boolean; isDeafened: boolean }>`
-  background: ${props =>
-    props.isSpeaking
-      ? 'rgba(99, 102, 241, 0.05)'
-      : '#ffffff'
-  };
-  border: 2px solid ${props =>
-    props.isSpeaking
-      ? 'rgba(99, 102, 241, 0.3)'
-      : '#e2e8f0'
-  };
-  border-radius: 16px;
-  padding: 16px;
-  text-align: center;
-  transition: all 0.3s ease;
-  opacity: ${props => props.isDeafened ? 0.5 : 1};
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-    background: ${props =>
-      props.isSpeaking
-        ? 'rgba(99, 102, 241, 0.1)'
-        : '#f8fafc'
-    };
-  }
+const ParticipantCard = styled.div<{ isSpeaking: boolean; isDeafened: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: ${radius.md};
+  background: ${props => (props.isSpeaking ? color.mustardFaint : color.bg2)};
+  border: 1px solid ${props => (props.isSpeaking ? color.mustard : color.line)};
+  opacity: ${props => (props.isDeafened ? 0.65 : 1)};
+  transition: background 150ms ease, border-color 150ms ease, opacity 150ms ease;
 `;
 
-const Avatar = styled.div<{ color: string; size?: number }>`
-  width: ${props => props.size || 70}px;
-  height: ${props => props.size || 70}px;
+const Avatar = styled.div`
+  width: 26px;
+  height: 26px;
+  flex: none;
   border-radius: 50%;
-  background: linear-gradient(135deg, ${props => props.color} 0%, ${props => props.color}dd 100%);
+  background: ${color.bg3};
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 12px;
-  font-size: ${props => (props.size || 70) * 0.4}px;
-  color: white;
-  font-weight: bold;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  position: relative;
-`;
-
-const SpeakingRing = styled.div`
-  position: absolute;
-  inset: -4px;
-  border: 3px solid #6366f1;
-  border-radius: 50%;
-  animation: pulse 1.5s ease-in-out infinite;
-
-  @keyframes pulse {
-    0% {
-      transform: scale(1);
-      opacity: 1;
-    }
-    50% {
-      transform: scale(1.1);
-      opacity: 0.5;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
+  font-family: ${font.display};
+  font-weight: 600;
+  font-size: 12px;
+  color: ${color.mustard};
 `;
 
 const Username = styled.div`
-  font-size: 14px;
-  font-weight: 600;
-  color: #2d3748;
-  margin-bottom: 8px;
-  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  font-family: ${font.body};
+  font-size: 13px;
+  color: ${color.text};
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 `;
 
 const VoiceStatus = styled.div`
   display: flex;
-  justify-content: center;
-  gap: 12px;
+  align-items: center;
+  gap: 6px;
+  flex: none;
 `;
 
-const StatusIcon = styled.span<{ active: boolean; type: 'mic' | 'headphone' }>`
-  font-size: 18px;
-  color: ${props =>
-    props.type === 'mic'
-      ? (props.active ? '#6366f1' : '#f87171')
-      : (props.active ? '#10b981' : '#f87171')
-  };
-  transition: all 0.2s;
+/**
+ * `off` = this participant has the thing switched off (muted / deafened).
+ * Off is the state worth reading across the grid, so it carries the danger
+ * hue alongside the struck-through icon; on is a quiet faint glyph that
+ * holds the row's width without asking for attention.
+ */
+const StatusIcon = styled.span<{ off: boolean }>`
+  display: inline-flex;
+  color: ${props => (props.off ? color.danger : color.faint)};
 `;
 
 const ConnectionInfo = styled.div`
-  margin-top: 20px;
-  padding: 16px;
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid ${color.line};
 `;
 
 const InfoRow = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: #4a5568;
-  font-size: 13px;
+  gap: 12px;
 
   & + & {
     margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid #e2e8f0;
   }
 `;
 
-const EmptyState = styled.div`
-  text-align: center;
-  padding: 40px;
-  color: #a0aec0;
+const InfoLabel = styled.span`
+  ${sectionLabel}
+`;
 
-  .icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-    opacity: 0.3;
-  }
+const InfoValue = styled.span<{ ok?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ${font.body};
+  font-size: 12px;
+  color: ${props => (props.ok ? color.ok : color.dim)};
+`;
+
+/** Quiet and centered, no border - this already sits inside the panel card. */
+const EmptyState = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 12px;
+  text-align: center;
+  font-family: ${font.body};
+  font-size: 13.5px;
+  color: ${color.dim};
 
   p {
     margin: 0;
-    font-size: 14px;
   }
 `;
 
@@ -284,7 +265,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
       voiceSocket.on('voice-user-joined', (data: VoiceUser) => {
         setVoiceUsers(prev => [...prev, data]);
         createPeerConnection(data.socketId, false);
-        toast.success(`${data.username} joined voice chat`, { icon: '🎤' });
+        toast.success(`${data.username} joined voice`);
       });
 
       voiceSocket.on('voice-user-left', (data: { userId: string; socketId: string }) => {
@@ -437,10 +418,10 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
       });
 
       setIsInVoice(true);
-      toast.success('Joined voice chat!', { icon: '🎤' });
+      toast.success('Joined voice');
     } catch (error) {
       console.error('Failed to join voice:', error);
-      toast.error('Failed to access microphone. Please check permissions.');
+      toast.error("Couldn't access the microphone. Check browser permissions.");
     }
   };
 
@@ -462,7 +443,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
     setIsInVoice(false);
     setVoiceUsers([]);
     setSpeakingUsers(new Set());
-    toast.success('Left voice chat');
+    toast.success('Left voice');
   };
 
   const handleToggleMute = () => {
@@ -502,32 +483,20 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
     });
   };
 
-  const getAvatarColor = (username: string) => {
-    const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#f97316', '#ef4444'];
-    const index = username.charCodeAt(0) % colors.length;
-    return colors[index];
-  };
-
   return (
     <VoiceContainer>
       <Header>
-        <Title>
-          <span className="icon">🎙️</span>
-          Voice Chat
-          {isInVoice && (
-            <StatusIndicator>
-              <span>•</span>
-              {voiceUsers.length} connected
-            </StatusIndicator>
-          )}
-        </Title>
+        <HeaderLeft>
+          <Title>Voice</Title>
+          {isInVoice && <CountChip>{voiceUsers.length} in voice</CountChip>}
+        </HeaderLeft>
 
         <ControlButtons>
           {!isInVoice ? (
-            <ControlButton active onClick={handleJoinVoice}>
-              <span>📞</span>
-              Join Voice
-            </ControlButton>
+            <JoinButton onClick={handleJoinVoice}>
+              <IconMic size={14} />
+              Join voice
+            </JoinButton>
           ) : (
             <>
               <ControlButton
@@ -535,8 +504,8 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
                 onClick={handleToggleMute}
                 title={isMuted ? 'Unmute' : 'Mute'}
               >
-                <span>{isMuted ? '🔇' : '🔊'}</span>
-                {isMuted ? 'Unmuted' : 'Muted'}
+                {isMuted ? <IconMicOff size={14} /> : <IconMic size={14} />}
+                {isMuted ? 'Muted' : 'Unmuted'}
               </ControlButton>
 
               <ControlButton
@@ -544,14 +513,14 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
                 onClick={handleToggleDeafen}
                 title={isDeafened ? 'Undeafen' : 'Deafen'}
               >
-                <span>{isDeafened ? '🔇' : '🎧'}</span>
+                {isDeafened ? <IconHeadphonesOff size={14} /> : <IconHeadphones size={14} />}
                 {isDeafened ? 'Deafened' : 'Listening'}
               </ControlButton>
 
-              <ControlButton danger onClick={handleLeaveVoice}>
-                <span>📴</span>
+              <LeaveButton onClick={handleLeaveVoice}>
+                <IconLeave size={14} />
                 Leave
-              </ControlButton>
+              </LeaveButton>
             </>
           )}
         </ControlButtons>
@@ -565,20 +534,16 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
               {user && (
                 <ParticipantCard
                   isSpeaking={speakingUsers.has(user.id)}
-                  isMuted={isMuted}
                   isDeafened={isDeafened}
                 >
-                  <Avatar color={getAvatarColor(user.username)}>
-                    {speakingUsers.has(user.id) && <SpeakingRing />}
-                    {user.username[0].toUpperCase()}
-                  </Avatar>
-                  <Username>{user.username} (You)</Username>
+                  <Avatar>{user.username?.[0]?.toUpperCase() ?? '?'}</Avatar>
+                  <Username>{user.username} (you)</Username>
                   <VoiceStatus>
-                    <StatusIcon active={!isMuted} type="mic">
-                      {isMuted ? '🔇' : '🎤'}
+                    <StatusIcon off={isMuted} title={isMuted ? 'Muted' : 'Unmuted'}>
+                      {isMuted ? <IconMicOff size={13} /> : <IconMic size={13} />}
                     </StatusIcon>
-                    <StatusIcon active={!isDeafened} type="headphone">
-                      {isDeafened ? '🔇' : '🎧'}
+                    <StatusIcon off={isDeafened} title={isDeafened ? 'Deafened' : 'Listening'}>
+                      {isDeafened ? <IconHeadphonesOff size={13} /> : <IconHeadphones size={13} />}
                     </StatusIcon>
                   </VoiceStatus>
                 </ParticipantCard>
@@ -589,20 +554,27 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
                 <ParticipantCard
                   key={voiceUser.userId}
                   isSpeaking={speakingUsers.has(voiceUser.userId)}
-                  isMuted={voiceUser.isMuted}
                   isDeafened={voiceUser.isDeafened}
                 >
-                  <Avatar color={getAvatarColor(voiceUser.username)}>
-                    {speakingUsers.has(voiceUser.userId) && <SpeakingRing />}
-                    {voiceUser.username[0].toUpperCase()}
-                  </Avatar>
+                  {/* usernames arrive over socket payloads - an empty one must not throw */}
+                  <Avatar>{voiceUser.username?.[0]?.toUpperCase() ?? '?'}</Avatar>
                   <Username>{voiceUser.username}</Username>
                   <VoiceStatus>
-                    <StatusIcon active={!voiceUser.isMuted} type="mic">
-                      {voiceUser.isMuted ? '🔇' : '🎤'}
+                    <StatusIcon
+                      off={voiceUser.isMuted}
+                      title={voiceUser.isMuted ? 'Muted' : 'Unmuted'}
+                    >
+                      {voiceUser.isMuted ? <IconMicOff size={13} /> : <IconMic size={13} />}
                     </StatusIcon>
-                    <StatusIcon active={!voiceUser.isDeafened} type="headphone">
-                      {voiceUser.isDeafened ? '🔇' : '🎧'}
+                    <StatusIcon
+                      off={voiceUser.isDeafened}
+                      title={voiceUser.isDeafened ? 'Deafened' : 'Listening'}
+                    >
+                      {voiceUser.isDeafened ? (
+                        <IconHeadphonesOff size={13} />
+                      ) : (
+                        <IconHeadphones size={13} />
+                      )}
                     </StatusIcon>
                   </VoiceStatus>
                 </ParticipantCard>
@@ -610,36 +582,26 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
             </ParticipantsGrid>
           ) : (
             <EmptyState>
-              <div className="icon">🎤</div>
-              <p>You're the first one here!</p>
-              <p style={{ marginTop: '8px', fontSize: '13px', opacity: 0.7 }}>
-                Invite others to join the voice chat
-              </p>
+              <p>No one in voice yet.</p>
             </EmptyState>
           )}
 
+          {/*
+            Only claims this file can back: noise suppression is an actual
+            getUserMedia constraint requested in handleJoinVoice. Connection
+            quality and codec used to be hardcoded here with nothing measuring
+            them - no getStats(), no SDP inspection - so they are gone.
+          */}
           <ConnectionInfo>
             <InfoRow>
-              <span>Connection Quality</span>
-              <span style={{ color: '#10b981' }}>● Excellent</span>
-            </InfoRow>
-            <InfoRow>
-              <span>Audio Codec</span>
-              <span>Opus</span>
-            </InfoRow>
-            <InfoRow>
-              <span>Noise Suppression</span>
-              <span style={{ color: '#10b981' }}>Enabled</span>
+              <InfoLabel>Noise suppression</InfoLabel>
+              <InfoValue ok>Enabled</InfoValue>
             </InfoRow>
           </ConnectionInfo>
         </>
       ) : (
         <EmptyState>
-          <div className="icon">🔇</div>
-          <p>Not in voice chat</p>
-          <p style={{ marginTop: '8px', fontSize: '13px', opacity: 0.7 }}>
-            Click "Join Voice" to start talking with others
-          </p>
+          <p>Join and talk while you watch.</p>
         </EmptyState>
       )}
     </VoiceContainer>

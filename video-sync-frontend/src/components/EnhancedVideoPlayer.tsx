@@ -14,55 +14,61 @@ import { FailureCard } from './player/FailureCard';
 import { YouTubeMount } from './player/YouTubeMount';
 import { Html5Mount } from './player/Html5Mount';
 import { VimeoMount } from './player/VimeoMount';
+import {
+  button,
+  card,
+  chip,
+  chipInteractive,
+  chipStatic,
+  color,
+  focusRing,
+  font,
+  radius,
+} from '../theme';
+import { IconCrown, IconPause, IconPlay, IconSync, IconUsers } from './Icons';
 
 const PlayerContainer = styled.div`
+  ${card}
   width: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  background: #ffffff;
 `;
 
 const VideoWrapper = styled.div`
   position: relative;
   width: 100%;
-  padding-bottom: 56.25%;
+  aspect-ratio: 16 / 9;
+  /* the controls must stay reachable without scrolling: on a short laptop
+     a full-width 16:9 stage alone is taller than the viewport, which put
+     Play below the fold. Cap the stage, letterbox the rest. */
+  max-height: calc(100vh - 230px);
+  min-height: 260px;
+  margin: 0 auto;
   background: #000;
   overflow: hidden;
 `;
 
 const GestureChip = styled.button`
+  ${button.primary}
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 105;
-  background: rgba(15, 23, 42, 0.9);
-  color: white;
-  border: none;
-  padding: 14px 28px;
-  border-radius: 24px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-
-  &:hover {
-    background: rgba(15, 23, 42, 1);
-  }
+  border-radius: ${radius.pill};
 `;
 
 const Controls = styled.div`
-  background: #ffffff;
-  padding: 20px 24px;
+  background: ${color.bg1};
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  border-top: 1px solid #e2e8f0;
+  gap: 12px;
+  border-top: 1px solid ${color.line};
 `;
 
 const ControlRow = styled.div`
@@ -72,92 +78,90 @@ const ControlRow = styled.div`
 `;
 
 const PlayButton = styled.button<{ canControl: boolean }>`
-  background: ${props => props.canControl
-    ? '#6366f1'
-    : '#a0aec0'};
-  border: none;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 12px;
-  cursor: ${props => props.canControl ? 'pointer' : 'not-allowed'};
-  font-weight: 600;
-  font-size: 15px;
-  display: flex;
+  ${button.primary}
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: all 0.3s ease;
-  box-shadow: ${props => props.canControl
-    ? '0 1px 3px rgba(0, 0, 0, 0.05)'
-    : 'none'};
-
-  &:hover {
-    transform: ${props => props.canControl ? 'translateY(-1px)' : 'none'};
-    background: ${props => props.canControl ? '#5558e3' : '#a0aec0'};
-    box-shadow: ${props => props.canControl
-      ? '0 4px 6px rgba(0, 0, 0, 0.07)'
-      : 'none'};
-  }
-
-  &:active {
-    transform: ${props => props.canControl ? 'translateY(0)' : 'none'};
-  }
+  ${props =>
+    props.canControl
+      ? ''
+      : `
+    background: ${color.bg3};
+    border-color: ${color.bg3};
+    /* dim, not faint: faint on bg3 is 4.16:1, under AA for this 14px label */
+    color: ${color.dim};
+    cursor: not-allowed;
+    &:hover { background: ${color.bg3}; border-color: ${color.bg3}; }
+  `}
 `;
 
 const ProgressContainer = styled.div`
   flex: 1;
+  min-width: 0;
   position: relative;
   height: 40px;
   display: flex;
   align-items: center;
 `;
 
-const ProgressBar = styled.div<{ canControl: boolean }>`
+/**
+ * The scrub thumb lives on the BAR, not on the fill. It used to hang off
+ * ProgressFill and be revealed by `${ProgressBar}:hover &` - a component
+ * selector, which CRA cannot compile because it does not enable
+ * @emotion/babel-plugin, so the thumb never rendered at all. The bar owns
+ * its own :hover, so putting the ::after here works with no plugin; it is
+ * placed at the same spot (the fill's leading edge) from the same progress.
+ */
+const ProgressBar = styled.div<{ canControl: boolean; progress: number }>`
   width: 100%;
-  height: 6px;
-  background: #e2e8f0;
-  border-radius: 3px;
-  cursor: ${props => props.canControl ? 'pointer' : 'default'};
+  height: 4px;
+  background: ${color.lineBright};
+  border-radius: ${radius.pill};
+  cursor: ${props => (props.canControl ? 'pointer' : 'default')};
   position: relative;
-  overflow: hidden;
-  transition: height 0.2s ease;
+  transition: height 120ms ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: ${props => props.progress}%;
+    transform: translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    background: ${color.mustard};
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 120ms ease, left 100ms linear;
+  }
 
   &:hover {
-    height: ${props => props.canControl ? '10px' : '6px'};
+    height: ${props => (props.canControl ? '6px' : '4px')};
+
+    /* only whoever can actually seek gets a scrub handle */
+    &::after {
+      opacity: ${props => (props.canControl ? 1 : 0)};
+    }
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: ${focusRing};
   }
 `;
 
 const ProgressFill = styled.div<{ progress: number }>`
   height: 100%;
-  background: #6366f1;
-  border-radius: 3px;
+  background: ${color.mustard};
+  border-radius: ${radius.pill};
   width: ${props => props.progress}%;
-  position: relative;
-  transition: width 0.1s linear;
-
-  &::after {
-    content: '';
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 14px;
-    height: 14px;
-    background: white;
-    border-radius: 50%;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    opacity: 0;
-    transition: opacity 0.2s;
-  }
-
-  ${ProgressBar}:hover &::after {
-    opacity: 1;
-  }
+  transition: width 100ms linear;
 `;
 
 const TimeDisplay = styled.div`
-  color: #4a5568;
-  font-size: 14px;
-  font-weight: 500;
+  font-family: ${font.mono};
+  font-size: 12.5px;
+  color: ${color.dim};
   font-variant-numeric: tabular-nums;
   min-width: 100px;
   text-align: right;
@@ -167,88 +171,62 @@ const StatusRow = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 0;
-  border-top: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid ${color.line};
 `;
 
 const StatusGroup = styled.div`
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 `;
 
-const StatusItem = styled.div<{ type?: 'success' | 'warning' | 'error' | 'info' }>`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: ${props => {
-    switch(props.type) {
-      case 'success': return '#10b981';
-      case 'warning': return '#f59e0b';
-      case 'error': return '#f87171';
-      case 'info': return '#6366f1';
-      default: return '#718096';
-    }
-  }};
-`;
-
-const StatusDot = styled.div<{ color: string }>`
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: ${props => props.color};
-  animation: pulse 2s ease-in-out infinite;
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-`;
-
-const ControlButton = styled.button<{ active?: boolean }>`
-  background: ${props => props.active ? 'rgba(99, 102, 241, 0.1)' : '#ffffff'};
-  border: 1px solid ${props =>
-    props.active ? 'rgba(99, 102, 241, 0.3)' : '#e2e8f0'
-  };
-  color: #2d3748;
-  padding: 8px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.2s;
+/* the word carries the state too, not just the dot - a 6px dot is the
+   whole difference otherwise, and it is the one thing color-blind and
+   small-screen readers lose first */
+const ConnectionState = styled.div<{ connected: boolean }>`
   display: flex;
   align-items: center;
   gap: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-
-  &:hover {
-    background: ${props =>
-      props.active ? 'rgba(99, 102, 241, 0.15)' : '#f8fafc'};
-    transform: translateY(-1px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-  }
+  font-size: 12px;
+  color: ${props => (props.connected ? color.dim : color.danger)};
 `;
 
+/* `tone`, not `color`: emotion forwards a prop literally named color to the
+   DOM, which emits an invalid <div color="..."> attribute */
+const StatusDot = styled.div<{ tone: string }>`
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: ${props => props.tone};
+  animation: pulse 2s ease-in-out infinite;
+`;
+
+/** Static status chip: who may drive playback. No hover, border `line`. */
 const CollaborativeIndicator = styled.div<{ enabled: boolean }>`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: ${props => props.enabled
-    ? 'rgba(16, 185, 129, 0.1)'
-    : '#ffffff'
-  };
-  border: 1px solid ${props => props.enabled
-    ? 'rgba(16, 185, 129, 0.3)'
-    : '#e2e8f0'
-  };
-  border-radius: 8px;
+  ${chip.sm}
+  ${chipStatic}
+  background: ${props => (props.enabled ? color.okFaint : color.bg2)};
+  color: ${props => (props.enabled ? color.ok : color.dim)};
+`;
+
+const RttReadout = styled.div`
+  font-family: ${font.mono};
   font-size: 12px;
-  color: ${props => props.enabled ? '#10b981' : '#a0aec0'};
-  font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  color: ${color.dim};
+  font-variant-numeric: tabular-nums;
+`;
+
+/** Interactive chip: rests on `lineBright`, hovers toward mustard. */
+const SyncToggle = styled.button<{ active?: boolean }>`
+  ${chip.sm}
+  ${chipInteractive}
+  background: ${props => (props.active ? color.mustardFaint : color.bg2)};
+  color: ${props => (props.active ? color.mustard : color.dim)};
+  border-color: ${props => (props.active ? color.mustardDeep : color.lineBright)};
 `;
 
 interface VideoPlayerProps {
@@ -273,6 +251,9 @@ const EMPTY_STATUS: EngineStatus = {
   needsGesture: false,
   seeksIssued: 0,
 };
+
+/** Keyboard seek step, in seconds - the arrow-key grain of the seek bar. */
+const SEEK_STEP_S = 5;
 
 /**
  * The player SHELL: engine lifecycle, controls, HUD, failure card. Which
@@ -334,7 +315,6 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     const onRejected = (r: { reason: string }) => {
       if (r.reason === 'not-controller') {
         toast.error('Only the host can control video playback', {
-          icon: '👑',
           duration: 2000,
         });
       } else if (r.reason === 'invalid-video-url') {
@@ -382,7 +362,6 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   const handlePlayPause = () => {
     if (!canControl) {
       toast.error('Only the host can control video playback', {
-        icon: '👑',
         duration: 2000
       });
       return;
@@ -402,7 +381,6 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!canControl) {
       toast.error('Only the host can seek the video', {
-        icon: '👑',
         duration: 2000
       });
       return;
@@ -428,10 +406,11 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   // What fills the 16:9 area. null mount = nothing playable = no controls.
+  // (`overlay`, not `card` - that name belongs to the imported css fragment.)
   let mount: React.ReactNode = null;
-  let card: React.ReactNode = null;
+  let overlay: React.ReactNode = null;
   if (failure) {
-    card = (
+    overlay = (
       <FailureCard
         title="Couldn't play this video"
         detail={failure}
@@ -475,7 +454,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
         );
         break;
       case 'none':
-        card =
+        overlay =
           source.reason === 'empty' ? (
             <FailureCard
               title="No video yet"
@@ -496,13 +475,59 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     ? status.projectedS
     : status.timeline?.mediaTime ?? 0;
 
+  // one value, two consumers: the fill's width and the bar's scrub thumb.
+  // Clamped at BOTH ends - projectedS goes negative whenever the timeline
+  // projects ahead of the local clock, and a negative percentage is a
+  // negative width plus a thumb parked off the left edge of the bar.
+  const progressPct =
+    status.durationS > 0
+      ? Math.min(100, Math.max(0, (shownTime / status.durationS) * 100))
+      : 0;
+
+  /**
+   * The bar is a real slider, so it has to answer the keyboard as well as
+   * the mouse: arrows step, Home/End jump to the ends. Every one of them
+   * leaves through the same seek intent the click path uses - the local
+   * player is never touched here, the broadcast moves everyone.
+   */
+  const handleProgressKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    let target: number;
+    switch (e.key) {
+      case 'ArrowLeft':
+        target = shownTime - SEEK_STEP_S;
+        break;
+      case 'ArrowRight':
+        target = shownTime + SEEK_STEP_S;
+        break;
+      case 'Home':
+        target = 0;
+        break;
+      case 'End':
+        target = status.durationS;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    if (!canControl) {
+      toast.error('Only the host can seek the video', {
+        duration: 2000
+      });
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine || !status.durationS) return;
+    engine.sendIntent('seek', Math.max(0, Math.min(status.durationS, target)));
+  };
+
   return (
     <PlayerContainer>
       <VideoWrapper>
-        {mount ?? card}
+        {mount ?? overlay}
         {mount && status.needsGesture && (
           <GestureChip onClick={() => engineRef.current?.resumeFromGesture()}>
-            ▶ Click to join playback
+            <IconPlay size={16} />
+            Join playback
           </GestureChip>
         )}
         {showHud && <SyncHud status={status} />}
@@ -517,23 +542,28 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
               canControl={canControl}
               disabled={!isReady}
             >
-              {status.roomPlaying ? '⏸' : '▶'}
+              {status.roomPlaying ? <IconPause size={16} /> : <IconPlay size={16} />}
               {status.roomPlaying ? 'Pause' : 'Play'}
             </PlayButton>
 
             <ProgressContainer>
+              {/* a slider in fact, not just in looks: whoever may seek can
+                  reach it with Tab and drive it with the arrows */}
               <ProgressBar
                 data-testid="progress-bar"
+                role="slider"
+                tabIndex={canControl ? 0 : -1}
+                aria-label="Seek"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(status.durationS)}
+                aria-valuenow={Math.round(shownTime)}
+                aria-disabled={!canControl}
                 onClick={handleProgressClick}
+                onKeyDown={handleProgressKeyDown}
                 canControl={canControl}
+                progress={progressPct}
               >
-                <ProgressFill
-                  progress={
-                    status.durationS > 0
-                      ? Math.min(100, (shownTime / status.durationS) * 100)
-                      : 0
-                  }
-                />
+                <ProgressFill progress={progressPct} />
               </ProgressBar>
             </ProgressContainer>
 
@@ -544,23 +574,25 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
           <StatusRow>
             <StatusGroup>
-              <StatusItem type={connected ? 'success' : 'error'}>
-                <StatusDot color={connected ? '#6366f1' : '#f87171'} />
+              <ConnectionState connected={connected}>
+                <StatusDot tone={connected ? color.ok : color.danger} />
                 {connected ? 'Connected' : 'Disconnected'}
-              </StatusItem>
+              </ConnectionState>
 
               <CollaborativeIndicator enabled={allowGuestControl}>
-                {allowGuestControl ? '👥 Collaborative' : '👑 Host Only'}
+                {allowGuestControl ? <IconUsers size={13} /> : <IconCrown size={13} />}
+                {allowGuestControl ? 'Collaborative' : 'Host only'}
               </CollaborativeIndicator>
             </StatusGroup>
 
             <StatusGroup>
-              <StatusItem type="info">
-                {Number.isFinite(status.rttMs) ? `${Math.round(status.rttMs)}ms` : '—'}
-              </StatusItem>
-              <ControlButton active={syncEnabled} onClick={handleSyncToggle}>
-                🔗 Sync {syncEnabled ? 'ON' : 'OFF'}
-              </ControlButton>
+              <RttReadout title="Round-trip time to the sync server">
+                {Number.isFinite(status.rttMs) ? `${Math.round(status.rttMs)} ms rtt` : '— ms rtt'}
+              </RttReadout>
+              <SyncToggle active={syncEnabled} onClick={handleSyncToggle}>
+                <IconSync size={13} />
+                {syncEnabled ? 'Sync on' : 'Sync off'}
+              </SyncToggle>
             </StatusGroup>
           </StatusRow>
         </Controls>

@@ -12,6 +12,6 @@ test('renders the sign-in form', () => {
       </MemoryRouter>
     </AuthProvider>,
   );
-  expect(screen.getByText('Welcome Back')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
 });

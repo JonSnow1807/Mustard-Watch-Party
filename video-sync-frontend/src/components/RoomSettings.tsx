@@ -4,57 +4,69 @@ import { toast } from 'react-hot-toast';
 import { useSocket } from '../contexts/SocketContext';
 import { isAcceptableVideoUrl } from '../shared/media-source';
 import { sendSetVideo } from '../sync/SyncEngine';
+import { card, color, font, input, button, ghostIconButton, radius, focusRing, sectionLabel } from '../theme';
+import { IconX } from './Icons';
 
+// The room page owns the column width and the gap above this panel; the
+// panel owns only its own padding, so there is one source of each.
 const SettingsContainer = styled.div`
-  background: #f5f5f5;
-  border-radius: 8px;
-  padding: 1.5rem;
-  margin-top: 1rem;
+  ${card}
+  padding: 20px;
 `;
 
 const SettingsHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-  
+  gap: 16px;
+  margin-bottom: 4px;
+
   h3 {
     margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    font-family: ${font.display};
+    font-size: 16px;
+    font-weight: 600;
+    color: ${color.text};
   }
+`;
+
+const CloseButton = styled.button`
+  ${ghostIconButton}
 `;
 
 const SettingRow = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid #e0e0e0;
-  
-  &:last-child {
-    border-bottom: none;
+  gap: 16px;
+  padding: 14px 0;
+
+  /* dividers between rows only - no dangling hairline above the actions */
+  & + & {
+    border-top: 1px solid ${color.line};
   }
 `;
 
 const Label = styled.label`
-  font-weight: 500;
-  color: #333;
+  ${sectionLabel}
 `;
 
+// Hidden checkbox + painted span: the input stays the real control (and
+// the real focus target), the span is only its picture.
 const Toggle = styled.label`
   position: relative;
   display: inline-block;
-  width: 48px;
-  height: 24px;
-  
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+
   input {
+    position: absolute;
     opacity: 0;
     width: 0;
     height: 0;
   }
-  
+
   span {
     position: absolute;
     cursor: pointer;
@@ -62,60 +74,67 @@ const Toggle = styled.label`
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #ccc;
-    transition: .4s;
-    border-radius: 24px;
-    
+    background: ${color.bg3};
+    border-radius: ${radius.pill};
+    transition: background 120ms ease;
+
     &:before {
       position: absolute;
       content: "";
       height: 16px;
       width: 16px;
-      left: 4px;
-      bottom: 4px;
-      background-color: white;
-      transition: .4s;
+      left: 2px;
+      top: 2px;
+      background: ${color.text};
       border-radius: 50%;
+      transition: transform 120ms ease, background 120ms ease;
     }
   }
-  
+
   input:checked + span {
-    background-color: #007bff;
+    background: ${color.mustard};
   }
-  
+
   input:checked + span:before {
-    transform: translateX(24px);
+    background: ${color.mustardInk};
+    transform: translateX(16px);
+  }
+
+  input:focus-visible + span {
+    box-shadow: ${focusRing};
   }
 `;
 
-const Input = styled.input`
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  width: 200px;
+const NumberInput = styled.input`
+  ${input}
+  width: 88px;
+  padding: 8px 12px;
+  font-family: ${font.mono};
+  font-variant-numeric: tabular-nums;
 `;
 
-const Button = styled.button`
-  padding: 0.5rem 1rem;
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  
-  &:hover {
-    background: #0056b3;
-  }
+const UrlInput = styled.input`
+  ${input}
+  width: 300px;
+  max-width: 60%;
+  padding: 8px 12px;
+  font-family: ${font.mono};
+  font-size: 13px;
 `;
 
-const DangerButton = styled(Button)`
-  background: #dc3545;
-  
-  &:hover {
-    background: #c82333;
-  }
+const Actions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+`;
+
+const SaveButton = styled.button`
+  ${button.primary}
+`;
+
+const EndButton = styled.button`
+  ${button.danger}
 `;
 
 interface RoomSettingsProps {
@@ -124,9 +143,15 @@ interface RoomSettingsProps {
   onUpdate?: () => void;
 }
 
+const DEFAULT_MAX_USERS = 20;
+
 export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpdate }) => {
   const [isPublic, setIsPublic] = useState(room.isPublic || false);
-  const [maxUsers, setMaxUsers] = useState(room.maxUsers || 20);
+  // '' is a legal intermediate state: a number field being retyped is empty
+  // for a keystroke, and parsing that into NaN would blank the control and
+  // make React complain about the value attribute. Blur settles it back to a
+  // number, so the field is never left holding nothing.
+  const [maxUsers, setMaxUsers] = useState<number | ''>(room.maxUsers || DEFAULT_MAX_USERS);
   const [videoUrl, setVideoUrl] = useState(room.videoUrl || '');
   const [loading, setLoading] = useState(false);
   const { socket } = useSocket();
@@ -160,7 +185,7 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
     if (!window.confirm('Are you sure you want to end this room? All participants will be disconnected.')) {
       return;
     }
-    
+
     try {
       // For now, just navigate away - room deletion handled separately
       // await apiService.updateRoom(room.code, {
@@ -176,14 +201,20 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
   return (
     <SettingsContainer>
       <SettingsHeader>
-        <h3>⚙️ Room Settings</h3>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>✕</button>
+        <h3>Room settings</h3>
+        <CloseButton type="button" onClick={onClose} aria-label="Close room settings">
+          <IconX size={16} />
+        </CloseButton>
       </SettingsHeader>
-      
+
+      {/* Every row's visible text IS its control's accessible name, so each
+          Label points at its input by id - the painted toggle carries no
+          text of its own to borrow. */}
       <SettingRow>
-        <Label>Public Room</Label>
+        <Label htmlFor="room-settings-public">List publicly</Label>
         <Toggle>
           <input
+            id="room-settings-public"
             type="checkbox"
             checked={isPublic}
             onChange={(e) => setIsPublic(e.target.checked)}
@@ -191,36 +222,51 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
           <span />
         </Toggle>
       </SettingRow>
-      
+
       <SettingRow>
-        <Label>Max Participants</Label>
-        <Input
+        <Label htmlFor="room-settings-max-users">Max participants</Label>
+        <NumberInput
+          id="room-settings-max-users"
           type="number"
           min="2"
           max="100"
           value={maxUsers}
-          onChange={(e) => setMaxUsers(parseInt(e.target.value))}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (raw === '') {
+              setMaxUsers('');
+              return;
+            }
+            const parsed = parseInt(raw, 10);
+            setMaxUsers(Number.isNaN(parsed) ? '' : parsed);
+          }}
+          onBlur={() => {
+            if (maxUsers === '') {
+              setMaxUsers(room.maxUsers || DEFAULT_MAX_USERS);
+            }
+          }}
         />
       </SettingRow>
-      
+
       <SettingRow>
-        <Label>Video URL</Label>
-        <Input
+        <Label htmlFor="room-settings-video-url">Video URL</Label>
+        <UrlInput
+          id="room-settings-video-url"
           type="url"
           value={videoUrl}
           onChange={(e) => setVideoUrl(e.target.value)}
-          placeholder="YouTube URL"
+          placeholder="YouTube, Vimeo, HLS, or MP4 URL"
         />
       </SettingRow>
-      
-      <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-        <Button onClick={handleUpdateSettings} disabled={loading}>
-          {loading ? 'Saving...' : 'Save Changes'}
-        </Button>
-        <DangerButton onClick={handleEndRoom}>
-          End Room
-        </DangerButton>
-      </div>
+
+      <Actions>
+        <SaveButton type="button" onClick={handleUpdateSettings} disabled={loading}>
+          {loading ? 'Saving…' : 'Save changes'}
+        </SaveButton>
+        <EndButton type="button" onClick={handleEndRoom}>
+          End room
+        </EndButton>
+      </Actions>
     </SettingsContainer>
   );
 };

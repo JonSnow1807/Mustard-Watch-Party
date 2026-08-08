@@ -2,65 +2,99 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import styled from '@emotion/styled';
+import { card, color, font, input, button, buttonSm, sectionLabel } from '../theme';
 
+// The chat is a linear log, not a chat-bubble app: one column, sender
+// names carrying the only color distinction. The 400px height and the
+// messages area's own scroll are load-bearing - the end-anchor scroll
+// only works while the list, not the page, is what overflows.
 const ChatContainer = styled.div`
+  ${card}
   height: 400px;
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  padding: 16px;
+`;
+
+const PanelTitle = styled.h3`
+  ${sectionLabel}
+  margin: 0 0 16px;
 `;
 
 const MessagesArea = styled.div`
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 10px;
 `;
 
-const Message = styled.div<{ isOwn: boolean }>`
-  padding: 0.5rem 1rem;
-  border-radius: 18px;
-  max-width: 70%;
-  word-wrap: break-word;
-  align-self: ${props => props.isOwn ? 'flex-end' : 'flex-start'};
-  background: ${props => props.isOwn ? '#007bff' : '#f1f1f1'};
-  color: ${props => props.isOwn ? 'white' : 'black'};
+const MessageRow = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+`;
+
+// An empty log should read as "nothing has happened yet", not as a bug.
+const EmptyState = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+`;
+
+const EmptyTitle = styled.div`
+  font-family: ${font.body};
+  font-size: 13px;
+  color: ${color.dim};
+`;
+
+const EmptyHint = styled.div`
+  font-family: ${font.body};
+  font-size: 12px;
+  color: ${color.faint};
+`;
+
+const Sender = styled.div<{ isOwn: boolean }>`
+  font-family: ${font.body};
+  font-size: 11.5px;
+  font-weight: 600;
+  color: ${props => (props.isOwn ? color.text : color.mustard)};
+`;
+
+const MessageText = styled.div`
+  font-family: ${font.body};
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: ${color.text};
+  overflow-wrap: break-word;
+  word-break: break-word;
 `;
 
 const InputArea = styled.form`
   display: flex;
-  padding: 1rem;
-  border-top: 1px solid #eee;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid ${color.line};
 `;
 
 const Input = styled.input`
+  ${input}
+  padding: 8px 12px;
   flex: 1;
-  padding: 0.5rem 1rem;
-  border: 1px solid #ddd;
-  border-radius: 20px;
-  outline: none;
-  
-  &:focus {
-    border-color: #007bff;
-  }
+  min-width: 0;
 `;
 
 const SendButton = styled.button`
-  padding: 0.5rem 1.5rem;
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 20px;
-  cursor: pointer;
-  
-  &:hover {
-    background: #0056b3;
-  }
+  ${button.primary}
+  ${buttonSm}
+  flex-shrink: 0;
 `;
 
 interface ChatMessage {
@@ -105,7 +139,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomCode }) => {
 
   const sendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!inputMessage.trim() || !socket || !user) return;
 
     const message = {
@@ -124,27 +158,27 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomCode }) => {
 
   return (
     <ChatContainer>
-      <h3 style={{ padding: '1rem 1rem 0', margin: 0 }}>💬 Chat</h3>
+      <PanelTitle>Chat</PanelTitle>
       <MessagesArea>
+        {messages.length === 0 && (
+          <EmptyState>
+            <EmptyTitle>No messages yet.</EmptyTitle>
+            <EmptyHint>Say something while you watch.</EmptyHint>
+          </EmptyState>
+        )}
         {messages.map((msg) => (
-          <div key={msg.id}>
-            {msg.userId !== user?.id && (
-              <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '2px' }}>
-                {msg.username}
-              </div>
-            )}
-            <Message isOwn={msg.userId === user?.id}>
-              {msg.message}
-            </Message>
-          </div>
+          <MessageRow key={msg.id}>
+            <Sender isOwn={msg.userId === user?.id}>{msg.username}</Sender>
+            <MessageText>{msg.message}</MessageText>
+          </MessageRow>
         ))}
         <div ref={messagesEndRef} />
       </MessagesArea>
-      
+
       <InputArea onSubmit={sendMessage}>
         <Input
           type="text"
-          placeholder="Type a message..."
+          placeholder="Type a message…"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           maxLength={200}

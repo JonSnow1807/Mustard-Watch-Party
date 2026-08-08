@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -9,293 +9,279 @@ import { RoomSettings } from '../components/RoomSettings';
 import { apiService } from '../services/api';
 import styled from '@emotion/styled';
 import { toast } from 'react-hot-toast';
+import {
+  color,
+  font,
+  button,
+  buttonSm,
+  chip,
+  chipStatic,
+  chipInteractive,
+  chipMono,
+  card,
+  sectionLabel,
+} from '../theme';
+import {
+  Wordmark,
+  IconCopy,
+  IconCheck,
+  IconShare,
+  IconSettings,
+  IconLeave,
+} from '../components/Icons';
 
-const Container = styled.div`
+const Page = styled.div`
   min-height: 100vh;
-  background: linear-gradient(to bottom, #ffffff, #fafafa);
-  position: relative;
-  overflow-x: hidden;
-
-  &::before {
-    content: '';
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background:
-      radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.03) 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.03) 0%, transparent 50%),
-      radial-gradient(circle at 40% 40%, rgba(16, 185, 129, 0.02) 0%, transparent 50%);
-    pointer-events: none;
-    z-index: 0;
-  }
+  background: ${color.bg0};
+  color: ${color.text};
+  font-family: ${font.body};
 `;
 
-const Header = styled.header`
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid #e2e8f0;
-  padding: 16px 24px;
+const TopBar = styled.header`
   position: sticky;
   top: 0;
   z-index: 100;
+  background: ${color.bg0};
+  border-bottom: 1px solid ${color.line};
 `;
 
-const HeaderContent = styled.div`
-  max-width: 1400px;
-  margin: 0 auto;
+const TopBarInner = styled.div`
+  height: 56px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
+  padding: 0 20px;
 `;
 
-const RoomInfo = styled.div`
+const Identity = styled.div`
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 10px;
+  min-width: 0;
   flex: 1;
 `;
 
-const RoomTitle = styled.h1`
+/**
+ * The wordmark is the first thing to go on a phone: the room NAME is this
+ * page's h1 and the only thing telling you which room you are in, so it
+ * stays at every width (it truncates) and the brand steps aside.
+ */
+const BrandSlot = styled.span`
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+
+  @media (max-width: 560px) {
+    display: none;
+  }
+`;
+
+const Divider = styled.span`
+  color: ${color.faint};
+  font-size: 13px;
+  line-height: 1;
+
+  @media (max-width: 560px) {
+    display: none;
+  }
+`;
+
+const RoomName = styled.h1`
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-`;
-
-const RoomCode = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  color: #4a5568;
-  font-family: monospace;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-
-  &:hover {
-    background: #f1f5f9;
-    border-color: #cbd5e1;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-  }
-
-  span.icon {
-    font-size: 16px;
-  }
-`;
-
-const HeaderActions = styled.div`
-  display: flex;
-  gap: 12px;
-  align-items: center;
-`;
-
-const ActionButton = styled.button<{ variant?: 'primary' | 'danger' | 'ghost' }>`
-  padding: 10px 20px;
-  border-radius: 10px;
-  font-size: 14px;
+  min-width: 0;
+  font-family: ${font.display};
   font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
+  font-size: 15px;
+  color: ${color.text};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const CodeChip = styled.button<{ copied?: boolean }>`
+  ${chip.sm}
+  ${chipInteractive}
+  font-family: ${font.mono};
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  color: ${props => (props.copied ? color.ok : color.text)};
+  border-color: ${props => (props.copied ? color.ok : color.lineBright)};
+
+  &:hover {
+    border-color: ${props => (props.copied ? color.ok : color.mustardDeep)};
+    color: ${props => (props.copied ? color.ok : color.text)};
+  }
+`;
+
+const Actions = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
-  border: ${props =>
-    props.variant === 'ghost' ? '1px solid #e2e8f0' : 'none'
-  };
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+`;
 
-  background: ${props => {
-    switch(props.variant) {
-      case 'danger': return '#f87171';
-      case 'ghost': return '#ffffff';
-      default: return '#6366f1';
-    }
-  }};
-
-  color: ${props => props.variant === 'ghost' ? '#2d3748' : 'white'};
-
-  &:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-    background: ${props => {
-      switch(props.variant) {
-        case 'danger': return '#ef4444';
-        case 'ghost': return '#f8fafc';
-        default: return '#5558e3';
-      }
-    }};
+const ActionLabel = styled.span`
+  @media (max-width: 880px) {
+    display: none;
   }
 `;
 
-const MainContent = styled.main`
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 24px;
-  position: relative;
-  z-index: 1;
+/** Below 880px the labels drop out and these become icon-only squares. */
+const actionTight = `
+  @media (max-width: 880px) {
+    padding: 6px 8px;
+  }
 `;
 
-const ContentGrid = styled.div`
+const SecondaryAction = styled.button`
+  ${button.secondary}
+  ${buttonSm}
+  ${actionTight}
+`;
+
+const DangerAction = styled.button`
+  ${button.danger}
+  ${buttonSm}
+  ${actionTight}
+`;
+
+const BackButton = styled.button`
+  ${button.secondary}
+`;
+
+const Grid = styled.main`
   display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  padding: 20px;
 
-  @media (max-width: 1024px) {
-    grid-template-columns: 1fr;
+  @media (max-width: 1100px) {
+    grid-template-columns: minmax(0, 1fr);
   }
 `;
 
-const VideoSection = styled.div`
+const MainColumn = styled.div`
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
 `;
 
-const SidePanel = styled.div`
+const SideColumn = styled.div`
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
   height: fit-content;
   position: sticky;
-  top: 100px;
+  top: 76px;
 
-  @media (max-width: 1024px) {
-    position: relative;
-    top: 0;
+  @media (max-width: 1100px) {
+    position: static;
   }
 `;
 
-const ParticipantsList = styled.div`
-  background: #ffffff;
-  backdrop-filter: blur(20px);
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+const ParticipantsPanel = styled.div`
+  ${card}
+  padding: 16px;
 `;
 
-const ParticipantsHeader = styled.div`
+const PanelHeader = styled.div`
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #e2e8f0;
-`;
-
-const ParticipantsTitle = styled.h3`
-  margin: 0;
-  color: #2d3748;
-  font-size: 1rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
   gap: 8px;
+  margin-bottom: 16px;
 `;
 
-const ParticipantCount = styled.span`
-  background: #6366f1;
-  color: white;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
+// h3, not h2: Participants, Chat and Voice are sibling panels of equal
+// rank under the page's single h1 (the room name).
+const PanelLabel = styled.h3`
+  ${sectionLabel}
+  margin: 0;
 `;
 
-const ParticipantItem = styled.div<{ isHost?: boolean }>`
+const CountChip = styled.span`
+  ${chip.sm}
+  ${chipStatic}
+  ${chipMono}
+`;
+
+const ParticipantRow = styled.div`
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: ${props =>
-    props.isHost
-      ? 'rgba(99, 102, 241, 0.05)'
-      : '#fcfcfc'
-  };
-  border: 1px solid ${props =>
-    props.isHost
-      ? 'rgba(99, 102, 241, 0.2)'
-      : '#e2e8f0'
-  };
-  border-radius: 12px;
-  margin-bottom: 8px;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-
-  &:hover {
-    background: ${props =>
-      props.isHost
-        ? 'rgba(99, 102, 241, 0.1)'
-        : '#f8fafc'
-    };
-    transform: translateX(2px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-  }
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 0;
 `;
 
-const ParticipantAvatar = styled.div<{ color: string }>`
-  width: 36px;
-  height: 36px;
+const Avatar = styled.div`
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
   border-radius: 50%;
-  background: linear-gradient(135deg, ${props => props.color} 0%, ${props => props.color}dd 100%);
+  background: ${color.bg3};
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  font-weight: bold;
-  font-size: 14px;
+  font-family: ${font.display};
+  font-weight: 600;
+  font-size: 13px;
+  color: ${color.mustard};
 `;
 
 const ParticipantName = styled.div`
   flex: 1;
-  color: #2d3748;
-  font-size: 14px;
-  font-weight: 500;
+  min-width: 0;
+  font-size: 13.5px;
+  color: ${color.text};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `;
 
-const ParticipantBadge = styled.span`
-  background: #f59e0b;
-  color: white;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
+const SelfTag = styled.span`
+  color: ${color.dim};
 `;
 
-const LoadingContainer = styled.div`
+const HostChip = styled.span`
+  ${chip.sm}
+  ${chipStatic}
+  ${chipMono}
+  color: ${color.mustard};
+  background: transparent;
+  border-color: ${color.mustardDeep};
+  flex-shrink: 0;
+`;
+
+// Page gutter only - RoomSettings owns its own max-width, centering and
+// top margin, so constraining it again here would double-inset the panel.
+const SettingsSlot = styled.div`
+  padding: 0 20px 20px;
+`;
+
+const CenteredState = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
   min-height: 100vh;
-  color: #2d3748;
+  padding: 24px;
+  text-align: center;
 `;
 
-const LoadingSpinner = styled.div`
-  width: 60px;
-  height: 60px;
-  border: 3px solid #e2e8f0;
-  border-top: 3px solid #6366f1;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 20px;
+const StateText = styled.p`
+  margin: 0;
+  font-size: 13.5px;
+  color: ${color.dim};
+`;
 
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
+const StateTitle = styled.h2`
+  margin: 0;
+  font-family: ${font.display};
+  font-weight: 700;
+  font-size: 20px;
+  color: ${color.text};
 `;
 
 interface Room {
@@ -325,6 +311,17 @@ export const EnhancedRoomPage: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
+  // The roster as the socket handlers last saw it. Join/leave toasts have to
+  // fire exactly once per real event, so the "is this genuinely new?" decision
+  // cannot live inside a setState updater - React runs updaters twice in
+  // StrictMode and they must stay pure. Every write below sets the ref and the
+  // state together, so back-to-back events in one tick still dedupe.
+  const participantsRef = useRef<Participant[]>([]);
+
+  useEffect(() => {
+    participantsRef.current = participants;
+  }, [participants]);
+
   useEffect(() => {
     if (!roomCode) {
       navigate('/');
@@ -346,30 +343,34 @@ export const EnhancedRoomPage: React.FC = () => {
 
     const handleRoomJoined = (data: any) => {
       if (data.participants) {
+        participantsRef.current = data.participants;
         setParticipants(data.participants);
       }
-      toast.success('Joined room successfully!', { icon: '🎉' });
+      toast.success('Joined the room');
     };
 
     const handleUserJoined = (data: { userId: string; username: string }) => {
-      setParticipants(prev => {
-        if (prev.find(p => p.id === data.userId)) return prev;
-        toast(`${data.username} joined the party!`, { icon: '👋' });
-        return [...prev, { id: data.userId, username: data.username }];
-      });
+      if (participantsRef.current.some(p => p.id === data.userId)) return;
+      const next = [
+        ...participantsRef.current,
+        { id: data.userId, username: data.username },
+      ];
+      participantsRef.current = next;
+      setParticipants(next);
+      toast(`${data.username} joined`);
     };
 
     const handleUserLeft = (data: { userId: string }) => {
-      setParticipants(prev => {
-        const user = prev.find(p => p.id === data.userId);
-        if (user) {
-          toast(`${user.username} left the party`, { icon: '👋' });
-        }
-        return prev.filter(p => p.id !== data.userId);
-      });
+      const leaving = participantsRef.current.find(p => p.id === data.userId);
+      if (!leaving) return;
+      const next = participantsRef.current.filter(p => p.id !== data.userId);
+      participantsRef.current = next;
+      setParticipants(next);
+      toast(`${leaving.username} left`);
     };
 
     const handleParticipantsUpdate = (data: { participants: Participant[] }) => {
+      participantsRef.current = data.participants;
       setParticipants(data.participants);
     };
 
@@ -393,13 +394,15 @@ export const EnhancedRoomPage: React.FC = () => {
       const response = await apiService.getRoomByCode(roomCode!);
       setRoom(response.data);
       if (response.data.participants) {
-        setParticipants(response.data.participants.map((p: any) => ({
+        const roster = response.data.participants.map((p: any) => ({
           id: p.user.id,
           username: p.user.username,
-        })));
+        }));
+        participantsRef.current = roster;
+        setParticipants(roster);
       }
     } catch (error) {
-      toast.error('Failed to load room details');
+      toast.error("Couldn't load the room");
       navigate('/');
     } finally {
       setLoading(false);
@@ -410,7 +413,7 @@ export const EnhancedRoomPage: React.FC = () => {
     if (room) {
       navigator.clipboard.writeText(room.code);
       setCopySuccess(true);
-      toast.success('Room code copied!', { icon: '📋' });
+      toast.success('Room code copied');
       setTimeout(() => setCopySuccess(false), 2000);
     }
   };
@@ -419,7 +422,7 @@ export const EnhancedRoomPage: React.FC = () => {
     if (room) {
       const shareUrl = `${window.location.origin}/join-room/${room.code}`;
       navigator.clipboard.writeText(shareUrl);
-      toast.success('Share link copied!', { icon: '🔗' });
+      toast.success('Share link copied');
     }
   };
 
@@ -431,135 +434,134 @@ export const EnhancedRoomPage: React.FC = () => {
     toast.success('Left the room');
   };
 
-  const getAvatarColor = (username: string) => {
-    const colors = ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#f97316', '#ef4444'];
-    const index = username.charCodeAt(0) % colors.length;
-    return colors[index];
-  };
-
   if (loading) {
     return (
-      <Container>
-        <LoadingContainer>
-          <LoadingSpinner />
-          <h2>Loading room...</h2>
-        </LoadingContainer>
-      </Container>
+      <Page>
+        <CenteredState>
+          <div className="spinner" />
+          <StateText>Loading the room…</StateText>
+        </CenteredState>
+      </Page>
     );
   }
 
   if (!room) {
     return (
-      <Container>
-        <LoadingContainer>
-          <h2>Room not found</h2>
-          <ActionButton onClick={() => navigate('/')}>Go Home</ActionButton>
-        </LoadingContainer>
-      </Container>
+      <Page>
+        <CenteredState>
+          <StateTitle>Room not found</StateTitle>
+          <BackButton type="button" onClick={() => navigate('/')}>Back to home</BackButton>
+        </CenteredState>
+      </Page>
     );
   }
 
   const isHost = user?.id === room.creatorId;
 
   return (
-    <Container>
-      <Header>
-        <HeaderContent>
-          <RoomInfo>
-            <RoomTitle>{room.name}</RoomTitle>
-            <RoomCode onClick={handleCopyRoomCode} title="Click to copy">
-              <span className="icon">🔑</span>
-              {room.code}
-              {copySuccess && <span style={{ fontSize: '12px' }}> ✓ Copied!</span>}
-            </RoomCode>
-          </RoomInfo>
+    <Page>
+      <TopBar>
+        <TopBarInner>
+          <Identity>
+            <BrandSlot>
+              <Wordmark size={15} />
+            </BrandSlot>
+            <Divider>·</Divider>
+            <RoomName>{room.name}</RoomName>
+            <CodeChip
+              type="button"
+              copied={copySuccess}
+              onClick={handleCopyRoomCode}
+              title="Click to copy"
+            >
+              {copySuccess ? <IconCheck size={13} /> : <IconCopy size={13} />}
+              {copySuccess ? 'copied' : room.code}
+            </CodeChip>
+          </Identity>
 
-          <HeaderActions>
-            <ActionButton variant="ghost" onClick={handleShareRoom}>
-              <span>🔗</span>
-              Share
-            </ActionButton>
+          <Actions>
+            <SecondaryAction type="button" onClick={handleShareRoom} aria-label="Share">
+              <IconShare size={14} />
+              <ActionLabel>Share</ActionLabel>
+            </SecondaryAction>
 
             {isHost && (
-              <ActionButton variant="ghost" onClick={() => setShowSettings(!showSettings)}>
-                <span>⚙️</span>
-                Settings
-              </ActionButton>
+              <SecondaryAction
+                type="button"
+                onClick={() => setShowSettings(!showSettings)}
+                aria-label="Settings"
+              >
+                <IconSettings size={14} />
+                <ActionLabel>Settings</ActionLabel>
+              </SecondaryAction>
             )}
 
-            <ActionButton variant="danger" onClick={handleLeaveRoom}>
-              <span>🚪</span>
-              Leave
-            </ActionButton>
-          </HeaderActions>
-        </HeaderContent>
-      </Header>
+            <DangerAction type="button" onClick={handleLeaveRoom} aria-label="Leave">
+              <IconLeave size={14} />
+              <ActionLabel>Leave</ActionLabel>
+            </DangerAction>
+          </Actions>
+        </TopBarInner>
+      </TopBar>
 
-      <MainContent>
-        <ContentGrid>
-          <VideoSection>
-            <EnhancedVideoPlayer
-              videoUrl={room.videoUrl}
-              roomCode={room.code}
-              isHost={isHost}
-              allowGuestControl={room.allowGuestControl}
-            />
+      <Grid>
+        <MainColumn>
+          <EnhancedVideoPlayer
+            videoUrl={room.videoUrl}
+            roomCode={room.code}
+            isHost={isHost}
+            allowGuestControl={room.allowGuestControl}
+          />
 
-            <EnhancedVoiceChat roomCode={room.code} />
-          </VideoSection>
+          <EnhancedVoiceChat roomCode={room.code} />
+        </MainColumn>
 
-          <SidePanel>
-            <ParticipantsList>
-              <ParticipantsHeader>
-                <ParticipantsTitle>
-                  <span>👥</span>
-                  Participants
-                </ParticipantsTitle>
-                <ParticipantCount>{participants.length}</ParticipantCount>
-              </ParticipantsHeader>
+        <SideColumn>
+          <ParticipantsPanel>
+            <PanelHeader>
+              <PanelLabel>Participants</PanelLabel>
+              <CountChip>{participants.length}</CountChip>
+            </PanelHeader>
 
-              {/* Host */}
-              {room.creator && (
-                <ParticipantItem isHost>
-                  <ParticipantAvatar color={getAvatarColor(room.creator.username)}>
-                    {room.creator.username[0].toUpperCase()}
-                  </ParticipantAvatar>
+            {/* Host */}
+            {room.creator && (
+              <ParticipantRow>
+                <Avatar>{room.creator.username?.[0]?.toUpperCase() ?? '?'}</Avatar>
+                <ParticipantName>
+                  {room.creator.username}
+                  {room.creator.id === user?.id && <SelfTag> (you)</SelfTag>}
+                </ParticipantName>
+                <HostChip>HOST</HostChip>
+              </ParticipantRow>
+            )}
+
+            {/* Other participants */}
+            {participants
+              .filter(p => p.id !== room.creatorId)
+              .map(participant => (
+                <ParticipantRow key={participant.id}>
+                  <Avatar>{participant.username?.[0]?.toUpperCase() ?? '?'}</Avatar>
                   <ParticipantName>
-                    {room.creator.username}
-                    {room.creator.id === user?.id && ' (You)'}
+                    {participant.username}
+                    {participant.id === user?.id && <SelfTag> (you)</SelfTag>}
                   </ParticipantName>
-                  <ParticipantBadge>👑 HOST</ParticipantBadge>
-                </ParticipantItem>
-              )}
+                </ParticipantRow>
+              ))}
+          </ParticipantsPanel>
 
-              {/* Other participants */}
-              {participants
-                .filter(p => p.id !== room.creatorId)
-                .map(participant => (
-                  <ParticipantItem key={participant.id}>
-                    <ParticipantAvatar color={getAvatarColor(participant.username)}>
-                      {participant.username[0].toUpperCase()}
-                    </ParticipantAvatar>
-                    <ParticipantName>
-                      {participant.username}
-                      {participant.id === user?.id && ' (You)'}
-                    </ParticipantName>
-                  </ParticipantItem>
-                ))}
-            </ParticipantsList>
+          <ChatPanel roomCode={room.code} />
+        </SideColumn>
+      </Grid>
 
-            <ChatPanel roomCode={room.code} />
-          </SidePanel>
-        </ContentGrid>
-
-        {showSettings && isHost && (
+      {showSettings && isHost && (
+        <SettingsSlot>
           <RoomSettings
             room={room}
             onClose={() => setShowSettings(false)}
             onUpdate={() => fetchRoomDetails()}
           />
-        )}
-      </MainContent>
-    </Container>
+        </SettingsSlot>
+      )}
+    </Page>
   );
 };

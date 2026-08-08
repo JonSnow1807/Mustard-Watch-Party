@@ -18,3 +18,10 @@ formal/tools/
 # tracked, making it the largest file in the repo and producing a 10MB diff
 # on every rebuild. Build it with `cd relay-go && go build` instead.
 /relay-go/relay-go
+
+# Vercel CLI leftovers. .env.local holds a VERCEL_OIDC_TOKEN that `vercel
+# pull`/`vercel build` write into whatever directory they run in - it must
+# never be committed, and the deploy runs from video-sync-frontend anyway.
+.vercel/
+.env.local
+.env*.local

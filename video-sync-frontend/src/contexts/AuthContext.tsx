@@ -51,9 +51,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userData = response.data;
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
-      toast.success('Login successful!');
+      toast.success('Signed in');
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Login failed');
+      toast.error(error.response?.data?.message || "Couldn't sign in");
       throw error;
     }
   }, []);
@@ -69,9 +69,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userData = response.data;
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
-      toast.success('Registration successful!');
+      toast.success('Account created');
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Registration failed');
+      toast.error(error.response?.data?.message || "Couldn't create the account");
       throw error;
     }
   }, []);
@@ -79,7 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem('user');
-    toast.success('Logged out successfully');
+    toast.success('Signed out');
   }, []);
 
   const value: AuthContextType = {
