@@ -5,470 +5,491 @@ import { useQuery } from '@tanstack/react-query';
 import styled from '@emotion/styled';
 import { apiService } from '../services/api';
 import { toast } from 'react-hot-toast';
+import {
+  color,
+  font,
+  radius,
+  focusRing,
+  button,
+  buttonSm,
+  chip,
+  chipStatic,
+  chipInteractive,
+  chipMono,
+  ghostIconButton,
+  card,
+  sectionLabel,
+} from '../theme';
+import { Wordmark, IconPlus, IconUsers, IconFilm, IconLock, IconX } from '../components/Icons';
 
-const Container = styled.div`
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 2rem;
+const MEASUREMENTS_URL =
+  'https://github.com/JonSnow1807/Mustard-Watch-Party/tree/main/docs/measurements';
+
+const Page = styled.div`
   min-height: 100vh;
-  position: relative;
-
-  &::before {
-    content: '';
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.03) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.03) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(16, 185, 129, 0.02) 0%, transparent 50%);
-    pointer-events: none;
-    z-index: -1;
-  }
+  background: ${color.bg0};
 `;
 
-const Header = styled.header`
-  text-align: center;
-  margin-bottom: 4rem;
-  position: relative;
-`;
-
-const Title = styled.h1`
-  font-size: 4rem;
-  font-weight: 700;
-  margin-bottom: 1rem;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #10b981 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: fadeIn 1s ease-out;
-
-  @media (max-width: 768px) {
-    font-size: 2.5rem;
-  }
-`;
-
-const Subtitle = styled.p`
-  font-size: 1.2rem;
-  color: #718096;
-  margin-bottom: 2rem;
-  animation: fadeIn 1s ease-out 0.2s both;
-`;
-
-const UserInfo = styled.div`
-  background: #ffffff;
-  backdrop-filter: blur(20px);
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 1.5rem 2rem;
-  margin-bottom: 3rem;
+const TopBar = styled.header`
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 20px 24px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  animation: fadeIn 1s ease-out 0.4s both;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-
-  @media (max-width: 768px) {
-    flex-direction: column;
-    gap: 1rem;
-    text-align: center;
-  }
+  gap: 16px;
 `;
 
-const WelcomeText = styled.span`
-  font-size: 1.1rem;
-  color: #4a5568;
-  font-weight: 500;
-`;
-
-const CreateButton = styled.button`
-  padding: 1rem 2rem;
-  background: #6366f1;
-  color: white;
-  border: none;
-  border-radius: 12px;
-  font-size: 1.1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
+const TopBarRight = styled.div`
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  gap: 12px;
+  min-width: 0;
+`;
 
-  &:hover {
-    transform: translateY(-1px);
-    background: #5558e3;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-  }
+const SignedInAs = styled.span`
+  font-family: ${font.body};
+  font-size: 13px;
+  color: ${color.dim};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
 
-  &:active {
-    transform: translateY(0);
+const PrimaryButton = styled.button`
+  ${button.primary}
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const PrimarySmButton = styled.button`
+  ${button.primary}
+  ${buttonSm}
+`;
+
+const SecondaryButton = styled.button`
+  ${button.secondary}
+`;
+
+const SecondarySmButton = styled.button`
+  ${button.secondary}
+  ${buttonSm}
+`;
+
+const Content = styled.main`
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 0 24px 96px;
+`;
+
+/* ---- landing ---- */
+
+const Hero = styled.section`
+  padding-top: 96px;
+
+  @media (max-width: 720px) {
+    padding-top: 56px;
   }
 `;
 
-const LogoutButton = styled.button`
-  padding: 0.75rem 1.5rem;
-  background: rgba(248, 113, 113, 0.1);
-  color: #f87171;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  cursor: pointer;
+const HeroTitle = styled.h1`
+  margin: 0;
+  font-family: ${font.display};
+  font-weight: 800;
+  font-size: clamp(2.6rem, 6vw, 4.3rem);
+  line-height: 1.03;
+  letter-spacing: -0.02em;
+  color: ${color.text};
+`;
+
+const HeroAccentLine = styled.span`
+  display: block;
+  color: ${color.mustard};
+`;
+
+const HeroBody = styled.p`
+  margin: 20px 0 0;
+  max-width: 520px;
+  font-family: ${font.body};
+  font-size: 17px;
+  line-height: 1.6;
+  color: ${color.dim};
+`;
+
+const CtaRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+`;
+
+const StatStrip = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 48px;
+  margin-top: 48px;
+`;
+
+const StatValue = styled.div`
+  font-family: ${font.mono};
+  font-size: 28px;
   font-weight: 500;
-  transition: all 0.3s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  color: ${color.text};
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+`;
+
+const StatCaption = styled.div`
+  ${sectionLabel}
+  margin-top: 8px;
+`;
+
+const StatNote = styled.p`
+  margin: 24px 0 0;
+  font-family: ${font.body};
+  font-size: 12px;
+  line-height: 1.6;
+  color: ${color.faint};
+`;
+
+const NoteLink = styled.a`
+  color: ${color.mustard};
+  text-decoration: none;
+  border-bottom: 1px solid ${color.mustardDeep};
+  transition: color 120ms ease, border-color 120ms ease;
 
   &:hover {
-    background: rgba(248, 113, 113, 0.15);
-    border-color: rgba(248, 113, 113, 0.3);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    color: ${color.mustardBright};
+    border-color: ${color.mustardBright};
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: ${focusRing};
+    border-radius: ${radius.sm};
   }
 `;
+
+const Trio = styled.section`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  margin-top: 64px;
+
+  @media (max-width: 720px) {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+`;
+
+const TrioIndex = styled.div`
+  font-family: ${font.mono};
+  font-size: 11px;
+  color: ${color.faint};
+`;
+
+const TrioTitle = styled.h2`
+  margin: 8px 0 6px;
+  font-family: ${font.display};
+  font-weight: 600;
+  font-size: 17px;
+  color: ${color.text};
+`;
+
+const TrioBody = styled.p`
+  margin: 0;
+  font-family: ${font.body};
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: ${color.dim};
+`;
+
+/* ---- rooms ---- */
 
 const Section = styled.section`
-  margin-bottom: 4rem;
-  animation: fadeIn 1s ease-out 0.6s both;
+  margin-top: 48px;
 `;
 
-const SectionTitle = styled.h2`
-  font-size: 2.2rem;
-  font-weight: 600;
-  margin-bottom: 2rem;
-  color: #2d3748;
+const SectionHead = styled.div`
   display: flex;
   align-items: center;
-  gap: 1rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+`;
 
-  @media (max-width: 768px) {
-    font-size: 1.8rem;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
+const SectionLabel = styled.h2`
+  ${sectionLabel}
+  margin: 0;
 `;
 
 const RoomsGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-  gap: 2rem;
-  margin-top: 2rem;
-  
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-  }
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  /* cards size to their own content: without this every card in a row
+     stretches to the tallest one, leaving dead space under short ones */
+  align-items: start;
 `;
 
 const RoomCard = styled.div`
-  background: #ffffff;
-  backdrop-filter: blur(20px);
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 2rem;
+  ${card}
+  padding: 20px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, #6366f1, #8b5cf6, #10b981);
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
+  transition: background 150ms ease, border-color 150ms ease;
 
   &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-    border-color: #cbd5e1;
-
-    &::before {
-      opacity: 1;
-    }
+    background: ${color.bg2};
+    border-color: ${color.lineBright};
   }
 
-  &:active {
-    transform: translateY(-2px);
+  &:focus-visible {
+    outline: none;
+    box-shadow: ${focusRing};
   }
 `;
 
-const RoomHeader = styled.div`
+const RoomCardHead = styled.div`
   display: flex;
-  justify-content: space-between;
-  align-items: start;
-  margin-bottom: 1.5rem;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
 `;
 
-const RoomTitle = styled.h3`
+const RoomName = styled.h3`
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  font-size: 1.4rem;
-  color: #2d3748;
+  font-family: ${font.display};
   font-weight: 600;
+  font-size: 17px;
   line-height: 1.3;
-`;
-
-const LiveBadge = styled.span<{ isPlaying: boolean }>`
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  background: ${props => props.isPlaying
-    ? '#f87171'
-    : '#f8fafc'};
-  color: ${props => props.isPlaying ? 'white' : '#718096'};
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  border: 1px solid ${props => props.isPlaying ? 'rgba(248, 113, 113, 0.3)' : '#e2e8f0'};
-
-  &::before {
-    content: '';
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: ${props => props.isPlaying ? 'white' : '#a0aec0'};
-    animation: ${props => props.isPlaying ? 'pulse 2s infinite' : 'none'};
-  }
-`;
-
-const RoomDescription = styled.p`
-  color: #718096;
-  font-size: 0.95rem;
-  margin: 1rem 0;
-  line-height: 1.5;
+  color: ${color.text};
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 `;
 
-const RoomStats = styled.div`
-  display: flex;
-  gap: 1.5rem;
-  margin-top: 1.5rem;
-  font-size: 0.9rem;
-  color: #a0aec0;
-  flex-wrap: wrap;
+const LiveBadge = styled.span<{ isPlaying: boolean }>`
+  ${chip.sm}
+  ${chipStatic}
+  ${chipMono}
+  color: ${props => (props.isPlaying ? color.mustard : color.faint)};
+  background: ${props => (props.isPlaying ? color.mustardFaint : color.bg2)};
+
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: ${props => (props.isPlaying ? color.mustard : color.faint)};
+    animation: ${props => (props.isPlaying ? 'pulse 2s infinite' : 'none')};
+  }
 `;
 
-const StatItem = styled.span`
+const GhostIconButton = styled.button`
+  ${ghostIconButton}
+
+  /* the one destructive control on the card: hover states in danger, not text */
+  &:hover {
+    color: ${color.danger};
+    background: ${color.dangerFaint};
+  }
+`;
+
+const RoomDescription = styled.p`
+  margin: 10px 0 0;
+  font-family: ${font.body};
+  font-size: 13px;
+  line-height: 1.5;
+  color: ${color.dim};
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+`;
+
+const MetaRow = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 14px;
+  margin-top: 14px;
+  font-family: ${font.body};
+  font-size: 12.5px;
+  color: ${color.dim};
+`;
+
+const Meta = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const MetaMono = styled.span`
+  font-family: ${font.mono};
+  font-size: 12.5px;
+  color: ${color.dim};
+  font-variant-numeric: tabular-nums;
+`;
+
+/* Text for screen readers only: the meta row's icons carry meaning that a
+   sighted reader gets from the glyph and everyone else would get nothing. */
+const SrOnly = styled.span`
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+`;
+
+const ChipRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
 `;
 
 const Tag = styled.span`
-  display: inline-block;
-  padding: 0.4rem 0.8rem;
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
-  border-radius: 8px;
-  font-size: 0.8rem;
-  margin-right: 0.5rem;
-  margin-bottom: 0.5rem;
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  transition: all 0.2s ease;
-
-  &:hover {
-    background: rgba(99, 102, 241, 0.15);
-    transform: translateY(-1px);
-  }
+  ${chip.sm}
+  ${chipStatic}
+  color: ${color.faint};
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
 
-const PrivateBadge = styled.span`
-  padding: 0.4rem 0.8rem;
-  background: rgba(245, 158, 11, 0.1);
-  color: #f59e0b;
-  border-radius: 8px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  border: 1px solid rgba(245, 158, 11, 0.2);
-  display: inline-block;
-  margin-bottom: 0.5rem;
+const PrivateChip = styled.span`
+  ${chip.sm}
+  ${chipStatic}
 `;
 
-const EmptyState = styled.div`
-  text-align: center;
-  padding: 4rem 2rem;
-  color: #718096;
-  background: #ffffff;
-  border-radius: 16px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-
-  h3 {
-    margin-bottom: 1rem;
-    color: #2d3748;
-    font-size: 1.5rem;
-    font-weight: 600;
-  }
-
-  p {
-    margin-bottom: 2rem;
-    font-size: 1.1rem;
-    line-height: 1.6;
-  }
-`;
-
-const FilterBar = styled.div`
+const FilterRow = styled.div`
   display: flex;
-  gap: 1rem;
-  margin-bottom: 2rem;
   flex-wrap: wrap;
-  padding: 1rem;
-  background: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  gap: 6px;
 `;
 
-const FilterButton = styled.button<{ active: boolean }>`
-  padding: 0.75rem 1.5rem;
-  border: 1px solid ${props => props.active ? 'rgba(99, 102, 241, 0.3)' : '#e2e8f0'};
-  background: ${props => props.active
-    ? '#6366f1'
-    : '#f8fafc'};
-  color: ${props => props.active ? 'white' : '#718096'};
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-weight: 500;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+const FilterPill = styled.button<{ active: boolean }>`
+  ${chip.sm}
+  ${chipInteractive}
+  border-color: ${props => (props.active ? color.mustardDeep : color.lineBright)};
+  background: ${props => (props.active ? color.mustardFaint : 'transparent')};
+  color: ${props => (props.active ? color.mustard : color.dim)};
 
+  /* the selected pill stays mustard while hovered - hover must not undo state */
   &:hover {
-    border-color: rgba(99, 102, 241, 0.3);
-    background: ${props => props.active
-      ? '#5558e3'
-      : '#f1f5f9'};
-    transform: translateY(-1px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    border-color: ${color.mustardDeep};
+    color: ${props => (props.active ? color.mustard : color.text)};
   }
 `;
 
-const LoadingSpinner = styled.div`
+const Loading = styled.div`
   display: flex;
-  justify-content: center;
   align-items: center;
-  padding: 3rem;
-  color: #718096;
-  font-size: 1.1rem;
+  gap: 12px;
+  padding: 32px 0;
+  font-family: ${font.body};
+  font-size: 13.5px;
+  color: ${color.dim};
 `;
 
-const DeleteButton = styled.button`
-  padding: 0.5rem;
-  background: rgba(248, 113, 113, 0.1);
-  color: #f87171;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  transition: all 0.3s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-
-  &:hover {
-    background: rgba(248, 113, 113, 0.15);
-    border-color: rgba(248, 113, 113, 0.3);
-    transform: scale(1.05);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-  }
-`;
-
-const RoomActions = styled.div`
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
+const EmptyCard = styled.div`
   display: flex;
-  gap: 0.5rem;
-  opacity: 1;
-  transition: opacity 0.3s ease;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  border: 1px dashed ${color.line};
+  border-radius: ${radius.lg};
+  color: ${color.faint};
+  text-align: center;
 `;
 
-const Modal = styled.div`
+const EmptyTitle = styled.p`
+  margin: 0;
+  font-family: ${font.display};
+  font-weight: 600;
+  font-size: 16px;
+  color: ${color.text};
+`;
+
+const EmptyText = styled.p`
+  margin: 0;
+  font-family: ${font.body};
+  font-size: 13.5px;
+  color: ${color.dim};
+`;
+
+/* ---- delete modal ---- */
+
+const Overlay = styled.div`
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(8, 7, 5, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
   z-index: 1000;
-  backdrop-filter: blur(5px);
 `;
 
-const ModalContent = styled.div`
-  background: #ffffff;
-  backdrop-filter: blur(20px);
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 2rem;
-  max-width: 400px;
-  width: 90%;
-  text-align: center;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+const ModalCard = styled.div`
+  ${card}
+  padding: 24px;
+  width: 100%;
+  max-width: 420px;
 `;
 
 const ModalTitle = styled.h3`
-  color: #2d3748;
-  margin-bottom: 1rem;
-  font-size: 1.5rem;
+  margin: 0 0 8px;
+  font-family: ${font.display};
   font-weight: 600;
+  font-size: 18px;
+  color: ${color.text};
 `;
 
 const ModalText = styled.p`
-  color: #718096;
-  margin-bottom: 2rem;
-  line-height: 1.5;
+  margin: 0 0 20px;
+  font-family: ${font.body};
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: ${color.dim};
 `;
 
 const ModalButtons = styled.div`
   display: flex;
-  gap: 1rem;
-  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
 `;
 
-const ConfirmButton = styled.button`
-  padding: 0.75rem 1.5rem;
-  background: #f87171;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
+const DangerFilledButton = styled.button`
+  ${button.danger}
+  background: ${color.danger};
+  border-color: ${color.danger};
+  color: ${color.mustardInk};
   font-weight: 600;
-  transition: all 0.3s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
-    transform: translateY(-1px);
-    background: #ef4444;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-  }
-`;
-
-const CancelButton = styled.button`
-  padding: 0.75rem 1.5rem;
-  background: #f8fafc;
-  color: #718096;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-
-  &:hover {
-    background: #f1f5f9;
-    border-color: #cbd5e1;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    background: ${color.danger};
+    border-color: ${color.danger};
+    filter: brightness(1.08);
   }
 `;
 
@@ -512,14 +533,25 @@ export const HomePage: React.FC = () => {
     }
   };
 
+  // Room cards are the app's primary navigation, so they must be operable from
+  // the keyboard as well as the mouse. Events that started on a nested control
+  // (the delete button) are left alone - that control handles its own keys.
+  const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, roomCode: string) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      if (e.key === ' ') e.preventDefault(); // Space would scroll the page
+      handleJoinRoom(roomCode);
+    }
+  };
+
   const handleDeleteRoom = async (room: any) => {
     try {
       await apiService.deleteRoom(room.code, user!.id);
-      toast.success('Watch party deleted successfully');
+      toast.success('Room deleted');
       setDeleteModal({ show: false, room: null });
       refetchUserRooms();
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to delete watch party');
+      toast.error(error.response?.data?.message || "Couldn't delete the room");
     }
   };
 
@@ -542,230 +574,305 @@ export const HomePage: React.FC = () => {
 
   if (!user) {
     return (
-      <Container>
-        <Header>
-          <Title>🎬 Mustard Watch Party</Title>
-          <Subtitle>Experience synchronized video watching like never before</Subtitle>
-        </Header>
-        
-        <Section>
-          <EmptyState>
-            <h3>Welcome to the Future of Watch Parties</h3>
-            <p>Join thousands of users enjoying synchronized video experiences together.</p>
-            <CreateButton onClick={() => navigate('/login')}>
-              🔐 Get Started
-            </CreateButton>
-          </EmptyState>
-        </Section>
-      </Container>
+      <Page>
+        <TopBar>
+          <Wordmark size={18} />
+          <TopBarRight>
+            <SecondaryButton onClick={() => navigate('/login')}>Sign in</SecondaryButton>
+          </TopBarRight>
+        </TopBar>
+
+        <Content>
+          <Hero>
+            <HeroTitle>
+              Watch together.
+              <HeroAccentLine>Milliseconds apart.</HeroAccentLine>
+            </HeroTitle>
+            <HeroBody>
+              Every player in the room holds to the same frame — YouTube, Vimeo, HLS, or a
+              plain file — kept in sync by an engine whose drift numbers are published, not
+              promised.
+            </HeroBody>
+            <CtaRow>
+              <PrimaryButton onClick={() => navigate('/login')}>Start a room</PrimaryButton>
+              <SecondaryButton onClick={() => navigate('/login')}>I have a code</SecondaryButton>
+            </CtaRow>
+
+            <StatStrip>
+              <div>
+                <StatValue>6 ms</StatValue>
+                <StatCaption>median drift · direct file</StatCaption>
+              </div>
+              <div>
+                <StatValue>16 ms</StatValue>
+                <StatCaption>median drift · YouTube</StatCaption>
+              </div>
+              <div>
+                <StatValue>19 ms</StatValue>
+                <StatCaption>median drift · YouTube at 300 ms RTT</StatCaption>
+              </div>
+            </StatStrip>
+
+            <StatNote>
+              steady-state cross-client P50, player-reported · 3 Chrome clients ·{' '}
+              <NoteLink href={MEASUREMENTS_URL} target="_blank" rel="noreferrer">
+                measured, not claimed
+              </NoteLink>
+            </StatNote>
+          </Hero>
+
+          <Trio>
+            <div>
+              <TrioIndex>01</TrioIndex>
+              <TrioTitle>Every source, same sync</TrioTitle>
+              <TrioBody>
+                One classifier decides what a URL is; one engine drives whatever mounts.
+                YouTube quantizes its clock — we reconstruct it. Vimeo only speaks promises —
+                we model it.
+              </TrioBody>
+            </div>
+            <div>
+              <TrioIndex>02</TrioIndex>
+              <TrioTitle>Controls that can't double-fire</TrioTitle>
+              <TrioBody>
+                Every play, pause, and seek carries an idempotency key the server applies
+                exactly once — model-checked first, then proven by injection: duplicated
+                commands commit exactly zero extra times.
+              </TrioBody>
+            </div>
+            <div>
+              <TrioIndex>03</TrioIndex>
+              <TrioTitle>Rooms that heal</TrioTitle>
+              <TrioBody>
+                A repair sweep re-anchors every client from the server's clock. Kill a server
+                mid-playback and the room carries on.
+              </TrioBody>
+            </div>
+          </Trio>
+        </Content>
+      </Page>
     );
   }
 
   return (
-    <Container>
-      <Header>
-        <Title>🎬 Mustard Watch Party</Title>
-        <Subtitle>Your synchronized video experience awaits</Subtitle>
-        <UserInfo>
-          <WelcomeText>Welcome back, {user.username}! 👋</WelcomeText>
-          <LogoutButton onClick={logout}>Sign Out</LogoutButton>
-        </UserInfo>
-      </Header>
+    <Page>
+      <TopBar>
+        <Wordmark size={18} />
+        <TopBarRight>
+          <SignedInAs>Signed in as {user.username}</SignedInAs>
+          <SecondarySmButton onClick={logout}>Sign out</SecondarySmButton>
+        </TopBarRight>
+      </TopBar>
 
-      {/* Your Rooms Section */}
-      <Section>
-        <SectionTitle>
-          🏠 Your Watch Parties
-          <CreateButton onClick={handleCreateRoom}>
-            ➕ Create New Party
-          </CreateButton>
-        </SectionTitle>
-        
-        {userRoomsLoading ? (
-          <LoadingSpinner>
-            <div className="spinner"></div>
-            <span style={{ marginLeft: '1rem' }}>Loading your parties...</span>
-          </LoadingSpinner>
-        ) : userRooms?.length > 0 ? (
-          <RoomsGrid>
-            {userRooms.map((room: any) => (
-              <RoomCard key={room.id} onClick={() => handleJoinRoom(room.code)}>
-                <RoomActions>
-                  {room.creatorId === user.id && (
-                    <DeleteButton 
-                      onClick={(e) => showDeleteModal(room, e)}
-                      title="Delete this watch party"
-                    >
-                      🗑️
-                    </DeleteButton>
-                  )}
-                </RoomActions>
-                
-                <RoomHeader>
-                  <RoomTitle>{room.name}</RoomTitle>
-                  <LiveBadge isPlaying={room.isPlaying}>
-                    {room.isPlaying ? 'LIVE' : 'PAUSED'}
-                  </LiveBadge>
-                </RoomHeader>
-                
-                {room.description && (
-                  <RoomDescription>{room.description}</RoomDescription>
-                )}
-                
-                {room.videoUrl && (
-                  <p style={{ fontSize: '0.9rem', color: '#94a3b8', margin: '1rem 0' }}>
-                    🎥 {room.videoUrl}
-                  </p>
-                )}
-                
-                <div style={{ marginTop: '1rem' }}>
-                  {!room.isPublic && <PrivateBadge>🔒 Private Party</PrivateBadge>}
-                  {room.tags?.map((tag: string) => (
-                    <Tag key={tag}>#{tag}</Tag>
-                  ))}
-                </div>
-                
-                <RoomStats>
-                  <StatItem>
-                    <span>👥</span>
-                    <span>{room._count.participants} watching</span>
-                  </StatItem>
-                  <StatItem>
-                    <span>🎥</span>
-                    <span>{getTimeSince(room.createdAt)}</span>
-                  </StatItem>
-                  {room.creator && (
-                    <StatItem>
-                      <span>👤</span>
-                      <span>by {room.creator.username}</span>
-                    </StatItem>
-                  )}
-                </RoomStats>
-              </RoomCard>
-            ))}
-          </RoomsGrid>
-        ) : (
-          <EmptyState>
-            <h3>No watch parties yet!</h3>
-            <p>Create your first synchronized video experience and invite friends to join the fun.</p>
-            <CreateButton onClick={handleCreateRoom}>
-              ➕ Create Your First Party
-            </CreateButton>
-          </EmptyState>
-        )}
-      </Section>
+      <Content>
+        {/* Your Rooms Section */}
+        <Section>
+          <SectionHead>
+            <SectionLabel>Your rooms</SectionLabel>
+            <PrimarySmButton onClick={handleCreateRoom}>
+              <IconPlus size={14} />
+              New room
+            </PrimarySmButton>
+          </SectionHead>
 
-      {/* Public Rooms Section */}
-      <Section>
-        <SectionTitle>🌍 Discover Public Parties</SectionTitle>
-        
-        <FilterBar>
-          <FilterButton 
-            active={publicFilter === 'all'} 
-            onClick={() => setPublicFilter('all')}
-          >
-            All Parties
-          </FilterButton>
-          <FilterButton 
-            active={publicFilter === 'movies'} 
-            onClick={() => setPublicFilter('movies')}
-          >
-            🎬 Movies
-          </FilterButton>
-          <FilterButton 
-            active={publicFilter === 'tv'} 
-            onClick={() => setPublicFilter('tv')}
-          >
-            📺 TV Shows
-          </FilterButton>
-          <FilterButton 
-            active={publicFilter === 'education'} 
-            onClick={() => setPublicFilter('education')}
-          >
-            🎓 Education
-          </FilterButton>
-          <FilterButton 
-            active={publicFilter === 'music'} 
-            onClick={() => setPublicFilter('music')}
-          >
-            🎵 Music
-          </FilterButton>
-        </FilterBar>
-        
-        {publicRoomsLoading ? (
-          <LoadingSpinner>
-            <div className="spinner"></div>
-            <span style={{ marginLeft: '1rem' }}>Discovering parties...</span>
-          </LoadingSpinner>
-        ) : publicRooms?.length > 0 ? (
-          <RoomsGrid>
-            {publicRooms.map((room: any) => (
-              <RoomCard key={room.id} onClick={() => handleJoinRoom(room.code)}>
-                <RoomHeader>
-                  <RoomTitle>{room.name}</RoomTitle>
-                  <LiveBadge isPlaying={room.isPlaying}>
-                    {room.isPlaying ? 'LIVE' : 'PAUSED'}
-                  </LiveBadge>
-                </RoomHeader>
-                
-                {room.description && (
-                  <RoomDescription>{room.description}</RoomDescription>
-                )}
-                
-                <div style={{ marginTop: '1rem' }}>
-                  {room.tags?.map((tag: string) => (
-                    <Tag key={tag}>#{tag}</Tag>
-                  ))}
-                </div>
-                
-                <RoomStats>
-                  <StatItem>
-                    <span>👥</span>
-                    <span>{room._count.participants} watching</span>
-                  </StatItem>
-                  <StatItem>
-                    <span>🎥</span>
-                    <span>{getTimeSince(room.createdAt)}</span>
-                  </StatItem>
-                  <StatItem>
-                    <span>👤</span>
-                    <span>by {room.creator.username}</span>
-                  </StatItem>
-                </RoomStats>
-              </RoomCard>
-            ))}
-          </RoomsGrid>
-        ) : (
-          <EmptyState>
-            <h3>No public parties found</h3>
-            <p>Be the first to create a public watch party and start the trend!</p>
-            <CreateButton onClick={handleCreateRoom}>
-              ➕ Create Public Party
-            </CreateButton>
-          </EmptyState>
-        )}
-      </Section>
+          {userRoomsLoading ? (
+            <Loading>
+              <div className="spinner"></div>
+              <span>Loading rooms…</span>
+            </Loading>
+          ) : userRooms?.length > 0 ? (
+            <RoomsGrid>
+              {userRooms.map((room: any) => (
+                <RoomCard
+                  key={room.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleJoinRoom(room.code)}
+                  onKeyDown={(e) => handleCardKeyDown(e, room.code)}
+                >
+                  <RoomCardHead>
+                    <RoomName>{room.name}</RoomName>
+                    <LiveBadge isPlaying={room.isPlaying}>
+                      {room.isPlaying ? 'LIVE' : 'PAUSED'}
+                    </LiveBadge>
+                    {room.creatorId === user.id && (
+                      <GhostIconButton
+                        onClick={(e) => showDeleteModal(room, e)}
+                        title="Delete this watch party"
+                      >
+                        <IconX size={15} />
+                      </GhostIconButton>
+                    )}
+                  </RoomCardHead>
+
+                  {room.description && (
+                    <RoomDescription>{room.description}</RoomDescription>
+                  )}
+
+                  {(!room.isPublic || room.tags?.length > 0) && (
+                    <ChipRow>
+                      {!room.isPublic && (
+                        <PrivateChip>
+                          <IconLock size={12} />
+                          Private
+                        </PrivateChip>
+                      )}
+                      {room.tags?.map((tag: string) => (
+                        <Tag key={tag}>{tag}</Tag>
+                      ))}
+                    </ChipRow>
+                  )}
+
+                  <MetaRow>
+                    <Meta title="Participants">
+                      <IconUsers size={13} />
+                      {room._count.participants}
+                      <SrOnly>{' '}participants</SrOnly>
+                    </Meta>
+                    {room.videoUrl && (
+                      <Meta title="Has a video">
+                        <IconFilm size={13} />
+                        <SrOnly>Has a video</SrOnly>
+                      </Meta>
+                    )}
+                    <MetaMono>{getTimeSince(room.createdAt)}</MetaMono>
+                  </MetaRow>
+                </RoomCard>
+              ))}
+            </RoomsGrid>
+          ) : (
+            <EmptyCard>
+              <IconFilm size={26} />
+              <EmptyTitle>No rooms yet.</EmptyTitle>
+              <EmptyText>Start one and send the code.</EmptyText>
+              <PrimaryButton onClick={handleCreateRoom}>New room</PrimaryButton>
+            </EmptyCard>
+          )}
+        </Section>
+
+        {/* Public Rooms Section */}
+        <Section>
+          <SectionHead>
+            <SectionLabel>Public rooms</SectionLabel>
+            <FilterRow>
+              <FilterPill
+                active={publicFilter === 'all'}
+                onClick={() => setPublicFilter('all')}
+              >
+                All
+              </FilterPill>
+              <FilterPill
+                active={publicFilter === 'movies'}
+                onClick={() => setPublicFilter('movies')}
+              >
+                Movies
+              </FilterPill>
+              <FilterPill
+                active={publicFilter === 'tv'}
+                onClick={() => setPublicFilter('tv')}
+              >
+                TV
+              </FilterPill>
+              <FilterPill
+                active={publicFilter === 'education'}
+                onClick={() => setPublicFilter('education')}
+              >
+                Education
+              </FilterPill>
+              <FilterPill
+                active={publicFilter === 'music'}
+                onClick={() => setPublicFilter('music')}
+              >
+                Music
+              </FilterPill>
+            </FilterRow>
+          </SectionHead>
+
+          {publicRoomsLoading ? (
+            <Loading>
+              <div className="spinner"></div>
+              <span>Loading rooms…</span>
+            </Loading>
+          ) : publicRooms?.length > 0 ? (
+            <RoomsGrid>
+              {publicRooms.map((room: any) => (
+                <RoomCard
+                  key={room.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleJoinRoom(room.code)}
+                  onKeyDown={(e) => handleCardKeyDown(e, room.code)}
+                >
+                  <RoomCardHead>
+                    <RoomName>{room.name}</RoomName>
+                    <LiveBadge isPlaying={room.isPlaying}>
+                      {room.isPlaying ? 'LIVE' : 'PAUSED'}
+                    </LiveBadge>
+                  </RoomCardHead>
+
+                  {room.description && (
+                    <RoomDescription>{room.description}</RoomDescription>
+                  )}
+
+                  {room.tags?.length > 0 && (
+                    <ChipRow>
+                      {room.tags?.map((tag: string) => (
+                        <Tag key={tag}>{tag}</Tag>
+                      ))}
+                    </ChipRow>
+                  )}
+
+                  <MetaRow>
+                    <Meta title="Participants">
+                      <IconUsers size={13} />
+                      {room._count.participants}
+                      <SrOnly>{' '}participants</SrOnly>
+                    </Meta>
+                    {room.videoUrl && (
+                      <Meta title="Has a video">
+                        <IconFilm size={13} />
+                        <SrOnly>Has a video</SrOnly>
+                      </Meta>
+                    )}
+                    <MetaMono>{getTimeSince(room.createdAt)}</MetaMono>
+                    <Meta>by {room.creator.username}</Meta>
+                  </MetaRow>
+                </RoomCard>
+              ))}
+            </RoomsGrid>
+          ) : (
+            <EmptyCard>
+              <IconFilm size={26} />
+              <EmptyTitle>Nothing public right now.</EmptyTitle>
+              <EmptyText>Public rooms show up here when someone starts one.</EmptyText>
+            </EmptyCard>
+          )}
+        </Section>
+      </Content>
 
       {/* Delete Confirmation Modal */}
       {deleteModal.show && deleteModal.room && (
-        <Modal onClick={hideDeleteModal}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle>🗑️ Delete Watch Party</ModalTitle>
+        <Overlay onClick={hideDeleteModal}>
+          <ModalCard
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-room-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ModalTitle id="delete-room-title">Delete this room?</ModalTitle>
             <ModalText>
-              Are you sure you want to delete "{deleteModal.room.name}"? 
-              This action cannot be undone and will remove all participants, chat messages, and sync data.
+              This permanently removes &ldquo;{deleteModal.room.name}&rdquo; — participants,
+              chat, and sync state.
             </ModalText>
             <ModalButtons>
-              <CancelButton onClick={hideDeleteModal}>
-                Cancel
-              </CancelButton>
-              <ConfirmButton onClick={() => handleDeleteRoom(deleteModal.room)}>
-                Delete Party
-              </ConfirmButton>
+              <SecondaryButton onClick={hideDeleteModal}>Cancel</SecondaryButton>
+              <DangerFilledButton onClick={() => handleDeleteRoom(deleteModal.room)}>
+                Delete room
+              </DangerFilledButton>
             </ModalButtons>
-          </ModalContent>
-        </Modal>
+          </ModalCard>
+        </Overlay>
       )}
-    </Container>
+    </Page>
   );
 };

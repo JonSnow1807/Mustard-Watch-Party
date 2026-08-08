@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from '@emotion/styled';
+import { color, font, radius } from '../theme';
 import type { EngineStatus } from '../sync/SyncEngine';
 
 const Hud = styled.div`
@@ -7,13 +8,17 @@ const Hud = styled.div`
   top: 12px;
   left: 12px;
   z-index: 110;
-  background: rgba(15, 23, 42, 0.85);
-  color: #e2e8f0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* a scrim, not a surface: color.bg0 at 88% so the frame underneath still
+     reads through. No opaque token can stand in - the translucency is the
+     point, and theme.ts carries no bg0 alpha variant. */
+  background: rgba(15, 13, 10, 0.88);
+  border: 1px solid ${color.line};
+  color: ${color.dim};
+  font-family: ${font.mono};
   font-size: 11px;
   line-height: 1.5;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: ${radius.sm};
   pointer-events: none;
   white-space: pre;
 `;

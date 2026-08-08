@@ -9,6 +9,7 @@ import { EnhancedRoomPage } from './pages/EnhancedRoomPage';
 import { LoginPage } from './pages/LoginPage';
 import { CreateRoomPage } from './pages/CreateRoomPage';
 import { JoinRoomPage } from './pages/JoinRoomPage';
+import { color, font, radius } from './theme';
 import './App.css';
 
 // Create a client for React Query
@@ -36,7 +37,21 @@ function App() {
                 <Route path="/room/:roomCode" element={<EnhancedRoomPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
-              <Toaster position="top-right" />
+              <Toaster
+                position="top-right"
+                toastOptions={{
+                  style: {
+                    background: color.bg2,
+                    color: color.text,
+                    border: `1px solid ${color.line}`,
+                    borderRadius: radius.md,
+                    fontFamily: font.body,
+                    fontSize: '13px',
+                  },
+                  success: { iconTheme: { primary: color.ok, secondary: color.bg0 } },
+                  error: { iconTheme: { primary: color.danger, secondary: color.bg0 } },
+                }}
+              />
             </div>
           </Router>
         </SocketProvider>

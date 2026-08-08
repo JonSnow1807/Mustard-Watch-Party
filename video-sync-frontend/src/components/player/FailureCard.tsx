@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from '@emotion/styled';
+import { color, font } from '../../theme';
 
 const Card = styled.div`
   position: absolute;
@@ -11,26 +12,31 @@ const Card = styled.div`
   gap: 8px;
   padding: 24px;
   text-align: center;
-  color: #e2e8f0;
+  color: ${color.text};
 `;
 
 const Title = styled.h3`
   margin: 0;
-  font-size: 18px;
-  color: #f8fafc;
+  font-family: ${font.display};
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: ${color.text};
 `;
 
 const Detail = styled.p`
   margin: 0;
-  font-size: 14px;
-  color: #a0aec0;
+  font-family: ${font.body};
+  font-size: 13.5px;
+  color: ${color.dim};
   max-width: 480px;
 `;
 
 const Url = styled.code`
   margin-top: 8px;
+  font-family: ${font.mono};
   font-size: 12px;
-  color: #718096;
+  color: ${color.faint};
   word-break: break-all;
   max-width: 90%;
 `;

@@ -10,6 +10,9 @@ const Media = styled.video`
   left: 0;
   width: 100%;
   height: 100%;
+  /* the stage is capped to the viewport height, so it is not always 16:9;
+     a video element defaults to object-fit:fill and would stretch */
+  object-fit: contain;
 `;
 
 // https://developer.mozilla.org/docs/Web/API/MediaError/code
