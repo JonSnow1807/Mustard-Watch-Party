@@ -1,0 +1,22 @@
+{
+  "runId": "S0-overhauled-msjp5cuc",
+  "scenario": {
+    "id": "S0",
+    "title": "clean loopback (floor; loopback is unrealistically kind)",
+    "must": true,
+    "impairment": {
+      "tool": "none"
+    },
+    "durationS": 240
+  },
+  "gitSha": "c2ffbdf1f1e751d7d599f16771f3bd0edc37aa8a",
+  "startedAt": "2026-08-08T01:30:13.998Z",
+  "clients": 3,
+  "videoId": "/media/hls/clicktrack.m3u8",
+  "videoUrl": "/media/hls/clicktrack.m3u8",
+  "videoSource": "hls",
+  "wsUrl": "ws://localhost:3000",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled",
+  "notes": "controller=predictive"
+}

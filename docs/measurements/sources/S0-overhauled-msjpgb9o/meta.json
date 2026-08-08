@@ -1,0 +1,22 @@
+{
+  "runId": "S0-overhauled-msjpgb9o",
+  "scenario": {
+    "id": "S0",
+    "title": "clean loopback (floor; loopback is unrealistically kind)",
+    "must": true,
+    "impairment": {
+      "tool": "none"
+    },
+    "durationS": 240
+  },
+  "gitSha": "c2ffbdf1f1e751d7d599f16771f3bd0edc37aa8a",
+  "startedAt": "2026-08-08T01:38:45.287Z",
+  "clients": 3,
+  "videoId": "1084537",
+  "videoUrl": "https://vimeo.com/1084537",
+  "videoSource": "vimeo",
+  "wsUrl": "ws://localhost:3000",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled",
+  "notes": "controller=predictive"
+}
