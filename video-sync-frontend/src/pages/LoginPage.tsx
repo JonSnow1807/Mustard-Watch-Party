@@ -123,9 +123,13 @@ export const LoginPage: React.FC = () => {
           <Title>{isLogin ? 'Sign in' : 'Create your account'}</Title>
 
           <Form onSubmit={handleSubmit}>
+            {/* the card carries no visible labels, so each control names
+                itself - a placeholder is not an accessible name and it
+                disappears the moment someone types */}
             <Input
               type="text"
               name="username"
+              aria-label="Username"
               placeholder="Username"
               value={formData.username}
               onChange={handleChange}
@@ -136,6 +140,7 @@ export const LoginPage: React.FC = () => {
               <Input
                 type="email"
                 name="email"
+                aria-label="Email"
                 placeholder="Email"
                 value={formData.email}
                 onChange={handleChange}
@@ -146,6 +151,7 @@ export const LoginPage: React.FC = () => {
             <Input
               type="password"
               name="password"
+              aria-label="Password"
               placeholder="Password"
               value={formData.password}
               onChange={handleChange}

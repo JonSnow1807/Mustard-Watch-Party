@@ -232,7 +232,7 @@ export const CreateRoomPage: React.FC = () => {
     e.preventDefault();
 
     if (!user) {
-      toast.error('Please login first');
+      toast.error('Sign in first');
       navigate('/login');
       return;
     }
@@ -265,7 +265,7 @@ export const CreateRoomPage: React.FC = () => {
       toast.success('Room created');
       navigate(`/room/${response.data.code}`);
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to create watch party');
+      toast.error(error.response?.data?.message || "Couldn't create the room");
     } finally {
       setLoading(false);
     }

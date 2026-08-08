@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -311,6 +311,17 @@ export const EnhancedRoomPage: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
+  // The roster as the socket handlers last saw it. Join/leave toasts have to
+  // fire exactly once per real event, so the "is this genuinely new?" decision
+  // cannot live inside a setState updater - React runs updaters twice in
+  // StrictMode and they must stay pure. Every write below sets the ref and the
+  // state together, so back-to-back events in one tick still dedupe.
+  const participantsRef = useRef<Participant[]>([]);
+
+  useEffect(() => {
+    participantsRef.current = participants;
+  }, [participants]);
+
   useEffect(() => {
     if (!roomCode) {
       navigate('/');
@@ -332,30 +343,34 @@ export const EnhancedRoomPage: React.FC = () => {
 
     const handleRoomJoined = (data: any) => {
       if (data.participants) {
+        participantsRef.current = data.participants;
         setParticipants(data.participants);
       }
       toast.success('Joined the room');
     };
 
     const handleUserJoined = (data: { userId: string; username: string }) => {
-      setParticipants(prev => {
-        if (prev.find(p => p.id === data.userId)) return prev;
-        toast(`${data.username} joined`);
-        return [...prev, { id: data.userId, username: data.username }];
-      });
+      if (participantsRef.current.some(p => p.id === data.userId)) return;
+      const next = [
+        ...participantsRef.current,
+        { id: data.userId, username: data.username },
+      ];
+      participantsRef.current = next;
+      setParticipants(next);
+      toast(`${data.username} joined`);
     };
 
     const handleUserLeft = (data: { userId: string }) => {
-      setParticipants(prev => {
-        const user = prev.find(p => p.id === data.userId);
-        if (user) {
-          toast(`${user.username} left`);
-        }
-        return prev.filter(p => p.id !== data.userId);
-      });
+      const leaving = participantsRef.current.find(p => p.id === data.userId);
+      if (!leaving) return;
+      const next = participantsRef.current.filter(p => p.id !== data.userId);
+      participantsRef.current = next;
+      setParticipants(next);
+      toast(`${leaving.username} left`);
     };
 
     const handleParticipantsUpdate = (data: { participants: Participant[] }) => {
+      participantsRef.current = data.participants;
       setParticipants(data.participants);
     };
 
@@ -379,10 +394,12 @@ export const EnhancedRoomPage: React.FC = () => {
       const response = await apiService.getRoomByCode(roomCode!);
       setRoom(response.data);
       if (response.data.participants) {
-        setParticipants(response.data.participants.map((p: any) => ({
+        const roster = response.data.participants.map((p: any) => ({
           id: p.user.id,
           username: p.user.username,
-        })));
+        }));
+        participantsRef.current = roster;
+        setParticipants(roster);
       }
     } catch (error) {
       toast.error("Couldn't load the room");
@@ -433,7 +450,7 @@ export const EnhancedRoomPage: React.FC = () => {
       <Page>
         <CenteredState>
           <StateTitle>Room not found</StateTitle>
-          <BackButton onClick={() => navigate('/')}>Back to home</BackButton>
+          <BackButton type="button" onClick={() => navigate('/')}>Back to home</BackButton>
         </CenteredState>
       </Page>
     );
@@ -463,13 +480,14 @@ export const EnhancedRoomPage: React.FC = () => {
           </Identity>
 
           <Actions>
-            <SecondaryAction onClick={handleShareRoom} aria-label="Share">
+            <SecondaryAction type="button" onClick={handleShareRoom} aria-label="Share">
               <IconShare size={14} />
               <ActionLabel>Share</ActionLabel>
             </SecondaryAction>
 
             {isHost && (
               <SecondaryAction
+                type="button"
                 onClick={() => setShowSettings(!showSettings)}
                 aria-label="Settings"
               >
@@ -478,7 +496,7 @@ export const EnhancedRoomPage: React.FC = () => {
               </SecondaryAction>
             )}
 
-            <DangerAction onClick={handleLeaveRoom} aria-label="Leave">
+            <DangerAction type="button" onClick={handleLeaveRoom} aria-label="Leave">
               <IconLeave size={14} />
               <ActionLabel>Leave</ActionLabel>
             </DangerAction>
@@ -508,7 +526,7 @@ export const EnhancedRoomPage: React.FC = () => {
             {/* Host */}
             {room.creator && (
               <ParticipantRow>
-                <Avatar>{room.creator.username[0].toUpperCase()}</Avatar>
+                <Avatar>{room.creator.username?.[0]?.toUpperCase() ?? '?'}</Avatar>
                 <ParticipantName>
                   {room.creator.username}
                   {room.creator.id === user?.id && <SelfTag> (you)</SelfTag>}
@@ -522,7 +540,7 @@ export const EnhancedRoomPage: React.FC = () => {
               .filter(p => p.id !== room.creatorId)
               .map(participant => (
                 <ParticipantRow key={participant.id}>
-                  <Avatar>{participant.username[0].toUpperCase()}</Avatar>
+                  <Avatar>{participant.username?.[0]?.toUpperCase() ?? '?'}</Avatar>
                   <ParticipantName>
                     {participant.username}
                     {participant.id === user?.id && <SelfTag> (you)</SelfTag>}

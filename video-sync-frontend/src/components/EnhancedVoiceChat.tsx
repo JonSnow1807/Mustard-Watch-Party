@@ -197,14 +197,6 @@ const InfoValue = styled.span<{ ok?: boolean }>`
   color: ${props => (props.ok ? color.ok : color.dim)};
 `;
 
-const OkDot = styled.span`
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 50%;
-  background: ${color.ok};
-`;
-
 /** Quiet and centered, no border - this already sits inside the panel card. */
 const EmptyState = styled.div`
   display: flex;
@@ -544,7 +536,7 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
                   isSpeaking={speakingUsers.has(user.id)}
                   isDeafened={isDeafened}
                 >
-                  <Avatar>{user.username[0].toUpperCase()}</Avatar>
+                  <Avatar>{user.username?.[0]?.toUpperCase() ?? '?'}</Avatar>
                   <Username>{user.username} (you)</Username>
                   <VoiceStatus>
                     <StatusIcon off={isMuted} title={isMuted ? 'Muted' : 'Unmuted'}>
@@ -564,7 +556,8 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
                   isSpeaking={speakingUsers.has(voiceUser.userId)}
                   isDeafened={voiceUser.isDeafened}
                 >
-                  <Avatar>{voiceUser.username[0].toUpperCase()}</Avatar>
+                  {/* usernames arrive over socket payloads - an empty one must not throw */}
+                  <Avatar>{voiceUser.username?.[0]?.toUpperCase() ?? '?'}</Avatar>
                   <Username>{voiceUser.username}</Username>
                   <VoiceStatus>
                     <StatusIcon
@@ -593,18 +586,13 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
             </EmptyState>
           )}
 
+          {/*
+            Only claims this file can back: noise suppression is an actual
+            getUserMedia constraint requested in handleJoinVoice. Connection
+            quality and codec used to be hardcoded here with nothing measuring
+            them - no getStats(), no SDP inspection - so they are gone.
+          */}
           <ConnectionInfo>
-            <InfoRow>
-              <InfoLabel>Connection quality</InfoLabel>
-              <InfoValue ok>
-                <OkDot />
-                Excellent
-              </InfoValue>
-            </InfoRow>
-            <InfoRow>
-              <InfoLabel>Audio codec</InfoLabel>
-              <InfoValue>Opus</InfoValue>
-            </InfoRow>
             <InfoRow>
               <InfoLabel>Noise suppression</InfoLabel>
               <InfoValue ok>Enabled</InfoValue>

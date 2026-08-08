@@ -252,6 +252,9 @@ const EMPTY_STATUS: EngineStatus = {
   seeksIssued: 0,
 };
 
+/** Keyboard seek step, in seconds - the arrow-key grain of the seek bar. */
+const SEEK_STEP_S = 5;
+
 /**
  * The player SHELL: engine lifecycle, controls, HUD, failure card. Which
  * player actually renders is decided by classifyMediaSource - the same
@@ -472,11 +475,50 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     ? status.projectedS
     : status.timeline?.mediaTime ?? 0;
 
-  // one value, two consumers: the fill's width and the bar's scrub thumb
+  // one value, two consumers: the fill's width and the bar's scrub thumb.
+  // Clamped at BOTH ends - projectedS goes negative whenever the timeline
+  // projects ahead of the local clock, and a negative percentage is a
+  // negative width plus a thumb parked off the left edge of the bar.
   const progressPct =
     status.durationS > 0
-      ? Math.min(100, (shownTime / status.durationS) * 100)
+      ? Math.min(100, Math.max(0, (shownTime / status.durationS) * 100))
       : 0;
+
+  /**
+   * The bar is a real slider, so it has to answer the keyboard as well as
+   * the mouse: arrows step, Home/End jump to the ends. Every one of them
+   * leaves through the same seek intent the click path uses - the local
+   * player is never touched here, the broadcast moves everyone.
+   */
+  const handleProgressKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    let target: number;
+    switch (e.key) {
+      case 'ArrowLeft':
+        target = shownTime - SEEK_STEP_S;
+        break;
+      case 'ArrowRight':
+        target = shownTime + SEEK_STEP_S;
+        break;
+      case 'Home':
+        target = 0;
+        break;
+      case 'End':
+        target = status.durationS;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    if (!canControl) {
+      toast.error('Only the host can seek the video', {
+        duration: 2000
+      });
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine || !status.durationS) return;
+    engine.sendIntent('seek', Math.max(0, Math.min(status.durationS, target)));
+  };
 
   return (
     <PlayerContainer>
@@ -505,9 +547,19 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
             </PlayButton>
 
             <ProgressContainer>
+              {/* a slider in fact, not just in looks: whoever may seek can
+                  reach it with Tab and drive it with the arrows */}
               <ProgressBar
                 data-testid="progress-bar"
+                role="slider"
+                tabIndex={canControl ? 0 : -1}
+                aria-label="Seek"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(status.durationS)}
+                aria-valuenow={Math.round(shownTime)}
+                aria-disabled={!canControl}
                 onClick={handleProgressClick}
+                onKeyDown={handleProgressKeyDown}
                 canControl={canControl}
                 progress={progressPct}
               >

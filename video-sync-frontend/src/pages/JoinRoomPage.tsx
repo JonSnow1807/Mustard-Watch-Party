@@ -11,9 +11,7 @@ import {
   button,
   chip,
   chipStatic,
-  input,
   card,
-  sectionLabel,
 } from '../theme';
 import { IconX, IconGlobe, IconLock, IconUsers, Wordmark } from '../components/Icons';
 
@@ -120,18 +118,28 @@ const ParticipantCount = styled.span`
   font-variant-numeric: tabular-nums;
 `;
 
-const Field = styled.div`
-  margin-bottom: 16px;
+/* Text for screen readers only: the count is a bare numeral beside an icon,
+   which reads as "3" and nothing else without this. */
+const SrOnly = styled.span`
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 `;
 
-const FieldLabel = styled.label`
-  ${sectionLabel}
-  display: block;
-  margin-bottom: 6px;
-`;
-
-const TextInput = styled.input`
-  ${input}
+// What "Private" actually buys today, said plainly - see handleJoinRoom.
+const PrivacyNote = styled.p`
+  font-family: ${font.body};
+  font-size: 12.5px;
+  color: ${color.faint};
+  line-height: 1.5;
+  margin: 12px 0 0;
 `;
 
 const PrimaryButton = styled.button`
@@ -194,7 +202,6 @@ export const JoinRoomPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [roomInfo, setRoomInfo] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [password, setPassword] = useState('');
 
   useEffect(() => {
     if (!roomCode) {
@@ -208,7 +215,7 @@ export const JoinRoomPage: React.FC = () => {
         setRoomInfo(response.data);
         setError(null);
       } catch (error: any) {
-        setError('Watch party not found or you do not have permission to join');
+        setError('That room was not found, or you do not have permission to join');
       }
     };
 
@@ -219,23 +226,25 @@ export const JoinRoomPage: React.FC = () => {
     e.preventDefault();
 
     if (!user) {
-      toast.error('Please login first');
+      toast.error('Sign in first');
       navigate('/login');
       return;
     }
 
     if (!roomInfo) {
-      toast.error('Watch party information not available');
+      toast.error("Room details aren't available yet");
       return;
     }
 
     setLoading(true);
     try {
-      // For now, we'll just navigate to the room
-      // In the future, you might want to add password verification here
+      // The password field that used to sit above this button was removed:
+      // this path verifies nothing, it just navigates, so the field implied
+      // a protection that does not exist. Bring it back only once the server
+      // enforces a room password on join.
       navigate(`/room/${roomCode}`);
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to join watch party');
+      toast.error(error.response?.data?.message || "Couldn't join the room");
     } finally {
       setLoading(false);
     }
@@ -325,9 +334,18 @@ export const JoinRoomPage: React.FC = () => {
             <ParticipantRow>
               <IconUsers size={14} />
               <ParticipantCount>
-                {roomInfo.participants?.length}
+                {roomInfo.participants.length}
               </ParticipantCount>
+              <SrOnly>
+                {' '}{roomInfo.participants.length === 1 ? 'participant' : 'participants'}
+              </SrOnly>
             </ParticipantRow>
+          )}
+          {!roomInfo.isPublic && (
+            <PrivacyNote>
+              Private keeps this room off the home page. Anyone with the room
+              link can still join today.
+            </PrivacyNote>
           )}
         </PreviewCard>
 
@@ -337,22 +355,9 @@ export const JoinRoomPage: React.FC = () => {
               Join now
             </PrimaryButton>
           ) : (
-            <>
-              <Field>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
-                <TextInput
-                  id="password"
-                  type="password"
-                  placeholder="Enter the room password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </Field>
-
-              <PrimaryButton type="submit" disabled={loading}>
-                {loading ? 'Joining…' : 'Join room'}
-              </PrimaryButton>
-            </>
+            <PrimaryButton type="submit" disabled={loading}>
+              {loading ? 'Joining…' : 'Join room'}
+            </PrimaryButton>
           )}
         </form>
       </Container>

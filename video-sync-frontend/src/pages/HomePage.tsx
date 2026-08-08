@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
@@ -234,6 +234,10 @@ const RoomsGrid = styled.div`
   align-items: start;
 `;
 
+/* A plain container, not a control: the card carries the mouse affordance,
+   while the two real buttons inside it (the name, the delete) carry focus.
+   A role="button" here would make the delete button unreachable - ARIA
+   forbids focusable content inside a button, and readers flatten it away. */
 const RoomCard = styled.div`
   ${card}
   padding: 20px;
@@ -243,11 +247,6 @@ const RoomCard = styled.div`
   &:hover {
     background: ${color.bg2};
     border-color: ${color.lineBright};
-  }
-
-  &:focus-visible {
-    outline: none;
-    box-shadow: ${focusRing};
   }
 `;
 
@@ -267,6 +266,32 @@ const RoomName = styled.h3`
   font-size: 17px;
   line-height: 1.3;
   color: ${color.text};
+`;
+
+/* The name is the room's entry point for the keyboard: a real button, styled
+   all the way back down to the heading text it renders, so nothing moves. */
+const RoomNameButton = styled.button`
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: ${radius.sm};
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: ${focusRing};
+  }
+`;
+
+/* The clamp lives on a child, not on the button: a button's own box wraps its
+   content in an anonymous block, which swallows -webkit-line-clamp. */
+const RoomNameText = styled.span`
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -498,6 +523,8 @@ export const HomePage: React.FC = () => {
   const { user, logout } = useAuth();
   const [publicFilter, setPublicFilter] = useState('all');
   const [deleteModal, setDeleteModal] = useState<{ show: boolean; room: any | null }>({ show: false, room: null });
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
+  const deleteTriggerRef = useRef<HTMLElement | null>(null);
 
   // Fetch user's rooms
   const { data: userRooms, isLoading: userRoomsLoading, refetch: refetchUserRooms } = useQuery({
@@ -533,15 +560,11 @@ export const HomePage: React.FC = () => {
     }
   };
 
-  // Room cards are the app's primary navigation, so they must be operable from
-  // the keyboard as well as the mouse. Events that started on a nested control
-  // (the delete button) are left alone - that control handles its own keys.
-  const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, roomCode: string) => {
-    if (e.target !== e.currentTarget) return;
-    if (e.key === 'Enter' || e.key === ' ') {
-      if (e.key === ' ') e.preventDefault(); // Space would scroll the page
-      handleJoinRoom(roomCode);
-    }
+  // The name button and the card both open the room; without this the click
+  // would bubble to the card and push the same route twice.
+  const handleRoomNameClick = (e: React.MouseEvent, roomCode: string) => {
+    e.stopPropagation();
+    handleJoinRoom(roomCode);
   };
 
   const handleDeleteRoom = async (room: any) => {
@@ -560,9 +583,30 @@ export const HomePage: React.FC = () => {
     setDeleteModal({ show: true, room });
   };
 
-  const hideDeleteModal = () => {
+  const hideDeleteModal = useCallback(() => {
     setDeleteModal({ show: false, room: null });
-  };
+  }, []);
+
+  // A dialog has to behave like one: focus moves in when it opens, Escape
+  // closes it, and focus returns to whatever opened it.
+  useEffect(() => {
+    if (!deleteModal.show) return;
+
+    deleteTriggerRef.current = document.activeElement as HTMLElement | null;
+    cancelDeleteRef.current?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') hideDeleteModal();
+    };
+    document.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      // the trigger is gone once its room is deleted; focusing it is then a no-op
+      deleteTriggerRef.current?.focus();
+      deleteTriggerRef.current = null;
+    };
+  }, [deleteModal.show, hideDeleteModal]);
 
   const getTimeSince = (date: string) => {
     const minutes = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
@@ -578,7 +622,9 @@ export const HomePage: React.FC = () => {
         <TopBar>
           <Wordmark size={18} />
           <TopBarRight>
-            <SecondaryButton onClick={() => navigate('/login')}>Sign in</SecondaryButton>
+            <SecondaryButton type="button" onClick={() => navigate('/login')}>
+              Sign in
+            </SecondaryButton>
           </TopBarRight>
         </TopBar>
 
@@ -594,8 +640,12 @@ export const HomePage: React.FC = () => {
               promised.
             </HeroBody>
             <CtaRow>
-              <PrimaryButton onClick={() => navigate('/login')}>Start a room</PrimaryButton>
-              <SecondaryButton onClick={() => navigate('/login')}>I have a code</SecondaryButton>
+              <PrimaryButton type="button" onClick={() => navigate('/login')}>
+                Start a room
+              </PrimaryButton>
+              <SecondaryButton type="button" onClick={() => navigate('/login')}>
+                I have a code
+              </SecondaryButton>
             </CtaRow>
 
             <StatStrip>
@@ -660,7 +710,9 @@ export const HomePage: React.FC = () => {
         <Wordmark size={18} />
         <TopBarRight>
           <SignedInAs>Signed in as {user.username}</SignedInAs>
-          <SecondarySmButton onClick={logout}>Sign out</SecondarySmButton>
+          <SecondarySmButton type="button" onClick={logout}>
+            Sign out
+          </SecondarySmButton>
         </TopBarRight>
       </TopBar>
 
@@ -669,7 +721,7 @@ export const HomePage: React.FC = () => {
         <Section>
           <SectionHead>
             <SectionLabel>Your rooms</SectionLabel>
-            <PrimarySmButton onClick={handleCreateRoom}>
+            <PrimarySmButton type="button" onClick={handleCreateRoom}>
               <IconPlus size={14} />
               New room
             </PrimarySmButton>
@@ -683,20 +735,22 @@ export const HomePage: React.FC = () => {
           ) : userRooms?.length > 0 ? (
             <RoomsGrid>
               {userRooms.map((room: any) => (
-                <RoomCard
-                  key={room.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleJoinRoom(room.code)}
-                  onKeyDown={(e) => handleCardKeyDown(e, room.code)}
-                >
+                <RoomCard key={room.id} onClick={() => handleJoinRoom(room.code)}>
                   <RoomCardHead>
-                    <RoomName>{room.name}</RoomName>
+                    <RoomName>
+                      <RoomNameButton
+                        type="button"
+                        onClick={(e) => handleRoomNameClick(e, room.code)}
+                      >
+                        <RoomNameText>{room.name}</RoomNameText>
+                      </RoomNameButton>
+                    </RoomName>
                     <LiveBadge isPlaying={room.isPlaying}>
                       {room.isPlaying ? 'LIVE' : 'PAUSED'}
                     </LiveBadge>
                     {room.creatorId === user.id && (
                       <GhostIconButton
+                        type="button"
                         onClick={(e) => showDeleteModal(room, e)}
                         title="Delete this watch party"
                       >
@@ -745,7 +799,9 @@ export const HomePage: React.FC = () => {
               <IconFilm size={26} />
               <EmptyTitle>No rooms yet.</EmptyTitle>
               <EmptyText>Start one and send the code.</EmptyText>
-              <PrimaryButton onClick={handleCreateRoom}>New room</PrimaryButton>
+              <PrimaryButton type="button" onClick={handleCreateRoom}>
+                New room
+              </PrimaryButton>
             </EmptyCard>
           )}
         </Section>
@@ -756,30 +812,35 @@ export const HomePage: React.FC = () => {
             <SectionLabel>Public rooms</SectionLabel>
             <FilterRow>
               <FilterPill
+                type="button"
                 active={publicFilter === 'all'}
                 onClick={() => setPublicFilter('all')}
               >
                 All
               </FilterPill>
               <FilterPill
+                type="button"
                 active={publicFilter === 'movies'}
                 onClick={() => setPublicFilter('movies')}
               >
                 Movies
               </FilterPill>
               <FilterPill
+                type="button"
                 active={publicFilter === 'tv'}
                 onClick={() => setPublicFilter('tv')}
               >
                 TV
               </FilterPill>
               <FilterPill
+                type="button"
                 active={publicFilter === 'education'}
                 onClick={() => setPublicFilter('education')}
               >
                 Education
               </FilterPill>
               <FilterPill
+                type="button"
                 active={publicFilter === 'music'}
                 onClick={() => setPublicFilter('music')}
               >
@@ -796,15 +857,16 @@ export const HomePage: React.FC = () => {
           ) : publicRooms?.length > 0 ? (
             <RoomsGrid>
               {publicRooms.map((room: any) => (
-                <RoomCard
-                  key={room.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleJoinRoom(room.code)}
-                  onKeyDown={(e) => handleCardKeyDown(e, room.code)}
-                >
+                <RoomCard key={room.id} onClick={() => handleJoinRoom(room.code)}>
                   <RoomCardHead>
-                    <RoomName>{room.name}</RoomName>
+                    <RoomName>
+                      <RoomNameButton
+                        type="button"
+                        onClick={(e) => handleRoomNameClick(e, room.code)}
+                      >
+                        <RoomNameText>{room.name}</RoomNameText>
+                      </RoomNameButton>
+                    </RoomName>
                     <LiveBadge isPlaying={room.isPlaying}>
                       {room.isPlaying ? 'LIVE' : 'PAUSED'}
                     </LiveBadge>
@@ -865,8 +927,13 @@ export const HomePage: React.FC = () => {
               chat, and sync state.
             </ModalText>
             <ModalButtons>
-              <SecondaryButton onClick={hideDeleteModal}>Cancel</SecondaryButton>
-              <DangerFilledButton onClick={() => handleDeleteRoom(deleteModal.room)}>
+              <SecondaryButton type="button" ref={cancelDeleteRef} onClick={hideDeleteModal}>
+                Cancel
+              </SecondaryButton>
+              <DangerFilledButton
+                type="button"
+                onClick={() => handleDeleteRoom(deleteModal.room)}
+              >
                 Delete room
               </DangerFilledButton>
             </ModalButtons>

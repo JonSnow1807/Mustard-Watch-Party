@@ -143,9 +143,15 @@ interface RoomSettingsProps {
   onUpdate?: () => void;
 }
 
+const DEFAULT_MAX_USERS = 20;
+
 export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpdate }) => {
   const [isPublic, setIsPublic] = useState(room.isPublic || false);
-  const [maxUsers, setMaxUsers] = useState(room.maxUsers || 20);
+  // '' is a legal intermediate state: a number field being retyped is empty
+  // for a keystroke, and parsing that into NaN would blank the control and
+  // make React complain about the value attribute. Blur settles it back to a
+  // number, so the field is never left holding nothing.
+  const [maxUsers, setMaxUsers] = useState<number | ''>(room.maxUsers || DEFAULT_MAX_USERS);
   const [videoUrl, setVideoUrl] = useState(room.videoUrl || '');
   const [loading, setLoading] = useState(false);
   const { socket } = useSocket();
@@ -196,7 +202,7 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
     <SettingsContainer>
       <SettingsHeader>
         <h3>Room settings</h3>
-        <CloseButton onClick={onClose} aria-label="Close room settings">
+        <CloseButton type="button" onClick={onClose} aria-label="Close room settings">
           <IconX size={16} />
         </CloseButton>
       </SettingsHeader>
@@ -225,7 +231,20 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
           min="2"
           max="100"
           value={maxUsers}
-          onChange={(e) => setMaxUsers(parseInt(e.target.value))}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (raw === '') {
+              setMaxUsers('');
+              return;
+            }
+            const parsed = parseInt(raw, 10);
+            setMaxUsers(Number.isNaN(parsed) ? '' : parsed);
+          }}
+          onBlur={() => {
+            if (maxUsers === '') {
+              setMaxUsers(room.maxUsers || DEFAULT_MAX_USERS);
+            }
+          }}
         />
       </SettingRow>
 
@@ -241,10 +260,10 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
       </SettingRow>
 
       <Actions>
-        <SaveButton onClick={handleUpdateSettings} disabled={loading}>
+        <SaveButton type="button" onClick={handleUpdateSettings} disabled={loading}>
           {loading ? 'Saving…' : 'Save changes'}
         </SaveButton>
-        <EndButton onClick={handleEndRoom}>
+        <EndButton type="button" onClick={handleEndRoom}>
           End room
         </EndButton>
       </Actions>
