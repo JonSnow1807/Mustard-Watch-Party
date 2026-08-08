@@ -88,6 +88,35 @@ re-run did not reproduce it (42ms), so the knee is above 250 and honestly
 *unlocated* — both runs are committed
 ([scaling results](docs/SCALING.md#5-load-characterization)).
 
+### Every source, same sync
+
+The sync core is player-agnostic — one classifier
+(`shared/media-source.ts`) decides which player mounts, one adapter
+surface drives them all — and that claim is measured per source, not
+asserted. Same 3-browser scenario, same hardware, same engine; the
+YouTube column is the main table above:
+
+| source → player | S0 clean | S2 (~300ms RTT) |
+|---|---|---|
+| YouTube → IFrame API | 16 / 49ms | 19 / 48ms |
+| direct file → `<video>` | **6 / 27ms** | **6 / 18ms** |
+| HLS → hls.js (MSE) | **5 / 19ms** | **7 / 18ms** |
+| Vimeo → Player SDK | **8 / 38ms** | not measured |
+
+*Steady-state pairwise drift P50 / P95; runs committed under
+[`docs/measurements/sources/`](docs/measurements/sources/), each stamped
+with the URL measured and the classifier's verdict. The native arms sync
+tighter than YouTube because a same-origin element reports a genuine
+`currentTime` — no postMessage quantization to reconstruct around.
+Vimeo's promise-only SDK is modeled locally from ~4Hz `timeupdate` edges;
+the noisier readout costs ~1.5 corrective seeks/min at S0 where the
+native arms take none. Honest scope: one scenario each (two for
+file/HLS), and the first attempt at the file arm was discarded and
+re-run — a cold-launched browser stalled all three pages past the socket
+ping deadline, the emptied room re-initialized paused (by design, P5),
+and the "measurement" was of the room being paused; the committed runs
+gate on ≥2,000 steady samples, which is what caught it.*
+
 ## How it works
 
 ```mermaid
@@ -163,6 +192,7 @@ Full design: [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md) ·
 docker compose -f sync-harness/lab/docker-compose.harness.yml up -d --build
 cd sync-harness && npm install && npx playwright install chromium
 npm run scenario -- S0          # one 3-browser scenario against your build
+HARNESS_VIDEO_URL=/media/hls/clicktrack.m3u8 npm run scenario -- S0   # another source arm
 npm run bots -- --n 100 --duration 120   # protocol-level, no browsers
 ```
 

@@ -1,0 +1,55 @@
+{
+  "pairwiseSteadyState": {
+    "p50": 0.008469310634097837,
+    "p95": 0.03807698315648622,
+    "p99": 0.12493587250996185,
+    "max": 1.121512765347103,
+    "samples": 2280
+  },
+  "pairwiseAllTime": {
+    "p50": 0.008469310634097837,
+    "p95": 0.040392160642625186,
+    "p99": 0.1279076465863449,
+    "max": 1.121512765347103,
+    "samples": 2427
+  },
+  "convergenceAfterEventsS": [
+    {
+      "event": "join@c0",
+      "tHost": 1786153125825,
+      "convergenceS": 31
+    },
+    {
+      "event": "join@c1",
+      "tHost": 1786153130606,
+      "convergenceS": 26.25
+    },
+    {
+      "event": "join@c2",
+      "tHost": 1786153135599,
+      "convergenceS": 21.25
+    },
+    {
+      "event": "play@c0",
+      "tHost": 1786153155375,
+      "convergenceS": 1.5
+    },
+    {
+      "event": "seek@c0",
+      "tHost": 1786153215310,
+      "convergenceS": 0
+    },
+    {
+      "event": "play@c0",
+      "tHost": 1786153280311,
+      "convergenceS": 0.5
+    }
+  ],
+  "hardSeeksPerMinute": 1.51094173640782,
+  "noiseFloor": {
+    "plateauMsP50": null,
+    "plateauMsP95": null,
+    "incrementP50": null,
+    "incrementP95": null
+  }
+}

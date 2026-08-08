@@ -1,0 +1,24 @@
+{
+  "runId": "S2-overhauled-msjpmaci",
+  "scenario": {
+    "id": "S2",
+    "title": "+150ms each way (~300ms RTT), symmetric — intercontinental",
+    "must": true,
+    "impairment": {
+      "tool": "toxiproxy",
+      "upLatencyMs": 150,
+      "downLatencyMs": 150
+    },
+    "durationS": 240
+  },
+  "gitSha": "c2ffbdf1f1e751d7d599f16771f3bd0edc37aa8a",
+  "startedAt": "2026-08-08T01:43:24.154Z",
+  "clients": 3,
+  "videoId": "/media/clicktrack.mp4",
+  "videoUrl": "/media/clicktrack.mp4",
+  "videoSource": "file",
+  "wsUrl": "ws://localhost:3101",
+  "hardware": "Chinmays-MacBook-Pro.local · arm64 · node v20.17.0",
+  "engine": "overhauled",
+  "notes": "controller=predictive"
+}
