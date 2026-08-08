@@ -4,7 +4,10 @@
 # which is what lets the page tap its own audio graph (a cross-origin
 # YouTube iframe cannot be tapped, and that is the whole reason this exists).
 set -e
-OUT="${1:-../video-sync-frontend/public/media/clicktrack.mp4}"
+# default output resolved from the script's own location - runnable from
+# any CWD, same contract as make-hls-fixture.sh
+HERE="$(cd "$(dirname "$0")" && pwd)"
+OUT="${1:-$HERE/../../video-sync-frontend/public/media/clicktrack.mp4}"
 mkdir -p "$(dirname "$OUT")"
 ffmpeg -y -loglevel error \
   -f lavfi -i "color=c=black:s=640x360:r=30:d=300" \
