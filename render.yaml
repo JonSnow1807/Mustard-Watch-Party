@@ -4,7 +4,10 @@ services:
     env: node
     plan: starter
     rootDir: video-sync-backend
-    buildCommand: npm ci && npm run build
+    # --include=dev: NODE_ENV=production below applies at BUILD time too,
+    # and a bare `npm ci` would then skip the devDependencies the build
+    # itself needs (@nestjs/cli, prisma) - exit 127 on `nest build`
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npx prisma migrate deploy && npm run start:prod
     envVars:
       - key: NODE_ENV
