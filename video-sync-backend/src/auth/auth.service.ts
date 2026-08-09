@@ -137,19 +137,8 @@ export class AuthService {
   async signInWithGoogle(identity: GoogleIdentity): Promise<SessionUser> {
     const email = identity.email.trim().toLowerCase();
 
-    const linked = await this.database.oAuthAccount.findUnique({
-      where: {
-        provider_providerAccountId: {
-          provider: GOOGLE,
-          providerAccountId: identity.subject,
-        },
-      },
-      select: { user: { select: { id: true, username: true, email: true } } },
-    });
-
-    if (linked) {
-      return { ...linked.user, token: this.issueToken(linked.user) };
-    }
+    const linked = await this.findLinkedUser(identity.subject);
+    if (linked) return linked;
 
     const emailOwner = await this.database.user.findFirst({
       where: { email: { equals: email, mode: 'insensitive' } },
@@ -160,6 +149,22 @@ export class AuthService {
     }
 
     return await this.createGoogleUser(identity, email);
+  }
+
+  /** The local user behind a provider subject, or null if not linked yet. */
+  private async findLinkedUser(subject: string): Promise<SessionUser | null> {
+    const linked = await this.database.oAuthAccount.findUnique({
+      where: {
+        provider_providerAccountId: {
+          provider: GOOGLE,
+          providerAccountId: subject,
+        },
+      },
+      select: { user: { select: { id: true, username: true, email: true } } },
+    });
+    return linked
+      ? { ...linked.user, token: this.issueToken(linked.user) }
+      : null;
   }
 
   private async createGoogleUser(
@@ -195,8 +200,16 @@ export class AuthService {
         // Two first-time sign-ins for the same Google account can race here.
         // The unique index is what actually decides; the loser re-reads the
         // winner's row instead of failing a sign-in that did succeed.
+        //
+        // Re-read directly rather than restarting signInWithGoogle: that
+        // would recurse, and if the row somehow still did not read back
+        // (a lagging replica, say) it would recurse again, and again. A
+        // constraint that fires with nothing behind it is a real anomaly,
+        // so it gets raised rather than retried forever.
         if (isUniqueViolation(err, 'providerAccountId')) {
-          return await this.signInWithGoogle(identity);
+          const winner = await this.findLinkedUser(identity.subject);
+          if (winner) return winner;
+          throw err;
         }
         // Lost the name to someone else between generating and inserting:
         // draw again.

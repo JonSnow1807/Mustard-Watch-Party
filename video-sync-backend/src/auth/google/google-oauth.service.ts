@@ -97,12 +97,20 @@ export class GoogleOAuthService {
     return origins.split(',')[0].trim().replace(/\/+$/, '');
   }
 
+  private cachedClient?: OAuth2Client;
+
+  /**
+   * One client, reused. `verifyIdToken` caches Google's signing certificates
+   * on the instance, so a fresh client per call would refetch the JWKS on
+   * every single sign-in - and the callback alone would do it twice.
+   */
   private client(): OAuth2Client {
-    return new OAuth2Client({
+    this.cachedClient ??= new OAuth2Client({
       clientId: this.clientId,
       clientSecret: this.clientSecret,
       redirectUri: this.redirectUri,
     });
+    return this.cachedClient;
   }
 
   /**

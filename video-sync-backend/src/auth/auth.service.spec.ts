@@ -215,6 +215,20 @@ describe('signInWithGoogle', () => {
     expect(db.user.create).toHaveBeenCalledTimes(1);
   });
 
+  it('raises rather than spinning when the constraint fires with nothing behind it', async () => {
+    // P2002 on the provider identity but no row reads back - a lagging
+    // replica, or something genuinely wrong. Re-entering the sign-in here
+    // would recurse forever on a condition that is not going to change.
+    const db = makeDb();
+    db.user.create.mockRejectedValue(uniqueViolation('providerAccountId'));
+    db.oAuthAccount.findUnique.mockResolvedValue(null);
+
+    await expect(serviceWith(db).signInWithGoogle(identity)).rejects.toThrow(
+      /unique constraint/i,
+    );
+    expect(createCalls(db).length).toBe(1);
+  });
+
   it('reports a racing email insert as email_taken, not a 500', async () => {
     const db = makeDb();
     db.user.create.mockRejectedValue(uniqueViolation('email'));
