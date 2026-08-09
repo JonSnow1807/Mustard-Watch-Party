@@ -161,7 +161,7 @@ export class BotClient {
           this.rejoinFailures += 1;
         });
     });
-    await this.transport.connect(this.user.token ?? '');
+    await this.transport.connect(this.user.token);
   }
 
   async join(roomCode: string): Promise<void> {

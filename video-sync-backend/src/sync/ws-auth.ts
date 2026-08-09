@@ -1,10 +1,8 @@
 import { JwtService } from '@nestjs/jwt';
 import { Socket } from 'socket.io';
-
-interface TokenPayload {
-  sub: string;
-  name: string;
-}
+// One definition, shared with the REST guard (auth/jwt-auth.guard.ts) so the
+// two planes cannot drift on what a token says.
+import { subjectOf, type TokenPayload } from '../auth/token-payload';
 
 /** Shape of socket.data after the middleware accepted the connection. */
 export interface AuthedSocketData {
@@ -29,8 +27,14 @@ export function wsAuthMiddleware(jwt: JwtService) {
     }
     try {
       const payload = jwt.verify<TokenPayload>(token);
+      // shared with the REST guard: a valid signature is not a subject
+      const sub = subjectOf(payload);
+      if (sub === null) {
+        next(new Error('unauthorized: token has no subject'));
+        return;
+      }
       const data = socket.data as AuthedSocketData;
-      data.userId = payload.sub;
+      data.userId = sub;
       data.username = payload.name;
       data.connectedAt = Date.now();
       next();

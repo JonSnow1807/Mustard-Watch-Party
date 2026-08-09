@@ -556,7 +556,13 @@ export class SyncGateway
   ) {
     try {
       const { roomCode, message } = data;
-      console.log(`Chat message in room ${roomCode} from ${message.username}`);
+      // Identity comes from the JWT-verified socket, never from the payload.
+      // This handler used to write `userId: message.userId` straight into the
+      // row, so any room member could post as any user - the same
+      // client-asserted-identity bug the REST guard exists to end. The
+      // client's own userId/username fields are now ignored entirely.
+      const { userId, username } = client.data as AuthedSocketData;
+      console.log(`Chat message in room ${roomCode} from ${username}`);
 
       const room = await this.database.room.findUnique({
         where: { code: roomCode },
@@ -571,7 +577,7 @@ export class SyncGateway
       const savedMessage = await this.database.chatMessage.create({
         data: {
           content: message.message,
-          userId: message.userId,
+          userId,
           roomId: room.id,
         },
         include: {

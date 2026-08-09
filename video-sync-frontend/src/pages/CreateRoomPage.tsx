@@ -255,7 +255,6 @@ export const CreateRoomPage: React.FC = () => {
       const response = await apiService.createRoom({
         name: formData.name,
         videoUrl: videoUrl || undefined,
-        userId: user.id,
         isPublic: formData.isPublic,
         description: formData.isPublic ? formData.description : undefined,
         tags: formData.isPublic && formData.tags ? formData.tags.split(',').map(t => t.trim()) : [],

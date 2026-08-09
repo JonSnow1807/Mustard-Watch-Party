@@ -67,8 +67,8 @@ const sampleTimeline = {
 const sioBytes = Buffer.byteLength(`42${JSON.stringify(['sync:timeline', sampleTimeline])}`);
 console.log(`timeline broadcast wire size: socket.io/JSON=${sioBytes}B binary=31B (${(sioBytes / 31).toFixed(1)}x)`);
 
-await bench('node/socket.io', new SocketIOTransport('http://localhost:3000'), user.token ?? '');
-await bench('relay-go/binary', new RawWSBinaryTransport('http://localhost:3400'), user.token ?? '');
+await bench('node/socket.io', new SocketIOTransport('http://localhost:3000'), user.token);
+await bench('relay-go/binary', new RawWSBinaryTransport('http://localhost:3400'), user.token);
 if (anyInvalid) {
   // a plane that timed out is not comparable to one that did not; exiting
   // non-zero stops an invalid comparison being quoted as a result

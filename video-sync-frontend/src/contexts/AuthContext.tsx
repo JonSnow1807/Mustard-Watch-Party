@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import { AUTH_EXPIRED_EVENT } from '../services/api';
 
 interface User {
   id: string;
@@ -33,12 +34,30 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
 
-  // Check for stored user on mount
+  // Check for stored user on mount. Wrapped: a corrupt entry (a half-written
+  // value, a schema change) would otherwise throw during render and leave a
+  // blank page instead of a signed-out one.
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
+    if (!storedUser) return;
+    try {
       setUser(JSON.parse(storedUser));
+    } catch {
+      localStorage.removeItem('user');
     }
+  }, []);
+
+  // The API layer clears storage and fires this when a request comes back 401
+  // with a token attached - i.e. the token expired or was revoked mid-session.
+  // Without a listener the UI kept rendering as signed-in against a dead
+  // token, and every action failed silently.
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null);
+      toast.error('Session expired - sign in again');
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {

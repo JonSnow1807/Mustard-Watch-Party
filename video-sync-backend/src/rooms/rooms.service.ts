@@ -72,7 +72,46 @@ export class RoomsService {
     return room;
   }
 
-  async updateRoom(roomId: string, data: { name?: string; videoUrl?: string }) {
+  /**
+   * Ownership-checked PATCH path, the mirror of deleteRoom. Every method
+   * here takes the caller's id explicitly and the CONTROLLER supplies the
+   * one it got from the verified token - the id is never read off the body.
+   *
+   * PATCH shipped for months with no check at all: any caller who knew a
+   * code could rename someone's room or repoint its video.
+   */
+  async updateRoomByCode(
+    code: string,
+    userId: string,
+    data: { name?: string; videoUrl?: string },
+  ) {
+    const room = await this.database.room.findUnique({
+      where: { code },
+      select: { id: true, creatorId: true },
+    });
+
+    if (!room) {
+      throw new NotFoundException('Room not found');
+    }
+
+    if (room.creatorId !== userId) {
+      throw new ForbiddenException(
+        'Only the room creator can update this room',
+      );
+    }
+
+    return await this.updateRoom(room.id, data);
+  }
+
+  /**
+   * Unchecked by design and by id, not code: the only caller is
+   * updateRoomByCode, which does the ownership check. Nothing that faces a
+   * request should call this directly.
+   */
+  private async updateRoom(
+    roomId: string,
+    data: { name?: string; videoUrl?: string },
+  ) {
     return await this.database.room.update({
       where: { id: roomId },
       data,

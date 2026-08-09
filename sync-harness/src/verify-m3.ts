@@ -59,9 +59,9 @@ function once<T>(socket: Socket, event: string, timeoutMs = 4000): Promise<T> {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 // ---------- fixtures ----------
-const creator: HarnessUser & { token?: string } = await registerUser(runId, 0);
-const guest: HarnessUser & { token?: string } = await registerUser(runId, 1);
-const late: HarnessUser & { token?: string } = await registerUser(runId, 2);
+const creator: HarnessUser = await registerUser(runId, 0);
+const guest: HarnessUser = await registerUser(runId, 1);
+const late: HarnessUser = await registerUser(runId, 2);
 const room = await createRoom(creator, runId, 'https://www.youtube.com/watch?v=aqz-KE-bpKQ');
 
 // 1. unauthenticated rejected
