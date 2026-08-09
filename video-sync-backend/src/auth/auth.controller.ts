@@ -1,9 +1,34 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+  Logger,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { CurrentUser } from './current-user.decorator';
+import {
+  GoogleAuthError,
+  GoogleOAuthService,
+  OAUTH_COOKIE,
+  OAUTH_COOKIE_PATH,
+} from './google/google-oauth.service';
+import { readCookie } from './google/cookies';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  private readonly logger = new Logger(AuthController.name);
+
+  constructor(
+    private authService: AuthService,
+    private google: GoogleOAuthService,
+  ) {}
 
   @Post('register')
   async register(
@@ -19,5 +44,102 @@ export class AuthController {
   @Post('login')
   async login(@Body() loginDto: { username: string; password: string }) {
     return await this.authService.login(loginDto.username, loginDto.password);
+  }
+
+  /**
+   * What this deployment can actually sign you in with. The frontend renders
+   * its buttons from this rather than from its own build-time flag, so an
+   * install without Google credentials simply does not offer the button -
+   * and no build has to be rebuilt to turn the provider on.
+   */
+  @Get('providers')
+  providers() {
+    return { google: this.google.enabled };
+  }
+
+  /**
+   * Who the bearer token says you are. The OAuth callback hands the browser
+   * a token and nothing else, so there has to be one place to exchange it
+   * for the profile the UI shows.
+   */
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async me(@CurrentUser('userId') userId: string) {
+    return await this.authService.me(userId);
+  }
+
+  /** Step one: bounce to Google, carrying a sealed CSRF/PKCE cookie. */
+  @Get('google/start')
+  start(
+    @Query('returnTo') returnTo: string | undefined,
+    @Res() res: Response,
+  ): void {
+    const { authUrl, cookie } = this.google.start(returnTo);
+    res.cookie(OAUTH_COOKIE, cookie, this.cookieOptions());
+    res.redirect(authUrl);
+  }
+
+  /**
+   * Step two: Google sends the browser back here. Everything ends in a
+   * redirect to the frontend - a person who lands on this URL is mid
+   * sign-in, and an API error body would strand them on a blank page at an
+   * origin they have never seen.
+   */
+  @Get('google/callback')
+  async callback(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Query('error') error: string | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    // Single use, cleared before anything can fail: a replayed cookie is a
+    // replayed flow.
+    res.clearCookie(OAUTH_COOKIE, this.cookieOptions());
+
+    try {
+      const { identity, returnTo } = await this.google.verifyCallback({
+        code,
+        state,
+        error,
+        cookie: readCookie(req.headers.cookie, OAUTH_COOKIE),
+      });
+
+      const user = await this.authService.signInWithGoogle(identity);
+
+      // The token rides in the FRAGMENT, never the query string: fragments
+      // are not sent to servers, do not reach access logs, and are not
+      // forwarded in a Referer header.
+      const params = new URLSearchParams({ token: user.token });
+      if (returnTo) params.set('to', returnTo);
+      res.redirect(this.google.callbackRedirect(params.toString()));
+    } catch (err) {
+      const failure =
+        err instanceof GoogleAuthError ? err.code : ('exchange' as const);
+      if (!(err instanceof GoogleAuthError)) {
+        this.logger.error(
+          `google callback failed: ${err instanceof Error ? err.message : 'unknown'}`,
+        );
+      }
+      res.redirect(
+        this.google.callbackRedirect(
+          new URLSearchParams({ error: failure }).toString(),
+        ),
+      );
+    }
+  }
+
+  private cookieOptions() {
+    return {
+      httpOnly: true,
+      // Lax, not Strict: the browser arrives at the callback from
+      // accounts.google.com, and Strict would withhold the very cookie the
+      // callback exists to check. Lax still covers top-level GET navigation,
+      // which is exactly this.
+      sameSite: 'lax' as const,
+      secure: this.google.redirectUri.startsWith('https://'),
+      path: OAUTH_COOKIE_PATH,
+      maxAge: 10 * 60 * 1000,
+    };
   }
 }

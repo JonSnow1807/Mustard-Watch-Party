@@ -34,6 +34,22 @@ export default () => ({
   cors: {
     origin: process.env.FRONTEND_URL || 'http://localhost:3001',
   },
+  // Where this API answers from the public internet. Needed because the
+  // OAuth redirect_uri must be an absolute URL that Google can match
+  // character-for-character against the console entry, and a server behind
+  // a proxy cannot reliably derive its own external origin from a request.
+  publicApiUrl: (process.env.PUBLIC_API_URL || 'http://localhost:3000').replace(
+    /\/+$/,
+    '',
+  ),
+  google: {
+    // Absent credentials are not an error: Google sign-in is optional, and
+    // an install without it (CI, the sync harness, a local checkout) must
+    // boot and keep serving password auth. `enabled` is derived, never set
+    // by hand, so there is no way to advertise a provider we cannot run.
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  },
   redis: {
     // set REDIS_URL to enable the multi-instance plane (adapter + Lua store)
     url: process.env.REDIS_URL,

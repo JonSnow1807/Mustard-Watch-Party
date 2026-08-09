@@ -7,6 +7,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { HomePage } from './pages/HomePage';
 import { EnhancedRoomPage } from './pages/EnhancedRoomPage';
 import { LoginPage } from './pages/LoginPage';
+import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { CreateRoomPage } from './pages/CreateRoomPage';
 import { JoinRoomPage } from './pages/JoinRoomPage';
 import { color, font, radius } from './theme';
@@ -32,6 +33,9 @@ function App() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/login" element={<LoginPage />} />
+                {/* MUST be a real route: the catch-all below would bounce
+                    the OAuth return to '/' and drop the token with it */}
+                <Route path="/auth/callback" element={<AuthCallbackPage />} />
                 <Route path="/create-room" element={<CreateRoomPage />} />
                 <Route path="/join-room/:roomCode" element={<JoinRoomPage />} />
                 <Route path="/room/:roomCode" element={<EnhancedRoomPage />} />
