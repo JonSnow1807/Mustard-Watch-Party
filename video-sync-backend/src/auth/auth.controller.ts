@@ -93,6 +93,15 @@ export class AuthController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
+    // 404 before anything else, exactly like /start. Falling into the
+    // redirect below when the provider is off would be wrong twice: it
+    // logs a disabled route as an unexpected error on every stray hit,
+    // and - when the provider is off BECAUSE the origin is loopback - it
+    // would redirect the visitor to that loopback address, which is the
+    // hazard the guard exists to prevent. No flow was started, so there
+    // is no one mid sign-in to land gently.
+    this.google.assertEnabled();
+
     // Single use, cleared before anything can fail: a replayed cookie is a
     // replayed flow.
     res.clearCookie(OAUTH_COOKIE, this.cookieOptions());

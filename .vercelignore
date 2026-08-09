@@ -1,0 +1,29 @@
+# The Vercel project's Root Directory is video-sync-frontend, but the CLI
+# uploads from the repo root - which is 1.4GB of dependencies and lab
+# artifacts, and the upload aborts before it ever reaches the build.
+#
+# Everything listed here is irrelevant to a CRA build of the frontend. The
+# frontend carries its own copy of the shared sync engine (scripts/sync-shared.mjs
+# keeps them identical), so it does not read anything outside its own directory.
+
+# Dependencies - reinstalled by the build, never uploaded
+node_modules
+**/node_modules
+
+# Local build output; Vercel builds its own
+**/build
+**/dist
+**/coverage
+
+# Other services and tooling: not part of the frontend build
+video-sync-backend
+sync-harness
+relay-go
+formal
+scripts
+
+# Docs and captures
+docs
+assets
+
+.git

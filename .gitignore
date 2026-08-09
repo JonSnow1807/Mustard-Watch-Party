@@ -25,3 +25,4 @@ formal/tools/
 .vercel/
 .env.local
 .env*.local
+.vercel
