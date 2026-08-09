@@ -6,6 +6,59 @@ import {
   safeReturnTo,
 } from './google-oauth.service';
 import { openState } from './oauth-state';
+import { OAuth2Client } from 'google-auth-library';
+
+/** Only the two calls that leave the process are faked. */
+interface FakeClient {
+  generateAuthUrl: (opts: object) => string;
+  getToken: jest.Mock;
+  verifyIdToken: jest.Mock;
+}
+
+// Stand in for the calls that would reach Google. Everything below the state
+// check is otherwise untestable without the network, and the branches down
+// there include a security control (email_verified). generateAuthUrl stays
+// REAL so the URL assertions above still test the library's output.
+jest.mock('google-auth-library', () => {
+  const actual = jest.requireActual<typeof import('google-auth-library')>(
+    'google-auth-library',
+  );
+  return {
+    ...actual,
+    OAuth2Client: jest.fn(
+      (opts: ConstructorParameters<typeof OAuth2Client>[0]) => {
+        const real = new actual.OAuth2Client(opts);
+        const fake: FakeClient = {
+          generateAuthUrl: (o: object) =>
+            real.generateAuthUrl(
+              o as Parameters<typeof real.generateAuthUrl>[0],
+            ),
+          getToken: jest.fn(),
+          verifyIdToken: jest.fn(),
+        };
+        return fake;
+      },
+    ),
+  };
+});
+
+interface CtorMock {
+  mock: {
+    calls: [{ transporterOptions?: { timeout?: number } }][];
+    results: { value: FakeClient }[];
+  };
+  mockClear: () => void;
+}
+
+const clientCtor = (): CtorMock => OAuth2Client as unknown as CtorMock;
+
+/** The (mocked) client the service most recently built for itself. */
+const clientOf = (): FakeClient => {
+  const results = clientCtor().mock.results;
+  return results[results.length - 1].value;
+};
+
+const ticketFor = (payload: unknown) => ({ getPayload: () => payload });
 
 const SECRET = 'test-secret';
 
@@ -31,6 +84,30 @@ describe('GoogleOAuthService configuration', () => {
     expect(
       serviceWith({ ...configured, 'google.clientSecret': '' }).enabled,
     ).toBe(false);
+  });
+
+  it.each([
+    ['missing entirely', ''],
+    ['a lone comma', ','],
+    ['only whitespace', '  '],
+  ])('is disabled when the frontend origin is %s', (_name, origin) => {
+    // credentials alone are not enough: with no canonical origin,
+    // callbackRedirect builds a RELATIVE URL and the browser lands on a 404
+    // at the API's own host, carrying a freshly minted token in the bar
+    const service = serviceWith({ ...configured, 'cors.origin': origin });
+    expect(service.enabled).toBe(false);
+    expect(() => service.start(undefined)).toThrow(NotFoundException);
+  });
+
+  it('bounds every call it makes to Google', () => {
+    // gaxios has NO timeout by default, so a socket that opens and then goes
+    // quiet would pin this request open for as long as the peer likes
+    const service = serviceWith(configured);
+    service.start(undefined);
+    const calls = clientCtor().mock.calls;
+    expect(
+      calls[calls.length - 1][0].transporterOptions?.timeout,
+    ).toBeGreaterThan(0);
   });
 
   it('404s rather than 500s when unconfigured', () => {
@@ -154,6 +231,123 @@ describe('GoogleOAuthService.verifyCallback', () => {
     const { authUrl, cookie } = service.start(undefined);
     const state = new URL(authUrl).searchParams.get('state')!;
     await expectFailure({ state, cookie }, 'exchange');
+  });
+});
+
+describe('GoogleOAuthService.verifyCallback past the state check', () => {
+  // These tests reach the calls that would leave the process, so each one
+  // runs verifyCallback EXACTLY once - expectFailure above calls it twice,
+  // which would double every mocked exchange and hide call-count bugs.
+  let service: GoogleOAuthService;
+
+  const openFlow = () => {
+    const { authUrl, cookie } = service.start('/room/abc');
+    return { state: new URL(authUrl).searchParams.get('state')!, cookie };
+  };
+
+  const failsWith = async (code: string) => {
+    const { state, cookie } = openFlow();
+    await expect(
+      service.verifyCallback({ code: 'auth-code', state, cookie }),
+    ).rejects.toMatchObject({ code });
+  };
+
+  beforeEach(() => {
+    clientCtor().mockClear();
+    service = serviceWith(configured);
+    // force the client to exist so clientOf() can reach it
+    service.start(undefined);
+    clientOf().getToken.mockResolvedValue({
+      tokens: { id_token: 'the-id-token' },
+    });
+    clientOf().verifyIdToken.mockResolvedValue(
+      ticketFor({
+        sub: 'google-sub-1',
+        email: 'ada@example.com',
+        email_verified: true,
+        name: 'Ada Lovelace',
+      }),
+    );
+  });
+
+  it('returns the identity Google vouched for, and the way back', async () => {
+    const { state, cookie } = openFlow();
+    const result = await service.verifyCallback({
+      code: 'auth-code',
+      state,
+      cookie,
+    });
+
+    expect(result.identity).toEqual({
+      subject: 'google-sub-1',
+      email: 'ada@example.com',
+      emailVerified: true,
+      name: 'Ada Lovelace',
+    });
+    expect(result.returnTo).toBe('/room/abc');
+  });
+
+  it('sends the PKCE verifier and our own redirect URI to the exchange', async () => {
+    const { state, cookie } = openFlow();
+    const verifier = openState(cookie, SECRET, Date.now())!.codeVerifier;
+
+    await service.verifyCallback({ code: 'auth-code', state, cookie });
+
+    expect(clientOf().getToken).toHaveBeenCalledTimes(1);
+    expect(clientOf().getToken).toHaveBeenCalledWith({
+      code: 'auth-code',
+      codeVerifier: verifier,
+      redirect_uri: service.redirectUri,
+    });
+  });
+
+  it('verifies the ID token against our own client id', async () => {
+    const { state, cookie } = openFlow();
+    await service.verifyCallback({ code: 'auth-code', state, cookie });
+
+    expect(clientOf().verifyIdToken).toHaveBeenCalledWith({
+      idToken: 'the-id-token',
+      audience: configured['google.clientId'],
+    });
+  });
+
+  it('refuses an email Google will not vouch for', async () => {
+    // this is the squatting defence, not a takeover one - we never link by
+    // email - so it has to be a hard refusal, not a warning
+    clientOf().verifyIdToken.mockResolvedValue(
+      ticketFor({
+        sub: 'google-sub-1',
+        email: 'ada@example.com',
+        email_verified: false,
+      }),
+    );
+    await failsWith('unverified');
+  });
+
+  it.each([
+    ['no subject', { email: 'ada@example.com', email_verified: true }],
+    ['no email', { sub: 'google-sub-1', email_verified: true }],
+    ['nothing at all', undefined],
+  ])('refuses a payload with %s', async (_name, payload) => {
+    clientOf().verifyIdToken.mockResolvedValue(ticketFor(payload));
+    await failsWith('exchange');
+  });
+
+  it('reports a refused exchange without leaking why', async () => {
+    clientOf().getToken.mockRejectedValue(new Error('invalid_grant'));
+    await failsWith('exchange');
+    expect(clientOf().verifyIdToken).not.toHaveBeenCalled();
+  });
+
+  it('reports a response carrying no ID token', async () => {
+    clientOf().getToken.mockResolvedValue({ tokens: {} });
+    await failsWith('exchange');
+  });
+
+  it('reports an ID token that fails verification', async () => {
+    // a forged or expired token must not become an identity
+    clientOf().verifyIdToken.mockRejectedValue(new Error('bad sig'));
+    await failsWith('exchange');
   });
 });
 

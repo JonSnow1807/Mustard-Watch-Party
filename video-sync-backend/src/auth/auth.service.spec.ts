@@ -236,6 +236,10 @@ describe('signInWithGoogle', () => {
     await expect(
       serviceWith(db).signInWithGoogle(identity),
     ).rejects.toMatchObject({ code: 'email_taken' });
+    // terminal, not retried: only a username collision earns another draw,
+    // and widening the retry would mean hammering a constraint that can
+    // never be satisfied
+    expect(createCalls(db).length).toBe(1);
   });
 
   it('lets an unexpected database error surface unchanged', async () => {

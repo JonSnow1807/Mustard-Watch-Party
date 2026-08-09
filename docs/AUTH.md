@@ -20,7 +20,7 @@ Server-side authorization code flow with PKCE, terminating on the API. The
 browser goes to Google and comes back to us; Google's tokens never reach the
 frontend, and nothing from Google is ever presented to the socket plane.
 
-```
+```text
 browser ──GET /api/auth/google/start──▶ API
                                         ├─ mints state + PKCE verifier
                                         ├─ Set-Cookie: mw_oauth (sealed, httpOnly, 10 min)
@@ -143,3 +143,11 @@ runtime, so one bundle serves an install with the provider and one without.
   `auth.module.ts`.
 - Linking a provider to an existing account is not implemented; see above.
 - `isPublic` on a room is a listing flag, not access control.
+- The "is this address already taken" check is a case-insensitive `findFirst`,
+  which Postgres answers with a sequential scan — the `email` index is
+  case-sensitive and cannot serve it. It runs once per *first* Google sign-in
+  per account, never on the returning path, so it is not on a hot path. Making
+  it indexable needs `citext` or a `lower(email)` expression index plus a raw
+  query, since Prisma's insensitive `equals` compiles to `ILIKE` and would not
+  use the index anyway. Not worth that machinery at this table size; revisit if
+  the user table grows.

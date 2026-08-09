@@ -17,6 +17,12 @@ import {
 /** How long a half-finished sign-in stays resumable. */
 const FLOW_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * Ceiling on any single call out to Google. Someone is watching a redirect
+ * resolve, so failing at 10s and saying so beats hanging until they give up.
+ */
+const GOOGLE_HTTP_TIMEOUT_MS = 10_000;
+
 /** The cookie is only ever read by the callback route, so scope it there. */
 export const OAUTH_COOKIE = 'mw_oauth';
 export const OAUTH_COOKIE_PATH = '/api/auth/google';
@@ -71,7 +77,11 @@ export class GoogleOAuthService {
    * own build-time flag, so the button and the route can never disagree.
    */
   get enabled(): boolean {
-    return Boolean(this.clientId && this.clientSecret);
+    // frontendUrl is part of "can complete", not a detail: without it
+    // callbackRedirect builds a RELATIVE '/auth/callback#token=...', which
+    // sends the browser - carrying a freshly minted token - to a 404 on the
+    // API's own origin. Credentials alone are not enough to offer a door.
+    return Boolean(this.clientId && this.clientSecret && this.frontendUrl);
   }
 
   /** Guard for the routes: 404 rather than 500 when unconfigured. */
@@ -109,6 +119,12 @@ export class GoogleOAuthService {
       clientId: this.clientId,
       clientSecret: this.clientSecret,
       redirectUri: this.redirectUri,
+      // Gaxios has NO timeout by default, so a Google endpoint that accepts
+      // the connection and then goes quiet would hold this request open
+      // indefinitely - and it holds a socket and a request slot while it
+      // waits. Set on the transporter so it covers the token exchange, the
+      // ID token verification, and the certificate fetch inside it.
+      transporterOptions: { timeout: GOOGLE_HTTP_TIMEOUT_MS },
     });
     return this.cachedClient;
   }

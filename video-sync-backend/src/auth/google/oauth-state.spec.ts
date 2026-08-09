@@ -1,3 +1,4 @@
+import { createHmac } from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import { openState, randomToken, safeEqual, sealState } from './oauth-state';
 
@@ -55,6 +56,36 @@ describe('sealed OAuth state', () => {
     ['a non-JSON body', `${Buffer.from('nope').toString('base64url')}.sig`],
   ])('refuses %s', (_name, value) => {
     expect(openState(value, SECRET, NOW)).toBeNull();
+  });
+
+  it('refuses a correctly signed body that is not JSON', () => {
+    // Every malformed case above dies at the signature check, so none of
+    // them reaches the parse. Reaching it needs a VALID signature over
+    // garbage, which means signing the way production does.
+    const signLikeProduction = (body: string) =>
+      createHmac(
+        'sha256',
+        createHmac('sha256', SECRET).update('mustard:oauth-state:v1').digest(),
+      )
+        .update(body)
+        .digest('base64url');
+
+    // Control: the same signing must produce a seal that DOES open. Without
+    // this, a drift in the derivation would make the assertion below pass
+    // for the wrong reason - rejected at the signature, parse never run.
+    const goodBody = Buffer.from(JSON.stringify(payload()), 'utf8').toString(
+      'base64url',
+    );
+    expect(
+      openState(`${goodBody}.${signLikeProduction(goodBody)}`, SECRET, NOW),
+    ).not.toBeNull();
+
+    const garbage = Buffer.from('{not json at all', 'utf8').toString(
+      'base64url',
+    );
+    expect(
+      openState(`${garbage}.${signLikeProduction(garbage)}`, SECRET, NOW),
+    ).toBeNull();
   });
 
   it('refuses a seal missing the fields the callback depends on', () => {
