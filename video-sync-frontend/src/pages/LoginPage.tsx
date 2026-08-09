@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import styled from '@emotion/styled';
 import { color, font, radius, focusRing, button, input, card } from '../theme';
-import { Wordmark } from '../components/Icons';
+import { IconGoogle, Wordmark } from '../components/Icons';
+import { apiBaseUrl, apiService } from '../services/api';
 
 const Page = styled.div`
   min-height: 100vh;
@@ -48,6 +49,41 @@ const SubmitButton = styled.button`
   margin-top: 4px;
 `;
 
+/**
+ * An anchor, not a button: this is a full-page navigation off to Google, so
+ * middle-click, "open in new tab" and the status bar preview should all
+ * behave the way they do for any other link.
+ */
+const GoogleButton = styled.a`
+  ${button.secondary}
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-decoration: none;
+`;
+
+const Divider = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  font-family: ${font.body};
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: ${color.faint};
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: ${color.line};
+  }
+`;
+
 const ToggleText = styled.p`
   margin: 0;
   text-align: center;
@@ -88,6 +124,24 @@ export const LoginPage: React.FC = () => {
     email: '',
     password: '',
   });
+  // null while unknown: the button appears once the API confirms it can
+  // actually complete the flow, rather than flashing in and out on a
+  // deployment that has no Google credentials.
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiService
+      .getProviders()
+      .then(({ data }) => {
+        if (!cancelled) setGoogleEnabled(Boolean(data?.google));
+      })
+      // an unreachable API is not a reason to show a broken button
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,6 +175,16 @@ export const LoginPage: React.FC = () => {
 
         <LoginCard>
           <Title>{isLogin ? 'Sign in' : 'Create your account'}</Title>
+
+          {googleEnabled && (
+            <>
+              <GoogleButton href={`${apiBaseUrl}/auth/google/start`}>
+                <IconGoogle size={16} />
+                Continue with Google
+              </GoogleButton>
+              <Divider>or</Divider>
+            </>
+          )}
 
           <Form onSubmit={handleSubmit}>
             {/* the card carries no visible labels, so each control names

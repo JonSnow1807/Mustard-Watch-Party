@@ -17,15 +17,21 @@ model User {
   id            String         @id @default(uuid())  // Unique identifier
   username      String         @unique               // Must be unique across all users
   email         String         @unique               // Email must also be unique
-  password      String                              // Hashed password (never store plain text!)
+  // Nullable since Google sign-in: an account that has only ever arrived
+  // through a provider has no password, and a NOT NULL column would have
+  // forced us to invent one (an unusable hash is still a login surface).
+  // Everything that compares a password must therefore check for null
+  // FIRST - see AuthService.login.
+  password      String?
   createdAt     DateTime       @default(now())      // Automatically set when created
   updatedAt     DateTime       @updatedAt           // Automatically updated on changes
   chatMessages  ChatMessage[]
-  
+
   // Relations - these define how Users connect to other data
   roomsCreated  Room[]         @relation("RoomCreator")    // Rooms this user created
   participants  Participant[]                              // Room participations
-  
+  oauthAccounts OAuthAccount[]                             // Linked provider identities
+
   // Indexes improve query performance
   @@index([email])      // Fast lookups by email
   @@index([username])   // Fast lookups by username
@@ -109,6 +115,32 @@ model ChatMessage {
   room          Room           @relation(fields: [roomId], references: [id])
   
   @@index([roomId, createdAt])
+}
+
+// OAuthAccount model - one provider identity linked to one local user.
+//
+// A table rather than a `googleId` column on User: the identity a provider
+// gives us is (provider, subject), it is the provider's key and not ours,
+// and a second provider later is then a row rather than a migration. The
+// unique constraint is what makes "sign in again" idempotent - it is the
+// database, not application logic, that guarantees one Google account maps
+// to at most one local user.
+model OAuthAccount {
+  id                String   @id @default(uuid())
+  provider          String                            // 'google'
+  providerAccountId String                            // the provider's stable subject ('sub')
+  // Kept for support/debugging only. NEVER used to find a user: matching an
+  // incoming provider email against local accounts is how OAuth becomes
+  // account takeover when local emails are unverified.
+  email             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 // EventType enum - possible synchronization events

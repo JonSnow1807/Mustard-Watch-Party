@@ -24,8 +24,23 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
-      # comma-separated allowlist: production domain + optional previews
+      # comma-separated allowlist: production domain + optional previews.
+      # The FIRST entry is also where OAuth hands the browser back, so it
+      # must be the canonical site rather than a preview URL.
       - key: FRONTEND_URL
+        sync: false
+      # This API's own public origin. Google matches the redirect_uri
+      # character for character against the console entry, and a service
+      # behind a proxy cannot derive its external origin from a request.
+      - key: PUBLIC_API_URL
+        value: https://api.mustard.watch
+      # Google sign-in. Both unset = the provider is simply not offered
+      # (GET /api/auth/providers reports it, and the frontend hides the
+      # button), so a deployment without them still boots and serves
+      # password auth.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
         sync: false
     # main.ts excludes 'health' from the global /api prefix, so the route is /health
     healthCheckPath: /health

@@ -7,6 +7,13 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl();
 
+/**
+ * Exported because the OAuth handoff is a full-page navigation, not an XHR:
+ * the browser has to leave for Google and come back, so that one link needs
+ * the absolute API origin rather than an axios instance.
+ */
+export const apiBaseUrl = API_URL;
+
 const api = axios.create({
   baseURL: API_URL,
   headers: {
@@ -78,6 +85,21 @@ export const apiService = {
 
   register: (username: string, email: string, password: string) =>
     api.post('/auth/register', { username, email, password }),
+
+  // Which sign-in methods this deployment can actually complete. Asked at
+  // runtime rather than baked in at build: the frontend is one bundle served
+  // to every environment, and a button for a provider the API has no
+  // credentials for is a dead end.
+  getProviders: () => api.get<{ google: boolean }>('/auth/providers'),
+
+  // Exchange a bare token for the profile behind it - what the OAuth
+  // callback lands with, since a redirect can carry a token but not a body.
+  getMe: (token: string) =>
+    api.get<{ id: string; username: string; email: string }>('/auth/me', {
+      // explicit: the token being adopted is not the stored one yet, and the
+      // request interceptor can only ever attach what is already stored
+      headers: { Authorization: `Bearer ${token}` },
+    }),
 
   // Rooms
   // No userId anywhere below: the server reads the caller off the bearer token,

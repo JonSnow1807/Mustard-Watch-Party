@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { AUTH_EXPIRED_EVENT } from '../services/api';
+import { AUTH_EXPIRED_EVENT, apiService } from '../services/api';
 
 interface User {
   id: string;
@@ -15,6 +15,8 @@ interface AuthContextType {
   user: User | null;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
+  /** Adopt a token minted elsewhere - today, by the Google callback. */
+  signInWithToken: (token: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -95,6 +97,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  /**
+   * The OAuth callback arrives holding a token and nothing else - a redirect
+   * can carry a fragment but not a response body - so the profile is fetched
+   * with the token before anything is stored. That fetch is also the
+   * verification: a token the API will not answer for never becomes a
+   * session, so a hand-typed fragment cannot fake one into the UI.
+   */
+  const signInWithToken = useCallback(async (token: string) => {
+    try {
+      const { data } = await apiService.getMe(token);
+      const userData: User = { ...data, token };
+      setUser(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
+      toast.success('Signed in');
+    } catch (error: any) {
+      toast.error("Couldn't complete sign-in");
+      throw error;
+    }
+  }, []);
+
   const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem('user');
@@ -105,6 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     user,
     login,
     register,
+    signInWithToken,
     logout,
     isAuthenticated: !!user,
   };
