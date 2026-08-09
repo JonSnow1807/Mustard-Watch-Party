@@ -79,9 +79,24 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 after a GitHub squash-merge work because that commit is authored with the
 account's own email; deploys from a local commit fail when `git config
 user.email` is a `users.noreply.github.com` address that is not on the Vercel
-account. Fix it properly by adding that address to the Vercel account, or
-work around it by deploying the prebuilt output from a directory with no git
-metadata:
+account.
+
+**Resolved for this repo** by aligning the local identity with the Vercel
+account, so a local commit is authored the same way a squash-merge is:
+
+```sh
+git config --local user.name  "Chinmay Shrivastava"
+git config --local user.email "cshrivastava2000@gmail.com"
+```
+
+Local, not global — this is the only repo that deploys to that Vercel team.
+The address was already in this repo's public history via squash-merge
+commits, so it exposes nothing the log did not already carry. The other fix,
+if you would rather keep the `noreply` identity, is to add that address to
+the Vercel account instead.
+
+If it ever recurs, the workaround is to deploy the prebuilt output from a
+directory with no git metadata:
 
 ```sh
 vercel build --prod                       # at the repo root
