@@ -37,8 +37,20 @@ export class RoomsService {
   async getRoomByCode(code: string) {
     const room = await this.database.room.findUnique({
       where: { code },
+      // Narrowed on purpose, and the narrowing is load-bearing. Prisma
+      // returns EVERY scalar of a relation pulled with `creator: true` -
+      // and User.password is a scalar, so that shape served the creator's
+      // bcrypt hash to any caller holding a room code, unauthenticated,
+      // in production. Participant emails went the same way. Nothing
+      // renders either field: the UI shows a host name and participant
+      // names. rooms.service.spec.ts fails if this ever widens again.
       include: {
-        creator: true,
+        creator: {
+          select: {
+            id: true,
+            username: true,
+          },
+        },
         participants: {
           where: { isActive: true },
           include: {
@@ -46,7 +58,6 @@ export class RoomsService {
               select: {
                 id: true,
                 username: true,
-                email: true,
               },
             },
           },
