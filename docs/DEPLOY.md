@@ -61,6 +61,46 @@ dial, not a rewrite; multi-instance correctness is re-proven nightly in CI.
   synced session 10+ minutes; toggle one offline and watch it reconnect and
   converge (the HUD via `?debug=1` shows drift/θ live).
 
+## Deploy traps, each of which has cost an hour
+
+**Vercel blocks deploys whose git author is not on the team.** The failure
+reads as a deploy stuck on `Building…` forever; `vercel ls` shows `UNKNOWN`
+and `vercel inspect --logs` prints nothing. The real reason is only visible
+via the API:
+
+```sh
+TOKEN=$(python3 -c "import json;print(json.load(open('$HOME/Library/Application Support/com.vercel.cli/auth.json'))['token'])")
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.vercel.com/v6/deployments?projectId=$VERCEL_PROJECT_ID&teamId=$VERCEL_ORG_ID&limit=3" \
+  | python3 -c "import sys,json;[print(d['readyState'], d.get('errorMessage','')) for d in json.load(sys.stdin)['deployments']]"
+```
+
+→ `BLOCKED  Git author <x> must have access to the team`. Deploys straight
+after a GitHub squash-merge work because that commit is authored with the
+account's own email; deploys from a local commit fail when `git config
+user.email` is a `users.noreply.github.com` address that is not on the Vercel
+account. Fix it properly by adding that address to the Vercel account, or
+work around it by deploying the prebuilt output from a directory with no git
+metadata:
+
+```sh
+vercel build --prod                       # at the repo root
+mkdir -p /tmp/d/video-sync-frontend       # the project's Root Directory must exist
+cp -R .vercel /tmp/d/.vercel
+cd /tmp/d && vercel deploy --prebuilt --prod
+```
+
+**`.vercelignore` is load-bearing.** The Root Directory is
+`video-sync-frontend`, but the CLI uploads from the repo root — 1.4GB of
+dependencies and lab artifacts. Without the ignore file the upload aborts
+with `Upload aborted`, which masks whatever the real error underneath is.
+
+**Render's Manual Deploy does NOT sync `render.yaml` env vars.** A variable
+added to the blueprint (e.g. `PUBLIC_API_URL`) does not appear on the service
+just because you deployed the commit that added it — set it in the
+Environment tab, or re-sync the blueprint. Silent: the app boots and uses the
+config default instead.
+
 ## Notes
 
 - Neon scale-to-zero adds occasional first-query latency after idle; the
