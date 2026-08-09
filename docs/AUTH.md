@@ -116,7 +116,23 @@ real owner has not registered yet, and Google confirming ownership is free.
 
 ## Turning Google sign-in on
 
-It is off unless both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set.
+It is off unless **all three** of these hold:
+
+| variable | why it gates the provider |
+| --- | --- |
+| `GOOGLE_CLIENT_ID` | no credential, no flow |
+| `GOOGLE_CLIENT_SECRET` | same |
+| `FRONTEND_URL` | where the callback sends the browser back to |
+
+`FRONTEND_URL` is easy to overlook because it is optional everywhere else and
+falls back to `http://localhost:3001`. That fallback is right on a laptop and
+a trap in production: the provider would look enabled, and the callback would
+hand a real person's token to whatever happens to be listening on **their**
+machine. So a loopback origin outside a local `NODE_ENV` disables Google
+sign-in and logs why, rather than redirecting anyone there — the same
+fail-closed rule `configuration.ts` applies to secrets. Its first entry is the
+canonical site; later entries are CORS previews and never receive a token.
+
 Off means: `GET /api/auth/providers` reports `{ google: false }`, the frontend
 does not render the button, and `/api/auth/google/*` returns 404. CI, the sync
 harness and a fresh local checkout all run in that state, which is why none of
@@ -129,8 +145,10 @@ To enable it:
 2. Authorised redirect URI — exactly, including `/api`:
    `https://api.mustard.watch/api/auth/google/callback`
    (locally: `http://localhost:3000/api/auth/google/callback`)
-3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `PUBLIC_API_URL` on the
-   service, then redeploy.
+3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_API_URL` and
+   `FRONTEND_URL` on the service, then redeploy. `FRONTEND_URL` must lead with
+   the canonical origin (`https://mustard.watch,...`) — if it is missing the
+   provider stays off by design, and the log says so.
 
 No frontend rebuild is needed: the button is driven by `/auth/providers` at
 runtime, so one bundle serves an install with the provider and one without.

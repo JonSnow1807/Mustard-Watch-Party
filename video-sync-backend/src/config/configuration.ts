@@ -19,6 +19,10 @@ function requireOutsideLocal(name: string, devFallback: string): string {
 
 export default () => ({
   port: parseInt(process.env.PORT || '3000', 10),
+  // Exposed so features can fail closed outside a local environment the
+  // same way requireOutsideLocal does, without each of them re-reading
+  // NODE_ENV and drifting on what counts as "local".
+  isLocalEnv: LOCAL_ENVS.includes(process.env.NODE_ENV ?? ''),
   database: {
     url: process.env.DATABASE_URL,
     // Connection pool settings for PostgreSQL

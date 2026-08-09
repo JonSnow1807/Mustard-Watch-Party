@@ -81,7 +81,37 @@ export class GoogleOAuthService {
     // callbackRedirect builds a RELATIVE '/auth/callback#token=...', which
     // sends the browser - carrying a freshly minted token - to a 404 on the
     // API's own origin. Credentials alone are not enough to offer a door.
-    return Boolean(this.clientId && this.clientSecret && this.frontendUrl);
+    if (!this.clientId || !this.clientSecret || !this.frontendUrl) return false;
+
+    // FRONTEND_URL is optional everywhere else and falls back to localhost,
+    // which is a fine default for a laptop and a trap in production: the
+    // provider would look enabled and then hand a real person's token to
+    // http://localhost:3001, i.e. to whatever happens to be listening on
+    // THEIR machine. A loopback origin outside a local environment means
+    // the variable was forgotten, so the provider stays off and password
+    // sign-in carries on - the same fail-closed rule configuration.ts
+    // applies to secrets.
+    if (!this.isLocalEnv && isLoopback(this.frontendUrl)) {
+      this.warnLoopbackOnce();
+      return false;
+    }
+    return true;
+  }
+
+  private get isLocalEnv(): boolean {
+    return this.config.get<boolean>('isLocalEnv') ?? false;
+  }
+
+  private warnedLoopback = false;
+
+  /** Once, not per /auth/providers call - this is a deploy fault, not traffic. */
+  private warnLoopbackOnce(): void {
+    if (this.warnedLoopback) return;
+    this.warnedLoopback = true;
+    this.logger.warn(
+      `Google sign-in is configured but FRONTEND_URL resolves to ${this.frontendUrl}; ` +
+        'refusing to offer it rather than redirecting people to a loopback address.',
+    );
   }
 
   /** Guard for the routes: 404 rather than 500 when unconfigured. */
@@ -254,6 +284,27 @@ export class GoogleOAuthService {
     return `${this.frontendUrl}/auth/callback#${fragment}`;
   }
 }
+
+/**
+ * An origin that only means anything on the machine it is typed on.
+ * Matched on the host alone, so a port or a scheme cannot smuggle one past.
+ */
+export const isLoopback = (origin: string): boolean => {
+  let host: string;
+  try {
+    host = new URL(origin).hostname.toLowerCase();
+  } catch {
+    // not a parseable origin: not something we can safely send anyone to
+    return true;
+  }
+  return (
+    host === 'localhost' ||
+    host === '::1' ||
+    host === '[::1]' ||
+    host.endsWith('.localhost') ||
+    /^127\./.test(host)
+  );
+};
 
 /**
  * Only a path on our own site. A `returnTo` is attacker-supplied by

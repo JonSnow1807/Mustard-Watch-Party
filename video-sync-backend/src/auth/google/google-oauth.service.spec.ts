@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   GoogleAuthError,
   GoogleOAuthService,
+  isLoopback,
   safeReturnTo,
 } from './google-oauth.service';
 import { openState } from './oauth-state';
@@ -70,10 +71,15 @@ const configured: Record<string, string> = {
   'cors.origin': 'https://mustard.watch,https://preview.vercel.app',
 };
 
-const serviceWith = (values: Record<string, string>) =>
+// ConfigService.get is typed by key; the test map is string-valued, so the
+// one boolean lives beside it.
+const withEnv = (values: Record<string, string>, isLocalEnv: boolean) =>
   new GoogleOAuthService({
-    get: (key: string) => values[key],
+    get: (key: string) => (key === 'isLocalEnv' ? isLocalEnv : values[key]),
   } as unknown as ConfigService);
+
+/** Default: production-like, since that is the configuration that bites. */
+const serviceWith = (values: Record<string, string>) => withEnv(values, false);
 
 describe('GoogleOAuthService configuration', () => {
   it('is enabled only with both halves of the credential', () => {
@@ -99,15 +105,42 @@ describe('GoogleOAuthService configuration', () => {
     expect(() => service.start(undefined)).toThrow(NotFoundException);
   });
 
+  it.each([
+    ['the localhost default', 'http://localhost:3001'],
+    ['a loopback IP', 'http://127.0.0.1:3001'],
+    ['IPv6 loopback', 'http://[::1]:3001'],
+  ])(
+    'refuses to offer the provider in production when the origin is %s',
+    (_name, origin) => {
+      // FRONTEND_URL is optional and falls back to localhost, so forgetting
+      // it in production would show the button and then hand a real token
+      // to whatever is listening on THAT PERSON's machine
+      const service = withEnv({ ...configured, 'cors.origin': origin }, false);
+      expect(service.enabled).toBe(false);
+    },
+  );
+
+  it('still offers it on a laptop, where localhost is the point', () => {
+    const service = withEnv(
+      { ...configured, 'cors.origin': 'http://localhost:3001' },
+      true,
+    );
+    expect(service.enabled).toBe(true);
+  });
+
+  it('offers it in production for a real origin', () => {
+    expect(withEnv(configured, false).enabled).toBe(true);
+  });
+
   it('bounds every call it makes to Google', () => {
     // gaxios has NO timeout by default, so a socket that opens and then goes
     // quiet would pin this request open for as long as the peer likes
     const service = serviceWith(configured);
     service.start(undefined);
     const calls = clientCtor().mock.calls;
-    expect(
-      calls[calls.length - 1][0].transporterOptions?.timeout,
-    ).toBeGreaterThan(0);
+    // the exact value, not merely positive: a 1ms timeout would satisfy
+    // "greater than zero" and break every sign-in
+    expect(calls[calls.length - 1][0].transporterOptions?.timeout).toBe(10_000);
   });
 
   it('404s rather than 500s when unconfigured', () => {
@@ -348,6 +381,33 @@ describe('GoogleOAuthService.verifyCallback past the state check', () => {
     // a forged or expired token must not become an identity
     clientOf().verifyIdToken.mockRejectedValue(new Error('bad sig'));
     await failsWith('exchange');
+  });
+});
+
+describe('isLoopback', () => {
+  it.each([
+    'http://localhost:3001',
+    'https://localhost',
+    'http://127.0.0.1:8080',
+    'http://127.1.2.3',
+    'http://[::1]:3001',
+    'http://app.localhost',
+  ])('%s only means something on one machine', (origin) => {
+    expect(isLoopback(origin)).toBe(true);
+  });
+
+  it.each([
+    'https://mustard.watch',
+    'http://192.168.1.10',
+    'https://a.example',
+  ])('%s can be reached by someone else', (origin) => {
+    expect(isLoopback(origin)).toBe(false);
+  });
+
+  it('treats an unparseable origin as unusable', () => {
+    // not somewhere we can safely send a person holding a token
+    expect(isLoopback('mustard.watch')).toBe(true);
+    expect(isLoopback('')).toBe(true);
   });
 });
 
