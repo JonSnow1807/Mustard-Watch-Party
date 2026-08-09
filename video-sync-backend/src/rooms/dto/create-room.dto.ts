@@ -18,6 +18,11 @@ const trim = ({ value }: { value: unknown }) =>
  * every public-rooms listing and room fetch - like videoUrl's cap, they
  * bound store and wire, not just sanity. The caps are generous; the point
  * is that a megabyte can't become a room name.
+ *
+ * Deliberately NO userId, same as UpdateRoomDto. The creator is the caller,
+ * taken from the verified bearer token by JwtAuthGuard - a body field would
+ * have let anyone create rooms as anyone. With whitelist:true a legacy
+ * client that still sends `userId` is not rejected, it is ignored.
  */
 export class CreateRoomDto {
   @Transform(trim)
@@ -25,12 +30,6 @@ export class CreateRoomDto {
   @IsNotEmpty()
   @MaxLength(120)
   name: string;
-
-  // Identity of the creator. Present here and ONLY here - UpdateRoomDto
-  // deliberately omits it (a PATCH must not reassign ownership).
-  @IsString()
-  @IsNotEmpty()
-  userId: string;
 
   // '' admitted as the "no video yet" sentinel; anything else must pass
   // the shared admission rule. Trimmed first - the rule is strict about

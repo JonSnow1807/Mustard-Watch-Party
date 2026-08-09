@@ -327,11 +327,19 @@ export const EnhancedRoomPage: React.FC = () => {
       navigate('/');
       return;
     }
+    // Room details now require a token (the REST guard), and the socket has
+    // always required one. A signed-out visitor arriving on a shared link
+    // should be asked to sign in, not shown "Couldn't load the room" - so
+    // send them to the join page, which explains the room and offers sign-in.
+    if (!user) {
+      navigate(`/join-room/${roomCode}`, { replace: true });
+      return;
+    }
 
     fetchRoomDetails();
-    // intentional: fetch once per room code
+    // intentional: fetch once per room code, and again if auth appears
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode]);
+  }, [roomCode, user]);
 
   useEffect(() => {
     if (!socket || !connected || !user || !room) return;

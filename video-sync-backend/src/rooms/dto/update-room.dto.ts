@@ -7,13 +7,14 @@ const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
 /**
- * PATCH /rooms/:code body - flows verbatim into Prisma room.update, so
- * every property here is a column any participant can write.
+ * PATCH /rooms/:code body. Still flows into Prisma room.update, so every
+ * property here is a column - but no longer one "any participant can
+ * write": the route is behind JwtAuthGuard and updateRoomByCode refuses a
+ * caller who is not the room's creator.
  *
- * Deliberately NO userId: identity does not belong in an update body, and
- * with whitelist:true the pipe strips it before it can reach room.update
- * as a creator reassignment. If PATCH ever needs authorization it will be
- * the requester's identity from auth context, not a body field.
+ * Deliberately NO userId. It used to be absent so the pipe would strip a
+ * creator reassignment; now it is absent because identity is not a body
+ * field at all - the creator check reads the verified token.
  */
 export class UpdateRoomDto {
   @Transform(trim)

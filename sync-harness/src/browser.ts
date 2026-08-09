@@ -40,7 +40,11 @@ export async function openClient(
 ): Promise<HarnessClient> {
   const context = await browser.newContext({ viewport: { width: 500, height: 400 } });
   // AuthContext reads localStorage.user; seeding it skips the login UI so
-  // joins are deterministic and fast.
+  // joins are deterministic and fast. The seeded object MUST carry `token`:
+  // the app's axios interceptor reads it from exactly here to authenticate
+  // REST calls (room fetch, create, delete), so a token-less seed logs the
+  // client in visually and then 401s on the first request. registerUser
+  // guarantees the field is present.
   await context.addInitScript((u) => {
     window.localStorage.setItem('user', JSON.stringify(u));
   }, user);

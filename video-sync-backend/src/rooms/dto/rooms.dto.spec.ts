@@ -13,7 +13,8 @@ const asCreate = (body: unknown): Promise<CreateRoomDto> =>
 const asUpdate = (body: unknown): Promise<UpdateRoomDto> =>
   pipe.transform(body, { type: 'body', metatype: UpdateRoomDto, data: '' });
 
-const base = { name: 'movie night', userId: 'user-1' };
+// No userId: the creator is the bearer token's subject, not a body field.
+const base = { name: 'movie night' };
 
 describe('CreateRoomDto through the production pipe', () => {
   it('admits a minimal body and returns a class instance', async () => {
@@ -59,6 +60,16 @@ describe('CreateRoomDto through the production pipe', () => {
     expect('maxUsers' in dto).toBe(false);
   });
 
+  it('strips userId - a CREATE body cannot choose the owner', async () => {
+    // creatorId comes from the verified token (JwtAuthGuard), so a userId
+    // here is a client assertion with nowhere to land. Stripping (rather
+    // than 400) is what lets a not-yet-updated client keep working: it
+    // needs a token, not a smaller body.
+    const dto = await asCreate({ ...base, userId: 'attacker' });
+    expect('userId' in dto).toBe(false);
+    expect(dto.name).toBe('movie night');
+  });
+
   it.each([
     ['javascript scheme', 'javascript:alert(1)'],
     ['data scheme', 'data:text/html,x'],
@@ -72,10 +83,9 @@ describe('CreateRoomDto through the production pipe', () => {
   });
 
   it.each([
-    ['missing name', { userId: 'user-1' }],
+    ['missing name', {}],
     ['empty name', { ...base, name: '' }],
     ['whitespace-only name (empty after trim)', { ...base, name: '   ' }],
-    ['missing userId', { name: 'movie night' }],
     ['non-string tag', { ...base, tags: [42] }],
     // null is NOT absent: @IsOptional would wave these through to Prisma
     // (a 500 on the non-nullable column); SkipIfAbsent makes them a 400

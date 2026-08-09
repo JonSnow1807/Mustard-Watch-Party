@@ -528,10 +528,12 @@ export const HomePage: React.FC = () => {
 
   // Fetch user's rooms
   const { data: userRooms, isLoading: userRoomsLoading, refetch: refetchUserRooms } = useQuery({
+    // still keyed on the id so the cache busts when a different person signs
+    // in, even though the request itself now carries the identity in its token
     queryKey: ['user-rooms', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const response = await apiService.getUserRooms(user.id);
+      const response = await apiService.getUserRooms();
       return response.data;
     },
     enabled: !!user,
@@ -569,7 +571,7 @@ export const HomePage: React.FC = () => {
 
   const handleDeleteRoom = async (room: any) => {
     try {
-      await apiService.deleteRoom(room.code, user!.id);
+      await apiService.deleteRoom(room.code);
       toast.success('Room deleted');
       setDeleteModal({ show: false, room: null });
       refetchUserRooms();

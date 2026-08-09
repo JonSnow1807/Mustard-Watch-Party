@@ -14,42 +14,98 @@ const api = axios.create({
   },
 });
 
+const STORAGE_KEY = 'user';
+
+/** Fired when the server rejects the stored token; nothing keeps a dead session. */
+export const AUTH_EXPIRED_EVENT = 'mustard:auth-expired';
+
+/**
+ * The token the REST layer sends is the same one the socket handshake presents
+ * ({ sub, name }, HS256) - one identity, two planes.
+ *
+ * Read per request, never cached at module load: signing in replaces the stored
+ * user while this module is already evaluated, and a token captured once would
+ * leave the whole tab authenticating as whoever was signed in at boot.
+ */
+const readStoredToken = (): string | null => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const stored = JSON.parse(raw);
+    return typeof stored?.token === 'string' && stored.token ? stored.token : null;
+  } catch {
+    // unparseable storage is a signed-out tab, not a crashed one
+    return null;
+  }
+};
+
+const clearStoredUser = () => {
+  localStorage.removeItem(STORAGE_KEY);
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+};
+
+api.interceptors.request.use(config => {
+  // Never attach to /auth/*: a token is meaningless to login/register, and
+  // sending one there makes a bad-password 401 indistinguishable from an
+  // expired-session 401 in the response interceptor below.
+  if (config.url?.startsWith('/auth/')) return config;
+  const token = readStoredToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  response => response,
+  error => {
+    // Only a request that actually carried a token can have had it rejected.
+    // A 401 from /auth/login is bad credentials, and clearing on that would
+    // wipe a perfectly good session because someone fat-fingered a password.
+    const sentToken = Boolean(error?.config?.headers?.Authorization);
+    if (error?.response?.status === 401 && sentToken) {
+      clearStoredUser();
+    }
+    return Promise.reject(error);
+  },
+);
+
 // API methods
 export const apiService = {
   // Auth
   login: (username: string, password: string) =>
     api.post('/auth/login', { username, password }),
-  
+
   register: (username: string, email: string, password: string) =>
     api.post('/auth/register', { username, email, password }),
-  
+
   // Rooms
+  // No userId anywhere below: the server reads the caller off the bearer token,
+  // and a client-supplied id would only be a suggestion it ignores.
   createRoom: (data: {
     name: string;
     videoUrl?: string;
-    userId: string;
     isPublic?: boolean;
     description?: string;
     tags?: string[];
     allowGuestControl?: boolean;
   }) => api.post('/rooms', data),
-  
+
   getRoomByCode: (code: string) =>
     api.get(`/rooms/${code}`),
-  
+
   updateRoom: (code: string, data: {
     name?: string;
     videoUrl?: string;
-    userId?: string;
     allowGuestControl?: boolean;
   }) => api.patch(`/rooms/${code}`, data),
-  
-  deleteRoom: (code: string, userId: string) =>
-    api.delete(`/rooms/${code}`, { data: { userId } }),
-  
-  getUserRooms: (userId: string) =>
-    api.get(`/rooms/user/${userId}`),
-    
+
+  deleteRoom: (code: string) =>
+    api.delete(`/rooms/${code}`),
+
+  getUserRooms: () =>
+    api.get('/rooms/mine'),
+
   getPublicRooms: (filter?: string) =>
     api.get('/rooms/public', { params: { filter } }),
 };

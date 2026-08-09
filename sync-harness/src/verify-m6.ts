@@ -22,10 +22,16 @@ function check(name: string, ok: boolean, detail = ''): void {
   if (!ok) failures += 1;
 }
 
-async function post<T>(base: string, path: string, body: unknown): Promise<T> {
+// Local driver (not app-api's) because the lab's REST plane is a fixed
+// nginx address, not the env-driven one. Same auth rule though: the REST
+// endpoints are bearer-authenticated, identity comes from the token.
+async function post<T>(base: string, path: string, body: unknown, token?: string): Promise<T> {
   const res = await fetch(`${base}/api${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`POST ${path}: ${res.status} ${await res.text()}`);
@@ -92,11 +98,17 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 // ---- fixtures: users on distinct instances ----
 const users = await Promise.all([register(0), register(1), register(2)]);
-const room = await post<{ code: string }>(NGINX, '/rooms', {
-  name: `lab ${runId}`,
-  videoUrl: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
-  userId: users[0].id,
-});
+// users[0] owns the room by virtue of the token the request carries — the
+// checks below rely on that ownership (only the creator may control).
+const room = await post<{ code: string }>(
+  NGINX,
+  '/rooms',
+  {
+    name: `lab ${runId}`,
+    videoUrl: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
+  },
+  users[0].token,
+);
 
 const sockA = await connect(B[0], users[0]); // creator on instance 1
 const sockB = await connect(B[1], users[1]); // follower on instance 2
