@@ -58,21 +58,31 @@ const controllerWith = (enabled: boolean) =>
 const emptyReq = { headers: {} } as Request;
 
 describe('the OAuth routes when the provider is off', () => {
-  it('404s /google/start rather than bouncing anyone to Google', () => {
+  it('404s /google/start without touching the response', () => {
     const res = makeRes();
     expect(() =>
       controllerWith(false).start(undefined, res as unknown as Response),
     ).toThrow(NotFoundException);
     expect(res.redirectedTo).toBeUndefined();
+    // no half-started flow left behind: a sealed cookie handed out by a
+    // route that then 404s is a live CSRF/PKCE pair with nothing to redeem it
+    expect(res.cookies).toHaveLength(0);
   });
 
-  it('404s /google/callback instead of redirecting', async () => {
+  it('404s /google/callback without touching the response or calling Google', async () => {
     // The provider can be off BECAUSE the frontend origin is loopback. If
     // the callback still redirected on error, it would send the visitor to
     // that loopback address - the exact hazard the guard exists to stop.
     const res = makeRes();
+    const controller = controllerWith(false);
+    const verifyCallback = (
+      controller as unknown as {
+        google: { verifyCallback: jest.Mock };
+      }
+    ).google.verifyCallback;
+
     await expect(
-      controllerWith(false).callback(
+      controller.callback(
         'c',
         's',
         undefined,
@@ -80,7 +90,13 @@ describe('the OAuth routes when the provider is off', () => {
         res as unknown as Response,
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+
     expect(res.redirectedTo).toBeUndefined();
+    // These two are the ordering, not decoration: assertEnabled() runs BEFORE
+    // clearCookie and before any exchange, so a disabled route neither
+    // mutates the caller's cookies nor spends a round trip to Google.
+    expect(res.cleared).toHaveLength(0);
+    expect(verifyCallback).not.toHaveBeenCalled();
   });
 });
 
