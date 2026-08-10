@@ -612,6 +612,7 @@ export const EnhancedRoomPage: React.FC = () => {
             videoUrl={room.videoUrl}
             roomCode={room.code}
             isHost={isHost}
+            userId={user?.id}
             allowGuestControl={room.allowGuestControl}
           />
 

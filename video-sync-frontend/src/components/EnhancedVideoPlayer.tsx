@@ -364,6 +364,8 @@ interface VideoPlayerProps {
   roomCode: string;
   isHost?: boolean;
   allowGuestControl?: boolean;
+  /** who this client is, so it can recognise being promoted (P3 succession) */
+  userId?: string;
 }
 
 const EMPTY_STATUS: EngineStatus = {
@@ -398,7 +400,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   videoUrl,
   roomCode,
   isHost = false,
-  allowGuestControl = false
+  allowGuestControl = false,
+  userId,
 }) => {
   const { socket, connected } = useSocket();
   const [isReady, setIsReady] = useState(false);
@@ -415,7 +418,14 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const engineRef = useRef<SyncEngine | null>(null);
   const adapterRef = useRef<EngineAdapter | null>(null);
-  const canControl = isHost || allowGuestControl;
+  // The server promotes the longest-connected participant when the host
+  // leaves (P3 succession, timeline.service.ts) and broadcasts it. It would
+  // ALSO accept the promoted person's commands - but this client used to
+  // compute control purely locally, so their own UI blocked the click before
+  // it was ever sent, and succession was dead at the last inch.
+  const [controllerId, setControllerId] = useState<string | null>(null);
+  const canControl =
+    isHost || allowGuestControl || (userId != null && controllerId === userId);
 
   // Which video the room is showing: the TIMELINE is the authority once one
   // exists - set-video switches every participant through sync:timeline -
@@ -461,15 +471,33 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     };
     socket.on(SYNC_EVENTS.controlRejected, onRejected);
 
+    // P3 succession: the host left and the server handed the remote to
+    // someone. Everyone tracks it, because everyone's UI says who is
+    // driving; the person promoted also stops being refused by their own
+    // client, which is what made the feature invisible before.
+    const onController = (c: { controllerId: string; reason: string }) => {
+      setControllerId(c.controllerId);
+      if (c.controllerId === userId) {
+        toast.success(
+          c.reason === 'reclaim'
+            ? 'You have the remote back'
+            : 'The host left - you have the remote now',
+          { duration: 4000 },
+        );
+      }
+    };
+    socket.on(SYNC_EVENTS.controller, onController);
+
     return () => {
       socket.off(SYNC_EVENTS.controlRejected, onRejected);
+      socket.off(SYNC_EVENTS.controller, onController);
       unsubscribe();
       engine.dispose();
       engineRef.current = null;
       // adapterRef is owned by the active mount - clearing it here orphaned
       // a live adapter (and its poll timer) on every reconnect
     };
-  }, [socket, roomCode]);
+  }, [socket, roomCode, userId]);
 
   // ---- local audio: never synced, never sent (see EngineAdapter) ----
   // Persisted so the level survives a reload mid-film; a room you had muted
@@ -853,7 +881,11 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
               <CollaborativeIndicator enabled={allowGuestControl}>
                 {allowGuestControl ? <IconUsers size={13} /> : <IconCrown size={13} />}
-                {allowGuestControl ? 'Collaborative' : 'Host only'}
+                {allowGuestControl
+                  ? 'Collaborative'
+                  : canControl
+                    ? 'You have the remote'
+                    : 'Host only'}
               </CollaborativeIndicator>
             </StatusGroup>
 
