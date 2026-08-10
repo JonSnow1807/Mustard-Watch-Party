@@ -23,6 +23,20 @@ model User {
   // Everything that compares a password must therefore check for null
   // FIRST - see AuthService.login.
   password      String?
+  /**
+   * Someone who came in on an invite link without registering.
+   *
+   * A real row rather than a rowless token, because three things already
+   * depend on one existing: the socket handshake refuses a connection whose
+   * token has no subject, and both Participant.userId and ChatMessage.userId
+   * are foreign keys. A guest that is a User satisfies all three with no
+   * branch anywhere downstream - see docs/GUEST_ACCESS.md.
+   *
+   * The flag exists so these can be swept up later and so the UI can say
+   * what someone is. Nothing else reads it: a guest is not less trusted
+   * inside a room, they are just unregistered.
+   */
+  isGuest       Boolean        @default(false)
   createdAt     DateTime       @default(now())      // Automatically set when created
   updatedAt     DateTime       @updatedAt           // Automatically updated on changes
   chatMessages  ChatMessage[]
@@ -35,6 +49,8 @@ model User {
   // Indexes improve query performance
   @@index([email])      // Fast lookups by email
   @@index([username])   // Fast lookups by username
+  // the sweeper reads guests by age; without this it scans every user
+  @@index([isGuest, createdAt])
 }
 
 // Room model - represents a video watching session

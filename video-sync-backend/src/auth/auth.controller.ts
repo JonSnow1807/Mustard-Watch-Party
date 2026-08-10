@@ -3,6 +3,8 @@ import {
   Get,
   Post,
   Body,
+  HttpException,
+  HttpStatus,
   Query,
   Req,
   Res,
@@ -20,6 +22,7 @@ import {
   OAUTH_COOKIE_PATH,
 } from './google/google-oauth.service';
 import { readCookie } from './google/cookies';
+import { RateBucket, clientIp } from './rate-bucket';
 
 @Controller('auth')
 export class AuthController {
@@ -29,6 +32,9 @@ export class AuthController {
     private authService: AuthService,
     private google: GoogleOAuthService,
   ) {}
+
+  /** 10 guests per IP per hour, refilling steadily rather than all at once. */
+  private readonly guestBucket = new RateBucket(10, 10 / 3600);
 
   @Post('register')
   async register(
@@ -44,6 +50,27 @@ export class AuthController {
   @Post('login')
   async login(@Body() loginDto: { username: string; password: string }) {
     return await this.authService.login(loginDto.username, loginDto.password);
+  }
+
+  /**
+   * Sign in as a guest.
+   *
+   * Rate limited per IP, unlike register: register is at least a form
+   * someone has to fill in, while this is one unauthenticated request that
+   * creates a row, so an unbounded version is a way to fill the users table
+   * from a shell loop. The window is generous enough that a household behind
+   * one address can all join the same film.
+   */
+  @Post('guest')
+  async guest(@Req() req: Request) {
+    const ip = clientIp(req);
+    if (!this.guestBucket.take(ip, Date.now())) {
+      throw new HttpException(
+        'Too many guests from this connection - try again shortly',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    return await this.authService.createGuest();
   }
 
   /**

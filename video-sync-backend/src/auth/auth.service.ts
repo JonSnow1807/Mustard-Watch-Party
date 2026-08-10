@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { DatabaseService } from '../database/database.service';
 import * as bcrypt from 'bcrypt';
@@ -107,6 +108,51 @@ export class AuthService {
       email: user.email,
       token: this.issueToken(user),
     };
+  }
+
+  /**
+   * A way in for someone who followed an invite link and does not want an
+   * account.
+   *
+   * The row is real (docs/GUEST_ACCESS.md): the socket handshake refuses a
+   * token with no subject, and Participant.userId and ChatMessage.userId are
+   * both foreign keys, so a rowless guest would need a nullable FK and a
+   * branch at every read. A User with no password satisfies all three and
+   * costs one boolean.
+   *
+   * This grants nothing registration does not already grant - anyone can
+   * register with an address they do not own - so it is not a new surface,
+   * it is the same one without the form.
+   */
+  async createGuest(): Promise<SessionUser> {
+    const candidates = usernameCandidates('guest');
+
+    for (let attempt = 0; attempt < USERNAME_ATTEMPTS; attempt++) {
+      const username = candidates.next().value as string;
+      try {
+        const user = await this.database.user.create({
+          data: {
+            username,
+            // email is @unique NOT NULL, so a guest needs one that can never
+            // collide with a real person's. .invalid is reserved by RFC 2606
+            // and can never be registered, so this address is unroutable by
+            // construction rather than by convention.
+            email: `${randomUUID()}@guest.invalid`,
+            password: null,
+            isGuest: true,
+          },
+          select: { id: true, username: true, email: true },
+        });
+        return { ...user, token: this.issueToken(user) };
+      } catch (err) {
+        // 'guest' is a popular name by design - collisions are expected and
+        // the generator's job, not an error
+        if (isUniqueViolation(err, 'username')) continue;
+        throw err;
+      }
+    }
+
+    throw new ConflictException('Could not allocate a guest name');
   }
 
   /** The signed-in identity, for a client holding a token and nothing else. */

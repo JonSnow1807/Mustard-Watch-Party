@@ -199,8 +199,9 @@ const LoadingState = styled.div`
 export const JoinRoomPage: React.FC = () => {
   const navigate = useNavigate();
   const { roomCode } = useParams<{ roomCode: string }>();
-  const { user } = useAuth();
+  const { user, continueAsGuest } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [roomInfo, setRoomInfo] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -261,16 +262,36 @@ export const JoinRoomPage: React.FC = () => {
     return (
       <Page>
         <Container>
-          <Title>Sign in to join</Title>
+          <Title>Join the room</Title>
           <StateCard>
             <StateActions>
+              {/* The invite path's default. Someone handed a link wants to
+                  watch something, not to fill in a form - and the room is
+                  the only thing they came for. */}
+              <PrimaryButton
+                disabled={guestLoading}
+                onClick={async () => {
+                  setGuestLoading(true);
+                  try {
+                    await continueAsGuest();
+                    navigate(`/room/${roomCode}`, { replace: true });
+                  } catch {
+                    // the context has already said what went wrong
+                  } finally {
+                    setGuestLoading(false);
+                  }
+                }}
+              >
+                {guestLoading ? 'One moment…' : 'Join as a guest'}
+              </PrimaryButton>
+
               {/* carries the room through sign-in: without it, signing in
                   lands on the home page and the invite is simply lost */}
-              <PrimaryButton
+              <SecondaryButton
                 onClick={() => navigate(loginUrlFor(`/room/${roomCode}`))}
               >
-                Go to sign in
-              </PrimaryButton>
+                Sign in instead
+              </SecondaryButton>
               {/* never leave a state without an exit: this branch has no
                   top bar, so without this the page is a dead end */}
               <SecondaryButton onClick={() => navigate('/')}>

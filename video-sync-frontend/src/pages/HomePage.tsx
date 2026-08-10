@@ -550,7 +550,7 @@ const DangerFilledButton = styled.button`
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, isGuest } = useAuth();
   // A snapshot, so the row does not churn while you are looking at it - but
   // re-taken whenever the session changes. Reading it once for the lifetime
   // of the component meant a sign-out followed by a different sign-in, with
@@ -751,7 +751,16 @@ export const HomePage: React.FC = () => {
       <TopBar>
         <Wordmark size={18} />
         <TopBarRight>
-          <SignedInAs>Signed in as {user.username}</SignedInAs>
+          <SignedInAs>
+            {isGuest ? `Guest · ${user.username}` : `Signed in as ${user.username}`}
+          </SignedInAs>
+          {/* a guest's session dies with its token and cannot be signed back
+              into, so the offer to keep it has to be visible before then */}
+          {isGuest && (
+            <SecondarySmButton type="button" onClick={() => navigate('/login')}>
+              Keep this account
+            </SecondarySmButton>
+          )}
           <SecondarySmButton type="button" onClick={logout}>
             Sign out
           </SecondarySmButton>

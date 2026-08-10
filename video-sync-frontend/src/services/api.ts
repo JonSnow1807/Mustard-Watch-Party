@@ -86,6 +86,9 @@ export const apiService = {
   register: (username: string, email: string, password: string) =>
     api.post('/auth/register', { username, email, password }),
 
+  /** A way in for someone who followed an invite link and wants no account. */
+  guest: () => api.post('/auth/guest'),
+
   // Which sign-in methods this deployment can actually complete. Asked at
   // runtime rather than baked in at build: the frontend is one bundle served
   // to every environment, and a button for a provider the API has no
