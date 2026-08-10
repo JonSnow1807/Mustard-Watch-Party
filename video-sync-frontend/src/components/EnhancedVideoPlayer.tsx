@@ -14,6 +14,7 @@ import { FailureCard } from './player/FailureCard';
 import { YouTubeMount } from './player/YouTubeMount';
 import { Html5Mount } from './player/Html5Mount';
 import { VimeoMount } from './player/VimeoMount';
+import { toggleFullscreen } from './player/fullscreen';
 import {
   button,
   card,
@@ -438,7 +439,11 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   // Persisted so the level survives a reload mid-film; a room you had muted
   // must not come back at full volume with people asleep next door.
   const [volume, setVolumeState] = useState(() => {
-    const stored = Number(localStorage.getItem(VOLUME_KEY));
+    // Read the raw string first: Number(null) is 0, not NaN, so parsing
+    // straight from a missing key made every new visitor's default silence.
+    const raw = localStorage.getItem(VOLUME_KEY);
+    if (raw === null) return 1;
+    const stored = Number(raw);
     return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 1;
   });
   const [muted, setMutedState] = useState(
@@ -471,16 +476,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
-  const toggleFullscreen = useCallback(() => {
-    const el = shellRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => undefined);
-    } else {
-      // Safari <16.4 and any embedded webview can refuse; a rejected promise
-      // here is a browser saying no, not a bug to surface.
-      void el.requestFullscreen?.().catch(() => undefined);
-    }
+  const handleToggleFullscreen = useCallback(() => {
+    void toggleFullscreen(shellRef.current, document);
   }, []);
 
   // ---- keyboard ----
@@ -503,7 +500,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
           break;
         case 'f':
           e.preventDefault();
-          toggleFullscreen();
+          handleToggleFullscreen();
           break;
         case 'm':
           e.preventDefault();
@@ -517,7 +514,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
     // handlePlayPause closes over live status/canControl, so it must be a dep
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toggleFullscreen, toggleMuted, status.roomPlaying, canControl, isReady]);
+  }, [handleToggleFullscreen, toggleMuted, status.roomPlaying, canControl, isReady]);
 
   // Mount callbacks: stable so mounts don't remount on shell re-renders
   const handleAdapter = useCallback((adapter: EngineAdapter | null) => {
@@ -777,7 +774,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
             <IconControl
               type="button"
-              onClick={toggleFullscreen}
+              onClick={handleToggleFullscreen}
               aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               title={isFullscreen ? 'Exit fullscreen (f)' : 'Fullscreen (f)'}
             >
