@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { AUTH_EXPIRED_EVENT, apiService } from '../services/api';
+import { clearRecentRooms } from '../services/recent-rooms';
 
 interface User {
   id: string;
@@ -135,6 +136,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem('user');
+    // where you have been is as personal as who you are, and this machine
+    // may not be yours
+    clearRecentRooms();
     toast.success('Signed out');
   }, []);
 

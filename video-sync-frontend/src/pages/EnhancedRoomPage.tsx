@@ -7,6 +7,7 @@ import { ChatPanel } from '../components/ChatPanel';
 import { EnhancedVoiceChat } from '../components/EnhancedVoiceChat';
 import { RoomSettings } from '../components/RoomSettings';
 import { apiService } from '../services/api';
+import { rememberRoom } from '../services/recent-rooms';
 import styled from '@emotion/styled';
 import { toast } from 'react-hot-toast';
 import {
@@ -344,6 +345,14 @@ export const EnhancedRoomPage: React.FC = () => {
 
   // With several rooms open, every tab read "Mustard Watch Party" and the
   // only way to find the right one was to click through them.
+  // A room joined by link belongs to no listing: "Your rooms" is what you
+  // created, and a private room appears nowhere else. Remember it so closing
+  // the tab does not mean hunting for the original message again.
+  useEffect(() => {
+    if (!room?.code) return;
+    rememberRoom({ code: room.code, name: room.name });
+  }, [room?.code, room?.name]);
+
   useEffect(() => {
     if (!room?.name) return;
     const previous = document.title;
