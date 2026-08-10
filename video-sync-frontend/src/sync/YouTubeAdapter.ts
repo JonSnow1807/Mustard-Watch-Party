@@ -159,4 +159,58 @@ export class YouTubeAdapter implements PlayerAdapter {
     if (muted) this.player.mute();
     else this.player.unMute();
   }
+
+  /**
+   * Captions, local only.
+   *
+   * YouTube's own CC button is hidden (the embed runs controls: 0), so this
+   * drives the undocumented captions module instead. Everything here is
+   * defensive on purpose: if the module is absent, or the call throws, or
+   * the track list is not an array, the answer is "no captions" and the UI
+   * shows no button. The alternative - a button that does nothing on the
+   * source most rooms use - is worse than no button.
+   */
+  private captionsLoaded = false;
+
+  hasCaptions(): boolean {
+    try {
+      if (!this.player.loadModule || !this.player.getOption) return false;
+      if (!this.captionsLoaded) {
+        this.player.loadModule('captions');
+        this.captionsLoaded = true;
+      }
+      const list = this.player.getOption('captions', 'tracklist');
+      return Array.isArray(list) && list.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  setCaptionsEnabled(enabled: boolean): void {
+    try {
+      if (!this.player.setOption) return;
+      // an empty track object is how this API is turned off; there is no
+      // "disable" call
+      this.player.setOption(
+        'captions',
+        'track',
+        enabled ? { languageCode: this.firstCaptionLanguage() } : {},
+      );
+    } catch {
+      /* see hasCaptions: a refusal is not an error worth surfacing */
+    }
+  }
+
+  private firstCaptionLanguage(): string {
+    try {
+      const list = this.player.getOption?.('captions', 'tracklist');
+      if (Array.isArray(list) && list.length > 0) {
+        const first = list[0] as { languageCode?: string };
+        if (typeof first?.languageCode === 'string') return first.languageCode;
+      }
+    } catch {
+      /* fall through */
+    }
+    return 'en';
+  }
 }

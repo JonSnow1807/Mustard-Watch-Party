@@ -39,6 +39,19 @@ export interface EngineAdapter extends PlayerAdapter {
    */
   setVolume?(fraction: number): void;
   setMuted?(muted: boolean): void;
+
+  /**
+   * Captions. Local like volume, and never synced: what language someone
+   * reads in is a property of the person, not of the room.
+   *
+   * `hasCaptions` is what gates the UI. Every source answers it differently
+   * and some cannot answer at all - YouTube's caption controls are
+   * undocumented, and a plain MP4 usually carries no track - so the button
+   * appears only when a player has SAID it has something to show. A control
+   * that silently does nothing is worse than an absent one.
+   */
+  hasCaptions?(): boolean;
+  setCaptionsEnabled?(enabled: boolean): void;
 }
 
 export interface EngineStatus {

@@ -106,4 +106,20 @@ export class Html5Adapter implements PlayerAdapter {
   setMuted(muted: boolean): void {
     this.el.muted = muted;
   }
+
+  // Captions, local only. Native TextTrack: a file with an embedded or
+  // sidecar track exposes it here, and hls.js renders HLS subtitle tracks
+  // onto the same element by default, so one implementation covers both.
+  hasCaptions(): boolean {
+    return this.el.textTracks.length > 0;
+  }
+
+  setCaptionsEnabled(enabled: boolean): void {
+    const tracks = this.el.textTracks;
+    for (let i = 0; i < tracks.length; i++) {
+      // only the first is shown: picking between languages is a separate
+      // feature, and showing several at once overlaps them on screen
+      tracks[i].mode = enabled && i === 0 ? 'showing' : 'disabled';
+    }
+  }
 }

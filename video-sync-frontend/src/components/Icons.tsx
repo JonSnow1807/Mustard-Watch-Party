@@ -92,6 +92,9 @@ export const IconSkipBack = (p: P) =>
 export const IconSkipForward = (p: P) =>
   base(p, <><path d="M13 6.2c0-.85.94-1.36 1.65-.9l5.75 3.8a1.07 1.07 0 0 1 0 1.8l-5.75 3.8c-.71.46-1.65-.05-1.65-.9V6.2z" /><path d="M4 6.2c0-.85.94-1.36 1.65-.9l5.75 3.8a1.07 1.07 0 0 1 0 1.8l-5.75 3.8c-.71.46-1.65-.05-1.65-.9V6.2z" /><path d="M4 18h16" /></>);
 
+export const IconCaptions = (p: P) =>
+  base(p, <><rect x="3" y="5" width="18" height="14" rx="2.4" /><path d="M9.6 10.4a2.2 2.2 0 1 0 0 3.2" /><path d="M16.4 10.4a2.2 2.2 0 1 0 0 3.2" /></>);
+
 export const IconVolume = (p: P) =>
   base(p, <><path d="M11 5.5 6.8 9H4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2.8L11 18.5a.6.6 0 0 0 1-.46V5.96a.6.6 0 0 0-1-.46z" /><path d="M15.4 9.2a4 4 0 0 1 0 5.6" /><path d="M18.2 6.6a8 8 0 0 1 0 10.8" /></>);
 
