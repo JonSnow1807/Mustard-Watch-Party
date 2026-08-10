@@ -235,6 +235,16 @@ const RecentChip = styled.button`
   white-space: nowrap;
 `;
 
+const GuestNote = styled.span`
+  font-family: ${font.body};
+  font-size: 12px;
+  color: ${color.faint};
+  border: 1px solid ${color.line};
+  border-radius: ${radius.pill};
+  padding: 3px 10px;
+  white-space: nowrap;
+`;
+
 const SectionActions = styled.div`
   display: flex;
   align-items: center;
@@ -754,12 +764,17 @@ export const HomePage: React.FC = () => {
           <SignedInAs>
             {isGuest ? `Guest · ${user.username}` : `Signed in as ${user.username}`}
           </SignedInAs>
-          {/* a guest's session dies with its token and cannot be signed back
-              into, so the offer to keep it has to be visible before then */}
+          {/* Deliberately NOT a "keep this account" button. Signing up from
+              here creates a DIFFERENT account and silently abandons the
+              guest's rooms and messages, so a button offering to keep them
+              would be a promise nothing behind it can honour. Promoting a
+              guest row in place is the real fix; until it exists, saying
+              plainly that the session is temporary beats an action that
+              does the opposite of what it says. */}
           {isGuest && (
-            <SecondarySmButton type="button" onClick={() => navigate('/login')}>
-              Keep this account
-            </SecondarySmButton>
+            <GuestNote title="Guest sessions are not kept - sign up to start one that is">
+              temporary session
+            </GuestNote>
           )}
           <SecondarySmButton type="button" onClick={logout}>
             Sign out

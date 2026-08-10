@@ -50,15 +50,30 @@ export class RateBucket {
 }
 
 /**
- * The caller's address, honouring the proxy header Render sets.
+ * The caller's address, behind exactly one trusted proxy.
  *
- * Only the FIRST entry of x-forwarded-for is used: the rest are appended by
- * whatever came before and are attacker-controlled, so trusting the last one
- * would let a caller reset their own bucket by sending a header.
+ * The LAST entry of x-forwarded-for, not the first, and the difference is
+ * the whole point of the function.
+ *
+ * A proxy APPENDS the peer it actually saw. So a client that sends nothing
+ * produces "<client>", and a client that sends its own header produces
+ * "<whatever they invented>, <client>". The leftmost entry is therefore the
+ * one under the caller's control, and keying a rate limiter on it lets
+ * anyone rotate their identity with a header and never hit the limit. The
+ * rightmost was written by our own proxy and is the one we can believe.
+ *
+ * This assumes exactly one proxy in front of us, which is what Render is. On
+ * a chain of N trusted proxies the correct entry is Nth from the right, and
+ * on none of them the header should be ignored entirely.
  */
 export const clientIp = (req: Request): string => {
   const forwarded = req.headers['x-forwarded-for'];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const first = raw?.split(',')[0]?.trim();
-  return first || req.socket?.remoteAddress || 'unknown';
+  const raw = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
+  const parts =
+    raw
+      ?.split(',')
+      .map((p) => p.trim())
+      .filter(Boolean) ?? [];
+  const nearest = parts[parts.length - 1];
+  return nearest || req.socket?.remoteAddress || 'unknown';
 };

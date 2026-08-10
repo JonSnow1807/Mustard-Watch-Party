@@ -56,12 +56,35 @@ describe('clientIp', () => {
   const req = (headers: Record<string, unknown>, remote?: string) =>
     ({ headers, socket: { remoteAddress: remote } }) as unknown as Request;
 
-  it('uses the first x-forwarded-for entry, not the last', () => {
-    // the later entries are appended by intermediaries and are
-    // attacker-controlled: trusting one would let a caller reset their own
-    // bucket by sending a header
+  it('uses the LAST x-forwarded-for entry - the one our proxy wrote', () => {
+    // A proxy APPENDS the peer it saw, so a caller who sends their own
+    // header produces "<invented>, <real>". Keying on the leftmost entry
+    // lets anyone rotate identity with a header and never hit the limit.
     expect(clientIp(req({ 'x-forwarded-for': '1.2.3.4, 10.0.0.1' }))).toBe(
-      '1.2.3.4',
+      '10.0.0.1',
+    );
+  });
+
+  it('is not fooled by a caller who forges the header', () => {
+    // this is the attack the previous version was open to
+    const forged = clientIp(req({ 'x-forwarded-for': 'evil-1, 203.0.113.9' }));
+    const forgedAgain = clientIp(
+      req({ 'x-forwarded-for': 'evil-2, 203.0.113.9' }),
+    );
+    // whatever they invent, they key to the same bucket
+    expect(forged).toBe(forgedAgain);
+    expect(forged).toBe('203.0.113.9');
+  });
+
+  it('handles a single entry, spacing, and empty segments', () => {
+    expect(clientIp(req({ 'x-forwarded-for': '203.0.113.9' }))).toBe(
+      '203.0.113.9',
+    );
+    expect(clientIp(req({ 'x-forwarded-for': ' 1.1.1.1 ,  2.2.2.2 ' }))).toBe(
+      '2.2.2.2',
+    );
+    expect(clientIp(req({ 'x-forwarded-for': '1.1.1.1, ,' }, '9.9.9.9'))).toBe(
+      '1.1.1.1',
     );
   });
 
@@ -71,8 +94,13 @@ describe('clientIp', () => {
   });
 
   it('handles the header arriving as an array', () => {
+    // node gives an array when the header appears more than once; the
+    // nearest proxy is still the last thing written
     expect(clientIp(req({ 'x-forwarded-for': ['9.9.9.9, 10.0.0.1'] }))).toBe(
-      '9.9.9.9',
+      '10.0.0.1',
+    );
+    expect(clientIp(req({ 'x-forwarded-for': ['1.1.1.1', '2.2.2.2'] }))).toBe(
+      '2.2.2.2',
     );
   });
 });

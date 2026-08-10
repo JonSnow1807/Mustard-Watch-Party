@@ -22,6 +22,7 @@ import {
   OAUTH_COOKIE_PATH,
 } from './google/google-oauth.service';
 import { readCookie } from './google/cookies';
+import { Interval } from '@nestjs/schedule';
 import { RateBucket, clientIp } from './rate-bucket';
 
 @Controller('auth')
@@ -35,6 +36,18 @@ export class AuthController {
 
   /** 10 guests per IP per hour, refilling steadily rather than all at once. */
   private readonly guestBucket = new RateBucket(10, 10 / 3600);
+
+  /**
+   * Nothing swept the bucket map, so it retained a key per distinct caller
+   * forever - which turns a rate limiter into a slow memory leak that an
+   * attacker controls the size of. Hourly, off the request path, because
+   * scanning the map on every request to defend against growth would be
+   * paying the cost the growth was going to charge anyway.
+   */
+  @Interval(3_600_000)
+  sweepRateBuckets(): void {
+    this.guestBucket.sweep(Date.now());
+  }
 
   @Post('register')
   async register(
