@@ -73,3 +73,19 @@ describe('recent rooms', () => {
     expect(listRecentRooms()).toEqual([]);
   });
 });
+
+describe('session boundaries', () => {
+  it('clearing leaves nothing for the next person', () => {
+    // The dashboard also re-reads this whenever the signed-in id changes,
+    // because clearing storage alone left the previous list in React state
+    // until a reload - a different user could see where the last one had been.
+    rememberRoom({ code: 'AAA', name: 'Private thing' }, 1);
+    rememberRoom({ code: 'BBB', name: 'Another' }, 2);
+    expect(listRecentRooms()).toHaveLength(2);
+
+    clearRecentRooms();
+
+    expect(listRecentRooms()).toEqual([]);
+    expect(localStorage.getItem('mustard:recent-rooms')).toBeNull();
+  });
+});

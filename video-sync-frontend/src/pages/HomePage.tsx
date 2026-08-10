@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import styled from '@emotion/styled';
 import { apiService } from '../services/api';
-import { listRecentRooms } from '../services/recent-rooms';
+import { listRecentRooms, type RecentRoom } from '../services/recent-rooms';
 import { toast } from 'react-hot-toast';
 import {
   color,
@@ -550,10 +550,17 @@ const DangerFilledButton = styled.button`
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
-  // read once on mount: this is a snapshot of where you have been, and it
-  // must not churn while the dashboard is open
-  const [recentRooms] = useState(() => listRecentRooms());
   const { user, logout } = useAuth();
+  // A snapshot, so the row does not churn while you are looking at it - but
+  // re-taken whenever the session changes. Reading it once for the lifetime
+  // of the component meant a sign-out followed by a different sign-in, with
+  // no reload in between, showed the previous person's room names.
+  const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([]);
+  const userId = user?.id;
+  useEffect(() => {
+    setRecentRooms(userId ? listRecentRooms() : []);
+  }, [userId]);
+
   const [publicFilter, setPublicFilter] = useState('all');
   const [deleteModal, setDeleteModal] = useState<{ show: boolean; room: any | null }>({ show: false, room: null });
   const cancelDeleteRef = useRef<HTMLButtonElement>(null);

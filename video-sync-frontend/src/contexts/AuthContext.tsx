@@ -72,6 +72,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const onExpired = () => {
       setUser(null);
+      // the same reasoning as logout: a dead session must not leave the next
+      // person a list of where the last one had been
+      clearRecentRooms();
       toast.error('Session expired - sign in again');
     };
     window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);

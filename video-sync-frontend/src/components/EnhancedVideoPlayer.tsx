@@ -424,6 +424,11 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   // compute control purely locally, so their own UI blocked the click before
   // it was ever sent, and succession was dead at the last inch.
   const [controllerId, setControllerId] = useState<string | null>(null);
+  useEffect(() => {
+    // belt and braces with the roomCode check above: whatever the server
+    // said about the last room says nothing about this one
+    setControllerId(null);
+  }, [roomCode]);
   const canControl =
     isHost || allowGuestControl || (userId != null && controllerId === userId);
 
@@ -475,15 +480,25 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     // someone. Everyone tracks it, because everyone's UI says who is
     // driving; the person promoted also stops being refused by their own
     // client, which is what made the feature invisible before.
-    const onController = (c: { controllerId: string; reason: string }) => {
+    const onController = (c: {
+      controllerId: string;
+      reason: string;
+      roomCode?: string;
+    }) => {
+      // A controller event names its room. Without checking it, a promotion
+      // in one room would still be believed after switching to another -
+      // this component is not remounted when the room code changes.
+      if (c.roomCode && c.roomCode !== roomCode) return;
       setControllerId(c.controllerId);
-      if (c.controllerId === userId) {
-        toast.success(
-          c.reason === 'reclaim'
-            ? 'You have the remote back'
-            : 'The host left - you have the remote now',
-          { duration: 4000 },
-        );
+      if (c.controllerId !== userId) return;
+      // The contract allows reason 'creator' too, which is simply "you are
+      // the host" - telling that person the host left would be nonsense.
+      if (c.reason === 'succession') {
+        toast.success('The host left - you have the remote now', {
+          duration: 4000,
+        });
+      } else if (c.reason === 'reclaim') {
+        toast.success('You have the remote back', { duration: 4000 });
       }
     };
     socket.on(SYNC_EVENTS.controller, onController);
