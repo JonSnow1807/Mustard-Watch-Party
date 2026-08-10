@@ -111,15 +111,35 @@ export class Html5Adapter implements PlayerAdapter {
   // sidecar track exposes it here, and hls.js renders HLS subtitle tracks
   // onto the same element by default, so one implementation covers both.
   hasCaptions(): boolean {
-    return this.el.textTracks.length > 0;
+    return this.captionTracks().length > 0;
   }
 
   setCaptionsEnabled(enabled: boolean): void {
-    const tracks = this.el.textTracks;
-    for (let i = 0; i < tracks.length; i++) {
+    const captions = this.captionTracks();
+    captions.forEach((track, i) => {
       // only the first is shown: picking between languages is a separate
       // feature, and showing several at once overlaps them on screen
-      tracks[i].mode = enabled && i === 0 ? 'showing' : 'disabled';
+      track.mode = enabled && i === 0 ? 'showing' : 'disabled';
+    });
+  }
+
+  /**
+   * Only the kinds that put words on the screen.
+   *
+   * A TextTrackList also carries 'chapters', 'metadata' and 'descriptions'.
+   * Counting those would offer a subtitles button for a file that has only
+   * chapter markers, and switching one to 'showing' displays nothing - the
+   * exact "button that does nothing" this feature is designed to avoid.
+   */
+  private captionTracks(): TextTrack[] {
+    const list = this.el.textTracks;
+    const tracks: TextTrack[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const track = list[i];
+      if (track.kind === 'subtitles' || track.kind === 'captions') {
+        tracks.push(track);
+      }
     }
+    return tracks;
   }
 }

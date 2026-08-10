@@ -53,6 +53,7 @@ export class VimeoAdapter implements PlayerAdapter {
   private handlers: Array<[string, (data?: unknown) => void]> = [];
 
   constructor(private player: VimeoPlayerLike) {
+    this.loadCaptionLanguages();
     const on = (event: string, callback: (data?: unknown) => void) => {
       this.handlers.push([event, callback]);
       player.on(event, callback);
@@ -248,8 +249,14 @@ export class VimeoAdapter implements PlayerAdapter {
     if (first) void this.player.enableTextTrack?.(first);
   }
 
-  /** Called by the mount once the player is ready. */
-  loadCaptionLanguages(): void {
+  /**
+   * Fetched in the constructor, which is post-readiness: the mount only
+   * builds this adapter inside the player's ready callback. An earlier
+   * version left this as a public method for the mount to call and NOTHING
+   * CALLED IT, so hasCaptions() always answered no and the button never
+   * appeared on Vimeo at all.
+   */
+  private loadCaptionLanguages(): void {
     void this.player
       .getTextTracks?.()
       .then((tracks) => {
