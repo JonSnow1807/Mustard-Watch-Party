@@ -10,6 +10,7 @@ import { DisciplineController } from '../shared/sync-core/discipline-controller'
 import {
   DriftController,
   type ControllerAction,
+  type PlayerLifecycle,
 } from '../shared/sync-core/drift-controller';
 import { isNewer, projectMediaTime } from '../shared/sync-core/timeline';
 import { TelemetryRing } from './telemetry';
@@ -56,6 +57,12 @@ export interface EngineStatus {
   /** autoplay/ad interference: playback needs a user gesture to proceed */
   needsGesture: boolean;
   seeksIssued: number;
+  /**
+   * What the player itself is doing, for the UI only - the controller reads
+   * the adapter directly and must not be routed through this snapshot. It is
+   * here so a stalled room can say "buffering" instead of looking broken.
+   */
+  playerState: PlayerLifecycle;
 }
 
 const CLOCK_BURST_COUNT = 8;
@@ -348,6 +355,7 @@ export class SyncEngine {
       fractionalRateOK: this.fractionalRateOK,
       needsGesture: this.needsGesture,
       seeksIssued: ctrl.seeksIssued,
+      playerState: this.adapter?.getLifecycle() ?? 'unstarted',
     };
     this.listeners.forEach((l) => l(status));
   }

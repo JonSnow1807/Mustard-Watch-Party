@@ -267,6 +267,38 @@ const CollaborativeIndicator = styled.div<{ enabled: boolean }>`
   color: ${props => (props.enabled ? color.ok : color.dim)};
 `;
 
+const BufferingChip = styled.div`
+  ${chip.sm}
+  ${chipStatic}
+  background: ${color.bg2};
+  color: ${color.dim};
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+`;
+
+const Spinner = styled.span`
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid ${color.lineBright};
+  border-top-color: ${color.mustard};
+  animation: spin 700ms linear infinite;
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* a perpetual spinner is a headache for anyone who asked not to have one */
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    border-top-color: ${color.lineBright};
+  }
+`;
+
 const RttReadout = styled.div`
   font-family: ${font.mono};
   font-size: 12px;
@@ -348,6 +380,7 @@ const EMPTY_STATUS: EngineStatus = {
   fractionalRateOK: false,
   needsGesture: false,
   seeksIssued: 0,
+  playerState: 'unstarted',
 };
 
 /** Keyboard seek step, in seconds - the arrow-key grain of the seek bar. */
@@ -370,6 +403,9 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   const { socket, connected } = useSocket();
   const [isReady, setIsReady] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  // Bumped by Retry: it rides in the mount's key, so a retry tears the dead
+  // player down and builds a fresh one rather than poking at the corpse.
+  const [playerEpoch, setPlayerEpoch] = useState(0);
   const [syncEnabled, setSyncEnabled] = useState(true);
   const syncEnabledRef = useRef(true);
   const [status, setStatus] = useState<EngineStatus>(EMPTY_STATUS);
@@ -585,6 +621,13 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
         title="Couldn't play this video"
         detail={failure}
         url={activeVideoUrl}
+        onRetry={() => {
+          // A dead CDN, a flaky network or an ad-blocker swallowing the
+          // frame are all transient, and the only recovery on offer was
+          // reloading the whole page - which drops you out of the room.
+          setFailure(null);
+          setPlayerEpoch((n) => n + 1);
+        }}
       />
     );
   } else {
@@ -593,7 +636,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
         // key: a new video id must tear the old player down, not mutate it
         mount = (
           <YouTubeMount
-            key={source.videoId}
+            key={`${source.videoId}:${playerEpoch}`}
             videoId={source.videoId}
             onAdapter={handleAdapter}
             onFailure={handleFailure}
@@ -604,7 +647,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       case 'file':
         mount = (
           <Html5Mount
-            key={source.url}
+            key={`${source.url}:${playerEpoch}`}
             url={source.url}
             hls={source.kind === 'hls'}
             onAdapter={handleAdapter}
@@ -615,7 +658,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       case 'vimeo':
         mount = (
           <VimeoMount
-            key={source.videoId}
+            key={`${source.videoId}:${playerEpoch}`}
             videoId={source.videoId}
             hash={source.hash}
             onAdapter={handleAdapter}
@@ -792,6 +835,16 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
                 <StatusDot tone={connected ? color.ok : color.danger} />
                 {connected ? 'Connected' : 'Disconnected'}
               </ConnectionState>
+
+              {/* "it is loading" and "it is broken" look identical when the
+                  stage is just black - and during a stall everyone stares at
+                  it wondering whose connection is at fault */}
+              {status.playerState === 'buffering' && (
+                <BufferingChip role="status">
+                  <Spinner />
+                  Buffering
+                </BufferingChip>
+              )}
 
               <CollaborativeIndicator enabled={allowGuestControl}>
                 {allowGuestControl ? <IconUsers size={13} /> : <IconCrown size={13} />}

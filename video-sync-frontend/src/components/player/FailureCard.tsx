@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from '@emotion/styled';
-import { color, font } from '../../theme';
+import { button, color, font } from '../../theme';
 
 const Card = styled.div`
   position: absolute;
@@ -41,6 +41,11 @@ const Url = styled.code`
   max-width: 90%;
 `;
 
+const RetryButton = styled.button`
+  ${button.secondary}
+  margin-top: 14px;
+`;
+
 /**
  * The visible end of attempt-and-fail-visibly: validation admits anything a
  * player could conceivably fetch (see shared/media-source.ts), so when the
@@ -51,12 +56,20 @@ export const FailureCard: React.FC<{
   title: string;
   detail?: string;
   url?: string;
-}> = ({ title, detail, url }) => (
+  /** Offered only where retrying could plausibly help - not for a URL no
+      player can ever take, where the button would just fail again. */
+  onRetry?: () => void;
+}> = ({ title, detail, url, onRetry }) => (
   // role="alert": the card swaps in dynamically after a playback failure,
   // and without a live region a screen reader never hears about it
   <Card data-testid="failure-card" role="alert">
     <Title>{title}</Title>
     {detail && <Detail>{detail}</Detail>}
     {url && <Url>{url}</Url>}
+    {onRetry && (
+      <RetryButton type="button" onClick={onRetry}>
+        Try again
+      </RetryButton>
+    )}
   </Card>
 );
