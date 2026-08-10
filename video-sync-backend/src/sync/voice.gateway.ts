@@ -48,6 +48,24 @@ export class VoiceGateway
   private voiceUsers: Map<string, VoiceUser> = new Map();
   private roomVoiceUsers: Map<string, Set<string>> = new Map();
 
+  /**
+   * Broadcast who is on the call to the WHOLE room, not just the call.
+   *
+   * The roster used to go only to the person joining ('voice-users-list' on
+   * their own socket), so anyone deciding whether to join could not see
+   * whether they would be walking into an empty call or interrupting three
+   * people. This goes to the room channel, which everyone watching is
+   * already in.
+   */
+  private broadcastVoiceRoster(roomCode: string): void {
+    const ids = Array.from(this.roomVoiceUsers.get(roomCode) ?? []);
+    const users = ids
+      .map((id) => this.voiceUsers.get(id))
+      .filter((u): u is NonNullable<typeof u> => Boolean(u))
+      .map((u) => ({ userId: u.userId, username: u.username }));
+    this.server?.to(roomCode).emit('voice-roster', { roomCode, users });
+  }
+
   constructor(private jwt: JwtService) {}
 
   afterInit(server: Server): void {
@@ -144,6 +162,8 @@ export class VoiceGateway
       });
 
       // Notify others that a new user joined
+      this.broadcastVoiceRoster(data.roomCode);
+
       client.to(`voice-${data.roomCode}`).emit('voice-user-joined', {
         userId: this.identity(client).userId,
         username: this.identity(client).username,
@@ -180,6 +200,8 @@ export class VoiceGateway
       await client.leave(`voice-${room}`);
 
       // Notify others
+      this.broadcastVoiceRoster(room);
+
       client.to(`voice-${room}`).emit('voice-user-left', {
         userId: this.identity(client).userId,
         socketId: client.id,

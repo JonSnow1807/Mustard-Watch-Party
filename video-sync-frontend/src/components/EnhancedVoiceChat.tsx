@@ -234,6 +234,13 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
   const [voiceUsers, setVoiceUsers] = useState<VoiceUser[]>([]);
+  // Who is on the call, whether or not YOU are. The server used to send the
+  // roster only to the person joining, so deciding whether to join meant
+  // joining to find out - and walking into an empty call, or interrupting
+  // three people, with no way to tell which.
+  const [onCall, setOnCall] = useState<{ userId: string; username: string }[]>(
+    [],
+  );
   const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set());
 
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -352,6 +359,17 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
 
     peersRef.current.set(targetSocketId, peer);
   };
+
+  useEffect(() => {
+    if (!socket) return;
+    const onRoster = (p: { users?: { userId: string; username: string }[] }) => {
+      setOnCall(p?.users ?? []);
+    };
+    socket.on('voice-roster', onRoster);
+    return () => {
+      socket.off('voice-roster', onRoster);
+    };
+  }, [socket]);
 
   const handleJoinVoice = async () => {
     try {
@@ -488,7 +506,11 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
       <Header>
         <HeaderLeft>
           <Title>Voice</Title>
-          {isInVoice && <CountChip>{voiceUsers.length} in voice</CountChip>}
+          {isInVoice ? (
+            <CountChip>{voiceUsers.length} in voice</CountChip>
+          ) : (
+            onCall.length > 0 && <CountChip>{onCall.length} on the call</CountChip>
+          )}
         </HeaderLeft>
 
         <ControlButtons>
@@ -601,7 +623,14 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
         </>
       ) : (
         <EmptyState>
-          <p>Join and talk while you watch.</p>
+          {onCall.length > 0 ? (
+            <p>
+              {onCall.map((u) => u.username).join(', ')}{' '}
+              {onCall.length === 1 ? 'is' : 'are'} on the call.
+            </p>
+          ) : (
+            <p>Join and talk while you watch.</p>
+          )}
         </EmptyState>
       )}
     </VoiceContainer>
