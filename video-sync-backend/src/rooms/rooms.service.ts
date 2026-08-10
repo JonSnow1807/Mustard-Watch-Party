@@ -83,7 +83,18 @@ export class RoomsService {
   async updateRoomByCode(
     code: string,
     userId: string,
-    data: { name?: string; videoUrl?: string },
+    // Every field here reaches Prisma verbatim, so this list has to match
+    // UpdateRoomDto. It said name/videoUrl while three more columns were
+    // already flowing through - TypeScript allows the extra properties
+    // because the caller passes a variable rather than a literal, so the
+    // signature was quietly wrong rather than loudly.
+    data: {
+      name?: string;
+      videoUrl?: string;
+      isPublic?: boolean;
+      allowGuestControl?: boolean;
+      maxUsers?: number;
+    },
   ) {
     const room = await this.database.room.findUnique({
       where: { code },
