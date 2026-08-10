@@ -10,6 +10,7 @@ import { LoginPage } from './pages/LoginPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { CreateRoomPage } from './pages/CreateRoomPage';
 import { JoinRoomPage } from './pages/JoinRoomPage';
+import { JoinByCodePage } from './pages/JoinByCodePage';
 import { color, font, radius } from './theme';
 import './App.css';
 
@@ -37,6 +38,7 @@ function App() {
                     the OAuth return to '/' and drop the token with it */}
                 <Route path="/auth/callback" element={<AuthCallbackPage />} />
                 <Route path="/create-room" element={<CreateRoomPage />} />
+                <Route path="/join" element={<JoinByCodePage />} />
                 <Route path="/join-room/:roomCode" element={<JoinRoomPage />} />
                 <Route path="/room/:roomCode" element={<EnhancedRoomPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

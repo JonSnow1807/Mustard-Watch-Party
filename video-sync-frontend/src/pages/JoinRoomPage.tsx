@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/api';
+import { loginUrlFor } from '../services/return-to';
 import { toast } from 'react-hot-toast';
 import styled from '@emotion/styled';
 import {
@@ -227,7 +228,7 @@ export const JoinRoomPage: React.FC = () => {
 
     if (!user) {
       toast.error('Sign in first');
-      navigate('/login');
+      navigate(loginUrlFor(`/room/${roomCode}`));
       return;
     }
 
@@ -263,7 +264,11 @@ export const JoinRoomPage: React.FC = () => {
           <Title>Sign in to join</Title>
           <StateCard>
             <StateActions>
-              <PrimaryButton onClick={() => navigate('/login')}>
+              {/* carries the room through sign-in: without it, signing in
+                  lands on the home page and the invite is simply lost */}
+              <PrimaryButton
+                onClick={() => navigate(loginUrlFor(`/room/${roomCode}`))}
+              >
                 Go to sign in
               </PrimaryButton>
               {/* never leave a state without an exit: this branch has no

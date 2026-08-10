@@ -323,7 +323,7 @@ export const EnhancedRoomPage: React.FC = () => {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
   const { socket, connected } = useSocket();
-  const { user } = useAuth();
+  const { user, ready: authReady } = useAuth();
 
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -364,6 +364,12 @@ export const EnhancedRoomPage: React.FC = () => {
       navigate('/');
       return;
     }
+    // Wait for the stored session to be read. `user` is null on the first
+    // render of every page load, so redirecting here on !user alone sent
+    // signed-in people to the join page too - every room link, and every
+    // reload of the room you were already sitting in, cost an extra click.
+    if (!authReady) return;
+
     // Room details now require a token (the REST guard), and the socket has
     // always required one. A signed-out visitor arriving on a shared link
     // should be asked to sign in, not shown "Couldn't load the room" - so
@@ -376,7 +382,7 @@ export const EnhancedRoomPage: React.FC = () => {
     fetchRoomDetails();
     // intentional: fetch once per room code, and again if auth appears
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode, user]);
+  }, [roomCode, user, authReady]);
 
   useEffect(() => {
     if (!socket || !connected || !user || !room) return;
@@ -446,7 +452,15 @@ export const EnhancedRoomPage: React.FC = () => {
         participantsRef.current = roster;
         setParticipants(roster);
       }
-    } catch (error) {
+    } catch (error: any) {
+      // A rejected token is not "this room is broken", it is "sign in
+      // again" - and it must not throw the room away. Dropping people on
+      // the marketing page with the code discarded is what every expired
+      // session used to do, twelve hours after they last signed in.
+      if (error?.response?.status === 401) {
+        navigate(`/join-room/${roomCode}`, { replace: true });
+        return;
+      }
       toast.error("Couldn't load the room");
       navigate('/');
     } finally {

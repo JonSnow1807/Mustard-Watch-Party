@@ -211,6 +211,19 @@ const Section = styled.section`
   margin-top: 48px;
 `;
 
+const EmptyActions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+`;
+
+const SectionActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
 const SectionHead = styled.div`
   display: flex;
   align-items: center;
@@ -645,7 +658,7 @@ export const HomePage: React.FC = () => {
               <PrimaryButton type="button" onClick={() => navigate('/login')}>
                 Start a room
               </PrimaryButton>
-              <SecondaryButton type="button" onClick={() => navigate('/login')}>
+              <SecondaryButton type="button" onClick={() => navigate('/join')}>
                 I have a code
               </SecondaryButton>
             </CtaRow>
@@ -723,10 +736,17 @@ export const HomePage: React.FC = () => {
         <Section>
           <SectionHead>
             <SectionLabel>Your rooms</SectionLabel>
-            <PrimarySmButton type="button" onClick={handleCreateRoom}>
-              <IconPlus size={14} />
-              New room
-            </PrimarySmButton>
+            <SectionActions>
+              {/* someone who was sent a code needs somewhere to put it, and
+                  this dashboard was previously a dead end for them */}
+              <SecondarySmButton type="button" onClick={() => navigate('/join')}>
+                Join with a code
+              </SecondarySmButton>
+              <PrimarySmButton type="button" onClick={handleCreateRoom}>
+                <IconPlus size={14} />
+                New room
+              </PrimarySmButton>
+            </SectionActions>
           </SectionHead>
 
           {userRoomsLoading ? (
@@ -801,9 +821,14 @@ export const HomePage: React.FC = () => {
               <IconFilm size={26} />
               <EmptyTitle>No rooms yet.</EmptyTitle>
               <EmptyText>Start one and send the code.</EmptyText>
-              <PrimaryButton type="button" onClick={handleCreateRoom}>
-                New room
-              </PrimaryButton>
+              <EmptyActions>
+                <PrimaryButton type="button" onClick={handleCreateRoom}>
+                  New room
+                </PrimaryButton>
+                <SecondaryButton type="button" onClick={() => navigate('/join')}>
+                  Join with a code
+                </SecondaryButton>
+              </EmptyActions>
             </EmptyCard>
           )}
         </Section>

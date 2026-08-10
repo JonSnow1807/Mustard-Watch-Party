@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import styled from '@emotion/styled';
 import { color, font, radius, focusRing, button, input, card } from '../theme';
 import { IconGoogle, Wordmark } from '../components/Icons';
 import { apiBaseUrl, apiService } from '../services/api';
+import { readReturnTo } from '../services/return-to';
 
 const Page = styled.div`
   min-height: 100vh;
@@ -116,7 +117,10 @@ const ToggleButton = styled.button`
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, register } = useAuth();
+  // Where the person was heading before we interrupted them to sign in.
+  const returnTo = readReturnTo(location.search);
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -153,7 +157,7 @@ export const LoginPage: React.FC = () => {
       } else {
         await register(formData.username, formData.email, formData.password);
       }
-      navigate('/');
+      navigate(returnTo ?? '/', { replace: true });
     } catch (error) {
       // Error handling is done in the auth context
     } finally {
@@ -178,7 +182,13 @@ export const LoginPage: React.FC = () => {
 
           {googleEnabled && (
             <>
-              <GoogleButton href={`${apiBaseUrl}/auth/google/start`}>
+              <GoogleButton
+                href={
+                  returnTo
+                    ? `${apiBaseUrl}/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`
+                    : `${apiBaseUrl}/auth/google/start`
+                }
+              >
                 <IconGoogle size={16} />
                 Continue with Google
               </GoogleButton>

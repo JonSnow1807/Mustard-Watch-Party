@@ -13,14 +13,16 @@ jest.mock('../services/api', () => ({
 
 const getProviders = apiService.getProviders as jest.Mock;
 
-const renderPage = () =>
-  render(
+const renderPage = (search = '') => {
+  window.history.replaceState(null, '', `/login${search}`);
+  return render(
     <AuthProvider>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[`/login${search}`]}>
         <LoginPage />
       </MemoryRouter>
     </AuthProvider>,
   );
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -69,5 +71,47 @@ describe('the Google button', () => {
     ).not.toBeInTheDocument();
     // and the password form still works
     expect(screen.getByRole('button', { name: /sign in/i })).toBeEnabled();
+  });
+});
+
+describe('the room survives sign-in', () => {
+  it('hands the destination to Google so the callback can return there', async () => {
+    getProviders.mockResolvedValue({ data: { google: true } });
+    renderPage('?next=%2Froom%2FABC123');
+
+    const link = await screen.findByRole('link', {
+      name: /continue with google/i,
+    });
+    expect(link).toHaveAttribute(
+      'href',
+      'http://api.test/api/auth/google/start?returnTo=%2Froom%2FABC123',
+    );
+  });
+
+  it('leaves the Google link bare when there is nowhere to return to', async () => {
+    getProviders.mockResolvedValue({ data: { google: true } });
+    renderPage();
+
+    const link = await screen.findByRole('link', {
+      name: /continue with google/i,
+    });
+    expect(link).toHaveAttribute(
+      'href',
+      'http://api.test/api/auth/google/start',
+    );
+  });
+
+  it('ignores a destination pointing off-site', async () => {
+    // the value rides in a link anyone can send, so it is filtered here too
+    getProviders.mockResolvedValue({ data: { google: true } });
+    renderPage('?next=https%3A%2F%2Fevil.example');
+
+    const link = await screen.findByRole('link', {
+      name: /continue with google/i,
+    });
+    expect(link).toHaveAttribute(
+      'href',
+      'http://api.test/api/auth/google/start',
+    );
   });
 });

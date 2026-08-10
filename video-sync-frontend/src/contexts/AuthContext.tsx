@@ -13,6 +13,16 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
+  /**
+   * Has the stored session been read yet?
+   *
+   * `user` is null for the first render of every page load, including for
+   * someone perfectly well signed in, because the session is rehydrated in an
+   * effect. Any page that redirects on `!user` therefore redirected everyone
+   * - opening or reloading a room bounced you to the join page and made you
+   * click through again. Guard those redirects on this instead.
+   */
+  ready: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   /** Adopt a token minted elsewhere - today, by the Google callback. */
@@ -35,18 +45,23 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
 
   // Check for stored user on mount. Wrapped: a corrupt entry (a half-written
   // value, a schema change) would otherwise throw during render and leave a
   // blank page instead of a signed-out one.
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
-    if (!storedUser) return;
-    try {
-      setUser(JSON.parse(storedUser));
-    } catch {
-      localStorage.removeItem('user');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem('user');
+      }
     }
+    // set last and unconditionally: consumers wait on this to know that
+    // `user === null` means signed out rather than not-read-yet
+    setReady(true);
   }, []);
 
   // The API layer clears storage and fires this when a request comes back 401
@@ -125,6 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const value: AuthContextType = {
     user,
+    ready,
     login,
     register,
     signInWithToken,
