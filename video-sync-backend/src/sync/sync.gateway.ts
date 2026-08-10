@@ -75,6 +75,21 @@ export class SyncGateway
    * With the Redis adapter this reaches participants on every instance, not
    * just the one that served the DELETE.
    */
+  /**
+   * Who is on the voice call, told to the whole ROOM.
+   *
+   * This has to come from here, not from VoiceGateway: voice lives on the
+   * '/voice' namespace and its `server.to(roomCode)` addresses a room in
+   * THAT namespace, which the people merely watching have never joined.
+   * They are all in the main namespace's room, which is this server.
+   */
+  announceVoiceRoster(
+    roomCode: string,
+    users: { userId: string; username: string }[],
+  ): void {
+    this.server?.to(roomCode).emit('voice-roster', { roomCode, users });
+  }
+
   announceRoomClosed(roomCode: string): void {
     const payload: RoomClosed = { v: 1, roomCode };
     this.server?.to(roomCode).emit(SYNC_EVENTS.closed, payload);

@@ -251,10 +251,20 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
   useEffect(() => {
     if (!socket || !user) return;
 
-    // Create connection to voice namespace
-    const io = (socket as any).io;
-    if (io) {
-      voiceSocketRef.current = io.connect('/voice');
+    // Create connection to the voice namespace.
+    //
+    // manager.socket(nsp), NOT manager.connect(nsp): on socket.io-client v4
+    // `connect` is an alias of `open(callback)` - it opens the underlying
+    // transport and treats its argument as a completion callback, so
+    // `connect('/voice')` never produced a namespace socket at all. What
+    // landed in this ref was the Manager, whose `emit` is a local event
+    // emitter that sends nothing to the server.
+    const manager = (socket as any).io;
+    if (manager) {
+      voiceSocketRef.current = manager.socket('/voice', {
+        // the voice gateway runs the same handshake auth as the main one
+        auth: { token: (socket as any).auth?.token },
+      });
 
       const voiceSocket = voiceSocketRef.current;
 

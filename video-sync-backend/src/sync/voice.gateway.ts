@@ -11,6 +11,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
+import { SyncGateway } from './sync.gateway';
 
 interface VoiceUser {
   userId: string;
@@ -63,10 +64,17 @@ export class VoiceGateway
       .map((id) => this.voiceUsers.get(id))
       .filter((u): u is NonNullable<typeof u> => Boolean(u))
       .map((u) => ({ userId: u.userId, username: u.username }));
-    this.server?.to(roomCode).emit('voice-roster', { roomCode, users });
+    // Handed to the main-namespace gateway deliberately: broadcasting from
+    // here would address a room inside '/voice' that only people already on
+    // the call have joined - i.e. exactly the people who did not need
+    // telling. My first attempt did that and reached nobody.
+    this.sync.announceVoiceRoster(roomCode, users);
   }
 
-  constructor(private jwt: JwtService) {}
+  constructor(
+    private jwt: JwtService,
+    private sync: SyncGateway,
+  ) {}
 
   afterInit(server: Server): void {
     server.use(wsAuthMiddleware(this.jwt));
