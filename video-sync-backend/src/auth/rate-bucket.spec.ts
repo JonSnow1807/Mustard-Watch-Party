@@ -123,3 +123,15 @@ describe('clientIpFrom', () => {
     });
   });
 });
+
+describe('a keyless bucket, for what a key cannot defend', () => {
+  it('bounds total spend no matter what callers claim to be', () => {
+    // The per-caller bucket is only as good as our ability to tell callers
+    // apart, and in production that turned out not to work. A bucket with a
+    // constant key cannot be escaped by anything a caller sends.
+    const global = new RateBucket(3, 0);
+    const claims = ['a', 'b', 'c', 'd', 'e'];
+    const results = claims.map(() => global.take('all', 1_000_000));
+    expect(results).toEqual([true, true, true, false, false]);
+  });
+});
