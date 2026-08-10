@@ -175,6 +175,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomCode }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesAreaRef = useRef<HTMLDivElement>(null);
   const [unread, setUnread] = useState(0);
+  // Whether the reader was at the live end BEFORE this message arrived.
+  // Measuring after the render is too late: a message taller than the
+  // near-bottom threshold pushes the end away by itself, so someone who was
+  // reading live gets classed as reading history and stops being followed.
+  const wasNearBottomRef = useRef(true);
 
   useEffect(() => {
     if (!socket) return;
@@ -197,11 +202,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomCode }) => {
   // Unconditional scrolling yanked anyone scrolling back through history
   // to the end every time somebody typed.
   useEffect(() => {
-    const area = messagesAreaRef.current;
-    if (!area) return;
-    const distanceFromBottom =
-      area.scrollHeight - area.scrollTop - area.clientHeight;
-    if (distanceFromBottom <= NEAR_BOTTOM_PX) {
+    if (wasNearBottomRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       setUnread(0);
     } else {
@@ -238,6 +239,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomCode }) => {
           const el = e.currentTarget;
           const atBottom =
             el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
+          wasNearBottomRef.current = atBottom;
           if (atBottom) setUnread(0);
         }}
       >

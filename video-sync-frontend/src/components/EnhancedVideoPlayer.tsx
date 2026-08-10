@@ -491,8 +491,11 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   useEffect(() => {
     const adapter = adapterRef.current;
     if (!adapter) return;
-    adapter.setVolume?.(muted ? 0 : volume);
+    // Order matters: Vimeo has no mute call, so its setMuted is really
+    // "volume 0 or 1" - applying it AFTER setVolume threw away a chosen
+    // level of 0.4 on every unmute. Mute first, level last.
     adapter.setMuted?.(muted);
+    adapter.setVolume?.(muted ? 0 : volume);
     localStorage.setItem(VOLUME_KEY, String(volume));
     localStorage.setItem(MUTED_KEY, muted ? '1' : '0');
   }, [volume, muted, isReady]);
@@ -519,13 +522,15 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   // ---- keyboard ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Never steal a key from someone typing - chat lives on this page, and
+      // a space that pauses the film mid-sentence is worse than no shortcut.
+      // This guards the HUD key too: a backtick belongs to the message.
+      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (e.key === '`') {
         setShowHud((v) => !v);
         return;
       }
-      // Never steal a key from someone typing - chat lives on this page, and
-      // a space that pauses the film mid-sentence is worse than no shortcut.
-      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
 
       switch (e.key) {
         case ' ':

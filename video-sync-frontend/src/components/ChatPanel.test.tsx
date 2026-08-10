@@ -78,6 +78,11 @@ describe('scrolling while reading back', () => {
     Object.defineProperty(area, 'scrollHeight', { value: 1000, configurable: true });
     Object.defineProperty(area, 'clientHeight', { value: 200, configurable: true });
     Object.defineProperty(area, 'scrollTop', { value: 0, configurable: true });
+    // scrolling in a real browser fires this; the panel reads the reader's
+    // position from the event rather than re-measuring after the append
+    act(() => {
+      area.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
 
     (Element.prototype.scrollIntoView as jest.Mock).mockClear();
     act(() => handlers['chat-message'](message({ message: 'while you read' })));
@@ -85,5 +90,29 @@ describe('scrolling while reading back', () => {
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     // and it says what you missed, which is otherwise invisible
     expect(screen.getByText('1 new message')).toBeInTheDocument();
+  });
+});
+
+describe('a tall message must not look like scrolling away', () => {
+  it('keeps following when the reader was at the end, however tall the message', () => {
+    // The old code measured AFTER React appended the message, so a message
+    // taller than the near-bottom threshold pushed the end out of reach by
+    // itself and the reader was misclassified as reading history.
+    renderChat();
+    const area = screen.getByTestId('chat-messages');
+
+    // reader is at the live end
+    Object.defineProperty(area, 'scrollHeight', { value: 300, configurable: true });
+    Object.defineProperty(area, 'clientHeight', { value: 300, configurable: true });
+    Object.defineProperty(area, 'scrollTop', { value: 0, configurable: true });
+    act(() => { area.dispatchEvent(new Event('scroll', { bubbles: true })); });
+
+    // a very tall message lands: the content now far exceeds the viewport
+    Object.defineProperty(area, 'scrollHeight', { value: 2000, configurable: true });
+    (Element.prototype.scrollIntoView as jest.Mock).mockClear();
+    act(() => handlers['chat-message'](message({ message: 'a'.repeat(2000) })));
+
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    expect(screen.queryByText(/new message/i)).not.toBeInTheDocument();
   });
 });

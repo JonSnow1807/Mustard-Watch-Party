@@ -294,7 +294,7 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
           id="room-settings-max-users"
           type="number"
           min="2"
-          max="100"
+          max="500"
           value={maxUsers}
           onChange={(e) => {
             const raw = e.target.value;
@@ -302,8 +302,11 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
               setMaxUsers('');
               return;
             }
-            const parsed = parseInt(raw, 10);
-            setMaxUsers(Number.isNaN(parsed) ? '' : parsed);
+            // Number, not parseInt: parseInt('8.5') is 8 and parseInt('2e2')
+            // is 2, so a value the person never chose would be persisted now
+            // that this field actually reaches the server.
+            const parsed = Number(raw);
+            setMaxUsers(Number.isInteger(parsed) ? parsed : '');
           }}
           onBlur={() => {
             if (maxUsers === '') {
@@ -345,7 +348,7 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
         <SaveButton type="button" onClick={handleUpdateSettings} disabled={loading}>
           {loading ? 'Saving…' : 'Save changes'}
         </SaveButton>
-        <EndButton type="button" onClick={handleEndRoom}>
+        <EndButton type="button" onClick={handleEndRoom} disabled={loading}>
           End room
         </EndButton>
       </Actions>

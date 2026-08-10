@@ -26,6 +26,9 @@
       title would need server-side rendering. The generic card is honest
       about what the link is; the room itself is behind sign-in anyway, so
       there is nothing room-specific we would want a crawler to hold.
+      Deliberately NO og:url: every shared link is a room URL, and a fixed
+      one here would tell every chat app that /join-room/ABC123 is really
+      the homepage. Omitting it lets the shared URL speak for itself.
     -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="mustard.watch" />
@@ -34,7 +37,6 @@
       property="og:description"
       content="Join the room and watch in sync - YouTube, Vimeo, HLS, or a plain file."
     />
-    <meta property="og:url" content="https://mustard.watch/" />
     <meta property="og:image" content="https://mustard.watch/logo512.png" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="Watch together. Milliseconds apart." />

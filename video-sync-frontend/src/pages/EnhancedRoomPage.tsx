@@ -356,18 +356,50 @@ export const EnhancedRoomPage: React.FC = () => {
   // Escape closes the settings dialog, and focus moves into it on open so a
   // keyboard user is not left tabbing through the page behind the overlay.
   const settingsRef = useRef<HTMLDivElement | null>(null);
+  const settingsTriggerRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!showSettings) return;
+
+    const FOCUSABLE =
+      'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowSettings(false);
+      if (e.key === 'Escape') {
+        setShowSettings(false);
+        return;
+      }
+      // Keep Tab inside the dialog. Without this, tabbing walks straight out
+      // onto the page behind the overlay - which is invisible, still
+      // clickable by keyboard, and a good way to change the video by
+      // accident while thinking you are still in the settings.
+      if (e.key !== 'Tab') return;
+      const focusable = Array.from(
+        settingsRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (active === first || !settingsRef.current?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     window.addEventListener('keydown', onKey);
-    settingsRef.current
-      ?.querySelector<HTMLElement>(
-        'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
-      )
-      ?.focus();
-    return () => window.removeEventListener('keydown', onKey);
+    // Remember what opened it, so closing puts the caret back where it was
+    // rather than dumping focus at the top of the document.
+    settingsTriggerRef.current = document.activeElement as HTMLElement | null;
+    settingsRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      settingsTriggerRef.current?.focus?.();
+    };
   }, [showSettings]);
 
   useEffect(() => {
