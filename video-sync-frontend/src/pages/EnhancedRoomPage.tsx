@@ -342,6 +342,17 @@ export const EnhancedRoomPage: React.FC = () => {
     participantsRef.current = participants;
   }, [participants]);
 
+  // With several rooms open, every tab read "Mustard Watch Party" and the
+  // only way to find the right one was to click through them.
+  useEffect(() => {
+    if (!room?.name) return;
+    const previous = document.title;
+    document.title = `${room.name} · mustard.watch`;
+    return () => {
+      document.title = previous;
+    };
+  }, [room?.name]);
+
   // Escape closes the settings dialog, and focus moves into it on open so a
   // keyboard user is not left tabbing through the page behind the overlay.
   const settingsRef = useRef<HTMLDivElement | null>(null);

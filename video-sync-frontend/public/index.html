@@ -18,6 +18,31 @@
     />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <!--
+      Sharing a room means pasting its link into a chat app, and without
+      these every invite arrived as a naked URL with no title, no
+      description and no image - which reads like a link nobody should
+      click. These are static because this is a single-page app served as
+      one HTML file: a crawler never runs our JavaScript, so a per-room
+      title would need server-side rendering. The generic card is honest
+      about what the link is; the room itself is behind sign-in anyway, so
+      there is nothing room-specific we would want a crawler to hold.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="mustard.watch" />
+    <meta property="og:title" content="Watch together. Milliseconds apart." />
+    <meta
+      property="og:description"
+      content="Join the room and watch in sync - YouTube, Vimeo, HLS, or a plain file."
+    />
+    <meta property="og:url" content="https://mustard.watch/" />
+    <meta property="og:image" content="https://mustard.watch/logo512.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Watch together. Milliseconds apart." />
+    <meta
+      name="twitter:description"
+      content="Join the room and watch in sync - YouTube, Vimeo, HLS, or a plain file."
+    />
+    <!--
       manifest.json provides metadata used when your web app is installed on a
       user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
     -->

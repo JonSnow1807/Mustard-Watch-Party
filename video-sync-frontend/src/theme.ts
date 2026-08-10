@@ -196,6 +196,13 @@ export const ghostIconButton = `
 export const input = `
   font-family: ${font.body};
   font-size: 14px;
+  /* iOS Safari zooms the whole page when a focused field is under 16px, and
+     it does not zoom back out - tapping the chat box left people stranded
+     at 1.3x with the video off-screen. 16px at the touch sizes only, so the
+     desktop density is unchanged. */
+  @media (max-width: 880px) {
+    font-size: 16px;
+  }
   color: ${color.text};
   background: ${color.bg2};
   border: 1px solid ${color.line};
