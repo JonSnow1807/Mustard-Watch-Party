@@ -1,4 +1,4 @@
-import { RateBucket, clientIp } from './rate-bucket';
+import { RateBucket, clientIpFrom } from './rate-bucket';
 import type { Request } from 'express';
 
 describe('RateBucket', () => {
@@ -52,55 +52,74 @@ describe('RateBucket', () => {
   });
 });
 
-describe('clientIp', () => {
+describe('clientIpFrom', () => {
   const req = (headers: Record<string, unknown>, remote?: string) =>
     ({ headers, socket: { remoteAddress: remote } }) as unknown as Request;
 
-  it('uses the LAST x-forwarded-for entry - the one our proxy wrote', () => {
-    // A proxy APPENDS the peer it saw, so a caller who sends their own
-    // header produces "<invented>, <real>". Keying on the leftmost entry
-    // lets anyone rotate identity with a header and never hit the limit.
-    expect(clientIp(req({ 'x-forwarded-for': '1.2.3.4, 10.0.0.1' }))).toBe(
-      '10.0.0.1',
-    );
+  describe('with no proxy in front (a laptop)', () => {
+    it('ignores x-forwarded-for entirely', () => {
+      // with nothing appending, the whole header is whatever the caller
+      // typed - trusting any part of it hands them a fresh bucket per
+      // request, which is exactly what a live check caught
+      expect(
+        clientIpFrom(
+          req({ 'x-forwarded-for': 'invented' }, '127.0.0.1'),
+          false,
+        ),
+      ).toBe('127.0.0.1');
+    });
+
+    it('keys every forgery to the same bucket', () => {
+      const a = clientIpFrom(
+        req({ 'x-forwarded-for': 'a' }, '127.0.0.1'),
+        false,
+      );
+      const b = clientIpFrom(
+        req({ 'x-forwarded-for': 'b' }, '127.0.0.1'),
+        false,
+      );
+      expect(a).toBe(b);
+    });
   });
 
-  it('is not fooled by a caller who forges the header', () => {
-    // this is the attack the previous version was open to
-    const forged = clientIp(req({ 'x-forwarded-for': 'evil-1, 203.0.113.9' }));
-    const forgedAgain = clientIp(
-      req({ 'x-forwarded-for': 'evil-2, 203.0.113.9' }),
-    );
-    // whatever they invent, they key to the same bucket
-    expect(forged).toBe(forgedAgain);
-    expect(forged).toBe('203.0.113.9');
-  });
+  describe('behind one proxy (Render)', () => {
+    it('uses the entry the proxy wrote, not the one the caller sent', () => {
+      expect(
+        clientIpFrom(req({ 'x-forwarded-for': 'invented, 203.0.113.9' }), true),
+      ).toBe('203.0.113.9');
+    });
 
-  it('handles a single entry, spacing, and empty segments', () => {
-    expect(clientIp(req({ 'x-forwarded-for': '203.0.113.9' }))).toBe(
-      '203.0.113.9',
-    );
-    expect(clientIp(req({ 'x-forwarded-for': ' 1.1.1.1 ,  2.2.2.2 ' }))).toBe(
-      '2.2.2.2',
-    );
-    expect(clientIp(req({ 'x-forwarded-for': '1.1.1.1, ,' }, '9.9.9.9'))).toBe(
-      '1.1.1.1',
-    );
-  });
+    it('keys every forgery to the same bucket', () => {
+      const a = clientIpFrom(
+        req({ 'x-forwarded-for': 'evil-1, 203.0.113.9' }),
+        true,
+      );
+      const b = clientIpFrom(
+        req({ 'x-forwarded-for': 'evil-2, 203.0.113.9' }),
+        true,
+      );
+      expect(a).toBe(b);
+      expect(a).toBe('203.0.113.9');
+    });
 
-  it('falls back to the socket, then to a constant', () => {
-    expect(clientIp(req({}, '5.6.7.8'))).toBe('5.6.7.8');
-    expect(clientIp(req({}))).toBe('unknown');
-  });
+    it('handles one entry, spacing, empties, and a repeated header', () => {
+      expect(
+        clientIpFrom(req({ 'x-forwarded-for': '203.0.113.9' }), true),
+      ).toBe('203.0.113.9');
+      expect(
+        clientIpFrom(req({ 'x-forwarded-for': ' 1.1.1.1 ,  2.2.2.2 ' }), true),
+      ).toBe('2.2.2.2');
+      expect(
+        clientIpFrom(req({ 'x-forwarded-for': '1.1.1.1, ,' }, '9.9.9.9'), true),
+      ).toBe('1.1.1.1');
+      expect(
+        clientIpFrom(req({ 'x-forwarded-for': ['1.1.1.1', '2.2.2.2'] }), true),
+      ).toBe('2.2.2.2');
+    });
 
-  it('handles the header arriving as an array', () => {
-    // node gives an array when the header appears more than once; the
-    // nearest proxy is still the last thing written
-    expect(clientIp(req({ 'x-forwarded-for': ['9.9.9.9, 10.0.0.1'] }))).toBe(
-      '10.0.0.1',
-    );
-    expect(clientIp(req({ 'x-forwarded-for': ['1.1.1.1', '2.2.2.2'] }))).toBe(
-      '2.2.2.2',
-    );
+    it('falls back to the socket when the header is absent', () => {
+      expect(clientIpFrom(req({}, '5.6.7.8'), true)).toBe('5.6.7.8');
+      expect(clientIpFrom(req({}), true)).toBe('unknown');
+    });
   });
 });

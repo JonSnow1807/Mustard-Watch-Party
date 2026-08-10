@@ -50,23 +50,28 @@ export class RateBucket {
 }
 
 /**
- * The caller's address, behind exactly one trusted proxy.
+ * The caller's address, for keying a rate limiter.
  *
- * The LAST entry of x-forwarded-for, not the first, and the difference is
- * the whole point of the function.
+ * x-forwarded-for is only consulted when we are actually behind a proxy,
+ * because otherwise the entire header is written by the caller. My first
+ * attempt at this took the last entry on the theory that a proxy appends
+ * the peer it saw - true, but only if a proxy is there. With no proxy the
+ * header has exactly one entry and that entry is whatever the caller typed,
+ * so twelve requests with twelve invented values got twelve separate
+ * allowances. A live check caught it; the reasoning had looked airtight.
  *
- * A proxy APPENDS the peer it actually saw. So a client that sends nothing
- * produces "<client>", and a client that sends its own header produces
- * "<whatever they invented>, <client>". The leftmost entry is therefore the
- * one under the caller's control, and keying a rate limiter on it lets
- * anyone rotate their identity with a header and never hit the limit. The
- * rightmost was written by our own proxy and is the one we can believe.
+ * So: behind a proxy, the LAST entry, which is the one our own proxy wrote
+ * (a caller who sends their own produces "<invented>, <real>", making the
+ * leftmost theirs and the rightmost ours). Otherwise the socket peer, which
+ * no header can influence.
  *
- * This assumes exactly one proxy in front of us, which is what Render is. On
- * a chain of N trusted proxies the correct entry is Nth from the right, and
- * on none of them the header should be ignored entirely.
+ * `trustProxy` is a deployment fact, not a guess - one hop on Render, none
+ * on a laptop.
  */
-export const clientIp = (req: Request): string => {
+export const clientIpFrom = (req: Request, trustProxy: boolean): string => {
+  const peer = req.socket?.remoteAddress || 'unknown';
+  if (!trustProxy) return peer;
+
   const forwarded = req.headers['x-forwarded-for'];
   const raw = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
   const parts =
@@ -74,6 +79,14 @@ export const clientIp = (req: Request): string => {
       ?.split(',')
       .map((p) => p.trim())
       .filter(Boolean) ?? [];
-  const nearest = parts[parts.length - 1];
-  return nearest || req.socket?.remoteAddress || 'unknown';
+  return parts[parts.length - 1] || peer;
 };
+
+/**
+ * Production runs behind exactly one proxy (Render); local development runs
+ * behind none. Same rule configuration.ts uses to decide what is local.
+ */
+const LOCAL_ENVS = ['development', 'test'];
+
+export const clientIp = (req: Request): string =>
+  clientIpFrom(req, !LOCAL_ENVS.includes(process.env.NODE_ENV ?? ''));
