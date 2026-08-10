@@ -86,6 +86,12 @@ export const IconHeadphones = (p: P) =>
 export const IconHeadphonesOff = (p: P) =>
   base(p, <><path d="M4.5 14v-2c0-1.2.28-2.34.78-3.35" /><path d="M8.2 5.5A7.47 7.47 0 0 1 19.5 12v2" /><rect x="3.5" y="13.5" width="4" height="6.5" rx="1.6" /><rect x="16.5" y="13.5" width="4" height="6.5" rx="1.6" /><path d="M4 4l16 16" /></>);
 
+export const IconSkipBack = (p: P) =>
+  base(p, <><path d="M11 6.2c0-.85-.94-1.36-1.65-.9L3.6 9.1a1.07 1.07 0 0 0 0 1.8l5.75 3.8c.71.46 1.65-.05 1.65-.9V6.2z" /><path d="M20 6.2c0-.85-.94-1.36-1.65-.9l-5.75 3.8a1.07 1.07 0 0 0 0 1.8l5.75 3.8c.71.46 1.65-.05 1.65-.9V6.2z" /><path d="M4 18h16" /></>);
+
+export const IconSkipForward = (p: P) =>
+  base(p, <><path d="M13 6.2c0-.85.94-1.36 1.65-.9l5.75 3.8a1.07 1.07 0 0 1 0 1.8l-5.75 3.8c-.71.46-1.65-.05-1.65-.9V6.2z" /><path d="M4 6.2c0-.85.94-1.36 1.65-.9l5.75 3.8a1.07 1.07 0 0 1 0 1.8l-5.75 3.8c-.71.46-1.65-.05-1.65-.9V6.2z" /><path d="M4 18h16" /></>);
+
 export const IconVolume = (p: P) =>
   base(p, <><path d="M11 5.5 6.8 9H4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2.8L11 18.5a.6.6 0 0 0 1-.46V5.96a.6.6 0 0 0-1-.46z" /><path d="M15.4 9.2a4 4 0 0 1 0 5.6" /><path d="M18.2 6.6a8 8 0 0 1 0 10.8" /></>);
 

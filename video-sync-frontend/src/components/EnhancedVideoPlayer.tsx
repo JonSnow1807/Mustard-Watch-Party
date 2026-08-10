@@ -32,6 +32,8 @@ import {
   IconFullscreen,
   IconPause,
   IconPlay,
+  IconSkipBack,
+  IconSkipForward,
   IconSync,
   IconUsers,
   IconVolume,
@@ -389,6 +391,17 @@ const EMPTY_STATUS: EngineStatus = {
 const SEEK_STEP_S = 5;
 
 /**
+ * Skip step for the buttons and J/L.
+ *
+ * Buttons rather than a double-tap gesture on the stage: on the YouTube and
+ * Vimeo paths the stage is a cross-origin iframe that swallows touch events,
+ * so a gesture would work for a direct file and silently do nothing for the
+ * two sources most rooms actually use. A control that works everywhere beats
+ * a gesture that works sometimes.
+ */
+const SKIP_STEP_S = 10;
+
+/**
  * The player SHELL: engine lifecycle, controls, HUD, failure card. Which
  * player actually renders is decided by classifyMediaSource - the same
  * classification the backend validates against, so a URL the API admitted
@@ -582,6 +595,14 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
           e.preventDefault();
           handlePlayPause();
           break;
+        case 'j':
+          e.preventDefault();
+          seekBy(-SKIP_STEP_S);
+          break;
+        case 'l':
+          e.preventDefault();
+          seekBy(SKIP_STEP_S);
+          break;
         case 'f':
           e.preventDefault();
           handleToggleFullscreen();
@@ -751,6 +772,25 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
    * leaves through the same seek intent the click path uses - the local
    * player is never touched here, the broadcast moves everyone.
    */
+  /**
+   * Seek by a relative amount, through the same intent path as everything
+   * else - nobody's player is touched locally; everyone converges from the
+   * broadcast.
+   */
+  const seekBy = (deltaS: number) => {
+    if (!canControl) {
+      toast.error('Only the host can seek the video', { duration: 2000 });
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine || !status.durationS) return;
+    const target = Math.max(
+      0,
+      Math.min(status.durationS, shownTime + deltaS),
+    );
+    engine.sendIntent('seek', target);
+  };
+
   const handleProgressKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     let target: number;
     switch (e.key) {
@@ -797,6 +837,16 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       {mount && (
         <Controls>
           <ControlRow>
+            <IconControl
+              type="button"
+              onClick={() => seekBy(-SKIP_STEP_S)}
+              disabled={!isReady}
+              aria-label={`Back ${SKIP_STEP_S} seconds`}
+              title={`Back ${SKIP_STEP_S}s (J)`}
+            >
+              <IconSkipBack size={15} />
+            </IconControl>
+
             <PlayButton
               data-testid="play-button"
               onClick={handlePlayPause}
@@ -806,6 +856,16 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
               {status.roomPlaying ? <IconPause size={16} /> : <IconPlay size={16} />}
               {status.roomPlaying ? 'Pause' : 'Play'}
             </PlayButton>
+
+            <IconControl
+              type="button"
+              onClick={() => seekBy(SKIP_STEP_S)}
+              disabled={!isReady}
+              aria-label={`Forward ${SKIP_STEP_S} seconds`}
+              title={`Forward ${SKIP_STEP_S}s (L)`}
+            >
+              <IconSkipForward size={15} />
+            </IconControl>
 
             <ProgressContainer>
               {/* a slider in fact, not just in looks: whoever may seek can
