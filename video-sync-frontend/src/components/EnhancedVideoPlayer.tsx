@@ -403,7 +403,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   allowGuestControl = false,
   userId,
 }) => {
-  const { socket, connected } = useSocket();
+  const { socket, connected, reconnecting } = useSocket();
   const [isReady, setIsReady] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   // Bumped by Retry: it rides in the mount's key, so a retry tears the dead
@@ -864,9 +864,24 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
           <StatusRow>
             <StatusGroup>
+              {/* Three states, not two: before the first connect there is
+                  nothing wrong yet, and "Disconnected" on a room that is
+                  still opening reads as broken. */}
               <ConnectionState connected={connected}>
-                <StatusDot tone={connected ? color.ok : color.danger} />
-                {connected ? 'Connected' : 'Disconnected'}
+                <StatusDot
+                  tone={
+                    connected
+                      ? color.ok
+                      : reconnecting
+                        ? color.mustard
+                        : color.danger
+                  }
+                />
+                {connected
+                  ? 'Connected'
+                  : reconnecting
+                    ? 'Reconnecting…'
+                    : 'Connecting…'}
               </ConnectionState>
 
               {/* "it is loading" and "it is broken" look identical when the

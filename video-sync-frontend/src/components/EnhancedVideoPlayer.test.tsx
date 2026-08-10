@@ -7,7 +7,7 @@ import { EnhancedVideoPlayer } from './EnhancedVideoPlayer';
 // mocked engine's status stream instead.
 let mockSocket: unknown = null;
 jest.mock('../contexts/SocketContext', () => ({
-  useSocket: () => ({ socket: mockSocket, connected: false }),
+  useSocket: () => ({ socket: mockSocket, connected: false, reconnecting: false }),
 }));
 
 // captures the shell's onStatus listener so tests can push engine status
