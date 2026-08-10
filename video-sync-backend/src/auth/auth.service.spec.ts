@@ -253,3 +253,72 @@ describe('signInWithGoogle', () => {
     );
   });
 });
+
+describe('createGuest', () => {
+  const guestArgs = (db: ReturnType<typeof makeDb>) =>
+    (db.user.create.mock.calls as { data: Record<string, unknown> }[][]).map(
+      (c) => c[0].data,
+    );
+
+  it('creates a passwordless, flagged account with an unroutable address', async () => {
+    const db = makeDb();
+    db.user.create.mockResolvedValue({
+      id: 'g1',
+      username: 'guest',
+      email: 'x@guest.invalid',
+    });
+
+    const result = await serviceWith(db).createGuest();
+
+    const data = guestArgs(db)[0];
+    expect(data.isGuest).toBe(true);
+    // null, not an unusable hash - there is no password login for a guest
+    expect(data.password).toBeNull();
+    // .invalid is reserved by RFC 2606, so this can never collide with a
+    // real person's address or be delivered to
+    expect(String(data.email)).toMatch(/@guest\.invalid$/);
+    // and the token is the same contract both planes verify
+    expect(jwtService.verify(result.token)).toMatchObject({ sub: 'g1' });
+  });
+
+  it('gives every guest a different address', async () => {
+    const db = makeDb();
+    db.user.create.mockResolvedValue({ id: 'g', username: 'g', email: 'e' });
+    const service = serviceWith(db);
+    await service.createGuest();
+    await service.createGuest();
+
+    const [first, second] = guestArgs(db).map((d) => d.email);
+    expect(first).not.toBe(second);
+  });
+
+  it('draws another name when the first is taken', async () => {
+    // 'guest' is a popular name by design; a collision is the generator's
+    // job, not an error
+    const db = makeDb();
+    db.user.create
+      .mockRejectedValueOnce(uniqueViolation('username'))
+      .mockResolvedValue({ id: 'g2', username: 'guest_0042', email: 'e' });
+
+    const result = await serviceWith(db).createGuest();
+
+    expect(result.username).toBe('guest_0042');
+    const names = guestArgs(db).map((d) => d.username);
+    expect(names[1]).not.toBe(names[0]);
+  });
+
+  it('gives up rather than looping forever', async () => {
+    const db = makeDb();
+    db.user.create.mockRejectedValue(uniqueViolation('username'));
+    await expect(serviceWith(db).createGuest()).rejects.toThrow(/guest name/i);
+    expect(guestArgs(db).length).toBeLessThanOrEqual(8);
+  });
+
+  it('lets an unexpected database error surface', async () => {
+    const db = makeDb();
+    db.user.create.mockRejectedValue(new Error('connection reset'));
+    await expect(serviceWith(db).createGuest()).rejects.toThrow(
+      'connection reset',
+    );
+  });
+});

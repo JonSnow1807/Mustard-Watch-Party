@@ -5,6 +5,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { GoogleOAuthService } from './google/google-oauth.service';
+import { GuestSweeperService } from './guest-sweeper.service';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { GoogleOAuthService } from './google/google-oauth.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, GoogleOAuthService],
+  providers: [AuthService, GoogleOAuthService, GuestSweeperService],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

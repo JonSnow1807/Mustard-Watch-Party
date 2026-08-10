@@ -28,6 +28,10 @@ interface AuthContextType {
   register: (username: string, email: string, password: string) => Promise<void>;
   /** Adopt a token minted elsewhere - today, by the Google callback. */
   signInWithToken: (token: string) => Promise<void>;
+  /** Sign in with no account at all; see docs/GUEST_ACCESS.md. */
+  continueAsGuest: () => Promise<void>;
+  /** True when this session has no password and no provider behind it. */
+  isGuest: boolean;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -136,6 +140,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const continueAsGuest = useCallback(async () => {
+    try {
+      const { data } = await apiService.guest();
+      setUser(data);
+      localStorage.setItem('user', JSON.stringify(data));
+      toast.success(`You are in as ${data.username}`);
+    } catch (error: any) {
+      toast.error(
+        error?.response?.status === 429
+          ? 'Too many guests from this connection - try again shortly'
+          : "Couldn't join as a guest",
+      );
+      throw error;
+    }
+  }, []);
+
   const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem('user');
@@ -151,6 +171,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     login,
     register,
     signInWithToken,
+    continueAsGuest,
+    // the synthetic address the server mints is the only marker the client
+    // gets, and it is one no real account can have: .invalid is reserved
+    isGuest: Boolean(user?.email?.endsWith('@guest.invalid')),
     logout,
     isAuthenticated: !!user,
   };

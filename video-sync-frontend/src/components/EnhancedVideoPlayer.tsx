@@ -27,6 +27,7 @@ import {
   radius,
 } from '../theme';
 import {
+  IconCaptions,
   IconCrown,
   IconExitFullscreen,
   IconFullscreen,
@@ -43,6 +44,7 @@ import {
 
 const VOLUME_KEY = 'mustard:volume';
 const MUTED_KEY = 'mustard:muted';
+const CAPTIONS_KEY = 'mustard:captions';
 
 /**
  * Is this keystroke destined for a text field? Chat sits on the same page as
@@ -558,6 +560,40 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const toggleMuted = useCallback(() => setMutedState((m) => !m), []);
 
+  // ---- captions: local, never synced ----
+  const [captionsAvailable, setCaptionsAvailable] = useState(false);
+  const [captionsOn, setCaptionsOn] = useState(
+    () => localStorage.getItem(CAPTIONS_KEY) === '1',
+  );
+
+  // Every source learns about its own tracks asynchronously and none of them
+  // announces it, so this asks a few times after the player appears and then
+  // stops. Polling forever to power a button would be silly; asking once
+  // would miss a track list that arrives a beat later.
+  useEffect(() => {
+    if (!isReady) {
+      setCaptionsAvailable(false);
+      return;
+    }
+    let attempts = 0;
+    const tick = () => {
+      const available = adapterRef.current?.hasCaptions?.() ?? false;
+      setCaptionsAvailable(available);
+      // stop as soon as the answer is yes, or after a few seconds of no
+      return available || ++attempts >= 6;
+    };
+    if (tick()) return;
+    const timer = setInterval(() => {
+      if (tick()) clearInterval(timer);
+    }, 700);
+    return () => clearInterval(timer);
+  }, [isReady, activeVideoUrl]);
+
+  useEffect(() => {
+    adapterRef.current?.setCaptionsEnabled?.(captionsOn);
+    localStorage.setItem(CAPTIONS_KEY, captionsOn ? '1' : '0');
+  }, [captionsOn, captionsAvailable, isReady]);
+
   // ---- fullscreen ----
   // The whole shell goes fullscreen, not the video element: the controls,
   // sync readout and chat toggle have to remain reachable, and on the
@@ -610,6 +646,13 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
         case 'm':
           e.preventDefault();
           toggleMuted();
+          break;
+        case 'c':
+          // silently ignored when the source has no tracks, like the button
+          if (adapterRef.current?.hasCaptions?.()) {
+            e.preventDefault();
+            setCaptionsOn((v) => !v);
+          }
           break;
         default:
           break;
@@ -922,6 +965,19 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
                 }}
               />
             </VolumeGroup>
+
+            {captionsAvailable && (
+              <IconControl
+                type="button"
+                onClick={() => setCaptionsOn((v) => !v)}
+                aria-label={captionsOn ? 'Turn off subtitles' : 'Turn on subtitles'}
+                aria-pressed={captionsOn}
+                title={captionsOn ? 'Subtitles off (c)' : 'Subtitles on (c)'}
+                style={captionsOn ? { color: color.mustard } : undefined}
+              >
+                <IconCaptions size={15} />
+              </IconControl>
+            )}
 
             <IconControl
               type="button"

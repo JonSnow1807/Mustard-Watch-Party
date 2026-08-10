@@ -235,6 +235,16 @@ const RecentChip = styled.button`
   white-space: nowrap;
 `;
 
+const GuestNote = styled.span`
+  font-family: ${font.body};
+  font-size: 12px;
+  color: ${color.faint};
+  border: 1px solid ${color.line};
+  border-radius: ${radius.pill};
+  padding: 3px 10px;
+  white-space: nowrap;
+`;
+
 const SectionActions = styled.div`
   display: flex;
   align-items: center;
@@ -550,7 +560,7 @@ const DangerFilledButton = styled.button`
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, isGuest } = useAuth();
   // A snapshot, so the row does not churn while you are looking at it - but
   // re-taken whenever the session changes. Reading it once for the lifetime
   // of the component meant a sign-out followed by a different sign-in, with
@@ -751,7 +761,21 @@ export const HomePage: React.FC = () => {
       <TopBar>
         <Wordmark size={18} />
         <TopBarRight>
-          <SignedInAs>Signed in as {user.username}</SignedInAs>
+          <SignedInAs>
+            {isGuest ? `Guest · ${user.username}` : `Signed in as ${user.username}`}
+          </SignedInAs>
+          {/* Deliberately NOT a "keep this account" button. Signing up from
+              here creates a DIFFERENT account and silently abandons the
+              guest's rooms and messages, so a button offering to keep them
+              would be a promise nothing behind it can honour. Promoting a
+              guest row in place is the real fix; until it exists, saying
+              plainly that the session is temporary beats an action that
+              does the opposite of what it says. */}
+          {isGuest && (
+            <GuestNote title="Guest sessions are not kept - sign up to start one that is">
+              temporary session
+            </GuestNote>
+          )}
           <SecondarySmButton type="button" onClick={logout}>
             Sign out
           </SecondarySmButton>

@@ -3,6 +3,8 @@ import {
   Get,
   Post,
   Body,
+  HttpException,
+  HttpStatus,
   Query,
   Req,
   Res,
@@ -20,6 +22,8 @@ import {
   OAUTH_COOKIE_PATH,
 } from './google/google-oauth.service';
 import { readCookie } from './google/cookies';
+import { Interval } from '@nestjs/schedule';
+import { RateBucket, clientIp } from './rate-bucket';
 
 @Controller('auth')
 export class AuthController {
@@ -29,6 +33,21 @@ export class AuthController {
     private authService: AuthService,
     private google: GoogleOAuthService,
   ) {}
+
+  /** 10 guests per IP per hour, refilling steadily rather than all at once. */
+  private readonly guestBucket = new RateBucket(10, 10 / 3600);
+
+  /**
+   * Nothing swept the bucket map, so it retained a key per distinct caller
+   * forever - which turns a rate limiter into a slow memory leak that an
+   * attacker controls the size of. Hourly, off the request path, because
+   * scanning the map on every request to defend against growth would be
+   * paying the cost the growth was going to charge anyway.
+   */
+  @Interval(3_600_000)
+  sweepRateBuckets(): void {
+    this.guestBucket.sweep(Date.now());
+  }
 
   @Post('register')
   async register(
@@ -44,6 +63,27 @@ export class AuthController {
   @Post('login')
   async login(@Body() loginDto: { username: string; password: string }) {
     return await this.authService.login(loginDto.username, loginDto.password);
+  }
+
+  /**
+   * Sign in as a guest.
+   *
+   * Rate limited per IP, unlike register: register is at least a form
+   * someone has to fill in, while this is one unauthenticated request that
+   * creates a row, so an unbounded version is a way to fill the users table
+   * from a shell loop. The window is generous enough that a household behind
+   * one address can all join the same film.
+   */
+  @Post('guest')
+  async guest(@Req() req: Request) {
+    const ip = clientIp(req);
+    if (!this.guestBucket.take(ip, Date.now())) {
+      throw new HttpException(
+        'Too many guests from this connection - try again shortly',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    return await this.authService.createGuest();
   }
 
   /**

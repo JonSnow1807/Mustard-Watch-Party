@@ -18,6 +18,10 @@ export interface VimeoPlayerLike {
   getPlaybackRate(): Promise<number>;
   /** local audio; optional because older embeds predate it */
   setVolume?(volume: number): Promise<number>;
+  /** captions; optional for the same reason */
+  getTextTracks?(): Promise<{ language: string }[]>;
+  enableTextTrack?(language: string): Promise<unknown>;
+  disableTextTrack?(): Promise<unknown>;
 }
 
 interface TimePayload {
@@ -49,6 +53,7 @@ export class VimeoAdapter implements PlayerAdapter {
   private handlers: Array<[string, (data?: unknown) => void]> = [];
 
   constructor(private player: VimeoPlayerLike) {
+    this.loadCaptionLanguages();
     const on = (event: string, callback: (data?: unknown) => void) => {
       this.handlers.push([event, callback]);
       player.on(event, callback);
@@ -220,5 +225,46 @@ export class VimeoAdapter implements PlayerAdapter {
 
   setMuted(muted: boolean): void {
     void this.player.setVolume?.(muted ? 0 : 1);
+  }
+
+  /**
+   * Captions, local only.
+   *
+   * The track list is fetched once when the adapter is built and cached,
+   * because hasCaptions() is called during render and Vimeo's API is
+   * promise-based - a render cannot await.
+   */
+  private captionLanguages: string[] = [];
+
+  hasCaptions(): boolean {
+    return this.captionLanguages.length > 0;
+  }
+
+  setCaptionsEnabled(enabled: boolean): void {
+    if (!enabled) {
+      void this.player.disableTextTrack?.();
+      return;
+    }
+    const first = this.captionLanguages[0];
+    if (first) void this.player.enableTextTrack?.(first);
+  }
+
+  /**
+   * Fetched in the constructor, which is post-readiness: the mount only
+   * builds this adapter inside the player's ready callback. An earlier
+   * version left this as a public method for the mount to call and NOTHING
+   * CALLED IT, so hasCaptions() always answered no and the button never
+   * appeared on Vimeo at all.
+   */
+  private loadCaptionLanguages(): void {
+    void this.player
+      .getTextTracks?.()
+      .then((tracks) => {
+        this.captionLanguages = (tracks ?? []).map((t) => t.language);
+      })
+      .catch(() => {
+        // an embed that refuses the call simply has no captions to offer
+        this.captionLanguages = [];
+      });
   }
 }

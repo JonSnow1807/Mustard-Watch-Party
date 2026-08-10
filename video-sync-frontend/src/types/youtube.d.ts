@@ -18,6 +18,16 @@ declare global {
     unMute(): void;
     isMuted(): boolean;
     setVolume(volume: number): void;
+    /**
+     * Caption controls. NOT part of YouTube's documented IFrame API - they
+     * work in practice and have for years, but nothing promises they will,
+     * so every call site treats absence and failure as "no captions" rather
+     * than as an error. Optional for exactly that reason.
+     */
+    loadModule?(module: string): void;
+    unloadModule?(module: string): void;
+    setOption?(module: string, option: string, value: unknown): void;
+    getOption?(module: string, option: string): unknown;
     destroy(): void;
   }
 
