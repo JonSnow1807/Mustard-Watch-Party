@@ -181,6 +181,42 @@ const SideColumn = styled.div`
   }
 `;
 
+/**
+ * Below the breakpoint the two columns stack, which puts chat underneath the
+ * video - so following the conversation meant scrolling the film off screen.
+ * These tabs appear only there and show one panel at a time, keeping both
+ * the video and whichever panel you chose on the same screen.
+ */
+const PanelTabs = styled.div`
+  display: none;
+  gap: 8px;
+
+  @media (max-width: 1100px) {
+    display: flex;
+  }
+`;
+
+const PanelTab = styled.button<{ active: boolean }>`
+  ${chip.md}
+  ${chipInteractive}
+  flex: 1;
+  justify-content: center;
+  background: ${props => (props.active ? color.mustardFaint : color.bg2)};
+  color: ${props => (props.active ? color.mustard : color.dim)};
+  border-color: ${props => (props.active ? color.mustardDeep : color.lineBright)};
+`;
+
+/* On a wide screen both panels are always shown; narrow, only the chosen
+   one. `hideNarrow` rather than a JS breakpoint so there is no resize
+   listener and no flash of the wrong panel on first paint. */
+const PanelSlot = styled.div<{ hideNarrow: boolean }>`
+  min-width: 0;
+
+  @media (max-width: 1100px) {
+    display: ${props => (props.hideNarrow ? 'none' : 'block')};
+  }
+`;
+
 const ParticipantsPanel = styled.div`
   ${card}
   padding: 16px;
@@ -330,6 +366,10 @@ export const EnhancedRoomPage: React.FC = () => {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  // Which panel a narrow screen shows. Chat by default: the participant list
+  // is reference, the conversation is the reason people look away from the
+  // film at all.
+  const [narrowPanel, setNarrowPanel] = useState<'chat' | 'people'>('chat');
   const [copySuccess, setCopySuccess] = useState(false);
 
   // The roster as the socket handlers last saw it. Join/leave toasts have to
@@ -529,11 +569,36 @@ export const EnhancedRoomPage: React.FC = () => {
     }
   };
 
-  const handleShareRoom = () => {
-    if (room) {
-      const shareUrl = `${window.location.origin}/join-room/${room.code}`;
-      navigator.clipboard.writeText(shareUrl);
+  const handleShareRoom = async () => {
+    if (!room) return;
+    const shareUrl = `${window.location.origin}/join-room/${room.code}`;
+
+    // On a phone, copying to the clipboard is the long way round: the point
+    // of sharing is to get the link INTO a message, and the OS sheet does
+    // that in one step. Desktop browsers mostly have no share sheet, so the
+    // clipboard remains the fallback rather than the exception.
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: room.name,
+          text: `Watch ${room.name} with me`,
+          url: shareUrl,
+        });
+        return;
+      } catch (err) {
+        // AbortError is someone dismissing the sheet - not a failure, and
+        // falling through to "copied" would be a lie about what happened
+        if ((err as Error)?.name === 'AbortError') return;
+        // anything else: fall through to the clipboard
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
       toast.success('Share link copied');
+    } catch {
+      // a denied clipboard leaves nothing to show for the click
+      toast.error('Copy the link from the address bar');
     }
   };
 
@@ -629,6 +694,28 @@ export const EnhancedRoomPage: React.FC = () => {
         </MainColumn>
 
         <SideColumn>
+          <PanelTabs role="tablist" aria-label="Room panels">
+            <PanelTab
+              type="button"
+              role="tab"
+              aria-selected={narrowPanel === 'chat'}
+              active={narrowPanel === 'chat'}
+              onClick={() => setNarrowPanel('chat')}
+            >
+              Chat
+            </PanelTab>
+            <PanelTab
+              type="button"
+              role="tab"
+              aria-selected={narrowPanel === 'people'}
+              active={narrowPanel === 'people'}
+              onClick={() => setNarrowPanel('people')}
+            >
+              People ({participants.length})
+            </PanelTab>
+          </PanelTabs>
+
+          <PanelSlot hideNarrow={narrowPanel !== 'people'}>
           <ParticipantsPanel>
             <PanelHeader>
               <PanelLabel>Participants</PanelLabel>
@@ -660,8 +747,11 @@ export const EnhancedRoomPage: React.FC = () => {
                 </ParticipantRow>
               ))}
           </ParticipantsPanel>
+          </PanelSlot>
 
-          <ChatPanel roomCode={room.code} />
+          <PanelSlot hideNarrow={narrowPanel !== 'chat'}>
+            <ChatPanel roomCode={room.code} />
+          </PanelSlot>
         </SideColumn>
       </Grid>
 
