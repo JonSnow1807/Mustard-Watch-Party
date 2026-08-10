@@ -253,10 +253,30 @@ const HostChip = styled.span`
   flex-shrink: 0;
 `;
 
-// Page gutter only - RoomSettings owns its own max-width, centering and
-// top margin, so constraining it again here would double-inset the panel.
-const SettingsSlot = styled.div`
-  padding: 0 20px 20px;
+/**
+ * Settings is a modal, not a slot at the bottom of the document.
+ *
+ * It used to render after the video and voice sections, which on any normal
+ * window put it below the fold: pressing Settings appended a panel nobody
+ * could see, so the button read as broken. A dialog cannot be missed, and it
+ * is also the honest shape - changing the video for everyone in the room is a
+ * focused task, not something to do while scrolled past the player.
+ */
+const SettingsOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 6vh 20px 40px;
+  overflow-y: auto;
+`;
+
+const SettingsDialog = styled.div`
+  width: 100%;
+  max-width: 520px;
 `;
 
 const CenteredState = styled.div`
@@ -321,6 +341,23 @@ export const EnhancedRoomPage: React.FC = () => {
   useEffect(() => {
     participantsRef.current = participants;
   }, [participants]);
+
+  // Escape closes the settings dialog, and focus moves into it on open so a
+  // keyboard user is not left tabbing through the page behind the overlay.
+  const settingsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!showSettings) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowSettings(false);
+    };
+    window.addEventListener('keydown', onKey);
+    settingsRef.current
+      ?.querySelector<HTMLElement>(
+        'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
+      )
+      ?.focus();
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showSettings]);
 
   useEffect(() => {
     if (!roomCode) {
@@ -562,13 +599,25 @@ export const EnhancedRoomPage: React.FC = () => {
       </Grid>
 
       {showSettings && isHost && (
-        <SettingsSlot>
-          <RoomSettings
-            room={room}
-            onClose={() => setShowSettings(false)}
-            onUpdate={() => fetchRoomDetails()}
-          />
-        </SettingsSlot>
+        <SettingsOverlay
+          role="dialog"
+          aria-modal="true"
+          aria-label="Room settings"
+          // click-away closes, but only on the backdrop itself: without the
+          // target check, a click that starts inside the panel and drifts
+          // onto the overlay would discard whatever was being edited
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowSettings(false);
+          }}
+        >
+          <SettingsDialog ref={settingsRef}>
+            <RoomSettings
+              room={room}
+              onClose={() => setShowSettings(false)}
+              onUpdate={() => fetchRoomDetails()}
+            />
+          </SettingsDialog>
+        </SettingsOverlay>
       )}
     </Page>
   );

@@ -1,5 +1,13 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsNotEmpty,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { SkipIfAbsent } from './skip-if-absent.decorator';
 import { IsRoomVideoUrl } from './room-video-url.decorator';
 
@@ -30,4 +38,26 @@ export class UpdateRoomDto {
   @SkipIfAbsent()
   @IsRoomVideoUrl()
   videoUrl?: string;
+
+  // The settings form has offered these three since it was written, and the
+  // pipe's whitelist silently dropped every one of them: toggling "List
+  // publicly" or changing the participant cap did nothing and said it had
+  // worked. They are real columns with real behaviour behind them -
+  // allowGuestControl gates who may drive playback (timeline.service.ts) and
+  // maxUsers is enforced at join (sync.gateway.ts) - so they belong here.
+  @SkipIfAbsent()
+  @IsBoolean()
+  isPublic?: boolean;
+
+  @SkipIfAbsent()
+  @IsBoolean()
+  allowGuestControl?: boolean;
+
+  // Floor of 2: a one-person watch party is a contradiction, and a cap below
+  // the people already in the room would only strand the next reconnect.
+  @SkipIfAbsent()
+  @IsInt()
+  @Min(2)
+  @Max(500)
+  maxUsers?: number;
 }

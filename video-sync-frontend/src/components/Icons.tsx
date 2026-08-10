@@ -86,6 +86,20 @@ export const IconHeadphones = (p: P) =>
 export const IconHeadphonesOff = (p: P) =>
   base(p, <><path d="M4.5 14v-2c0-1.2.28-2.34.78-3.35" /><path d="M8.2 5.5A7.47 7.47 0 0 1 19.5 12v2" /><rect x="3.5" y="13.5" width="4" height="6.5" rx="1.6" /><rect x="16.5" y="13.5" width="4" height="6.5" rx="1.6" /><path d="M4 4l16 16" /></>);
 
+export const IconVolume = (p: P) =>
+  base(p, <><path d="M11 5.5 6.8 9H4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2.8L11 18.5a.6.6 0 0 0 1-.46V5.96a.6.6 0 0 0-1-.46z" /><path d="M15.4 9.2a4 4 0 0 1 0 5.6" /><path d="M18.2 6.6a8 8 0 0 1 0 10.8" /></>);
+
+/** Muted: the same speaker, struck through - one shape, two states. */
+export const IconVolumeOff = (p: P) =>
+  base(p, <><path d="M11 5.5 6.8 9H4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2.8L11 18.5a.6.6 0 0 0 1-.46V5.96a.6.6 0 0 0-1-.46z" /><path d="M16 10l4 4" /><path d="M20 10l-4 4" /></>);
+
+export const IconFullscreen = (p: P) =>
+  base(p, <><path d="M4 9V5.6A1.6 1.6 0 0 1 5.6 4H9" /><path d="M15 4h3.4A1.6 1.6 0 0 1 20 5.6V9" /><path d="M20 15v3.4a1.6 1.6 0 0 1-1.6 1.6H15" /><path d="M9 20H5.6A1.6 1.6 0 0 1 4 18.4V15" /></>);
+
+/** Arrows turned inward: the same corners, pointing the other way. */
+export const IconExitFullscreen = (p: P) =>
+  base(p, <><path d="M9 4v3.4A1.6 1.6 0 0 1 7.4 9H4" /><path d="M20 9h-3.4A1.6 1.6 0 0 1 15 7.4V4" /><path d="M15 20v-3.4a1.6 1.6 0 0 1 1.6-1.6H20" /><path d="M4 15h3.4A1.6 1.6 0 0 1 9 16.6V20" /></>);
+
 export const IconFilm = (p: P) =>
   base(p, <><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 9.5L20.5 9.5" /><path d="M7.5 5.2L9.8 9.4" /><path d="M12.4 5.2l2.3 4.2" /><path d="M17.3 5.2l2.3 4.2" /></>);
 

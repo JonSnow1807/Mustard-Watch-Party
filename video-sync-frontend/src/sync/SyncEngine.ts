@@ -28,6 +28,16 @@ export interface EngineAdapter extends PlayerAdapter {
   /** does this player honour fractional playback rates? (per video) */
   probeFractionalRate(): Promise<boolean>;
   dispose(): void;
+
+  /**
+   * Local audio. Optional on purpose, and deliberately NOT part of
+   * PlayerAdapter in shared/sync-core: volume is a property of the room you
+   * are physically sitting in, not of the shared timeline, so it must never
+   * travel over the wire or influence the drift controller. A player that
+   * cannot expose it simply omits these, and the UI hides the control.
+   */
+  setVolume?(fraction: number): void;
+  setMuted?(muted: boolean): void;
 }
 
 export interface EngineStatus {

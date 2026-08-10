@@ -25,17 +25,59 @@ import {
   font,
   radius,
 } from '../theme';
-import { IconCrown, IconPause, IconPlay, IconSync, IconUsers } from './Icons';
+import {
+  IconCrown,
+  IconExitFullscreen,
+  IconFullscreen,
+  IconPause,
+  IconPlay,
+  IconSync,
+  IconUsers,
+  IconVolume,
+  IconVolumeOff,
+} from './Icons';
 
-const PlayerContainer = styled.div`
+
+const VOLUME_KEY = 'mustard:volume';
+const MUTED_KEY = 'mustard:muted';
+
+/**
+ * Is this keystroke destined for a text field? Chat sits on the same page as
+ * the player, so every global shortcut has to yield to it.
+ */
+const isTypingTarget = (target: EventTarget | null): boolean => {
+  const el = target as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  const tag = el.tagName.toLowerCase();
+  return (
+    tag === 'input' ||
+    tag === 'textarea' ||
+    tag === 'select' ||
+    el.isContentEditable === true
+  );
+};
+
+const PlayerContainer = styled.div<{ fullscreen?: boolean }>`
   ${card}
   width: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+
+  /* In fullscreen the shell IS the screen: square off the card, drop the
+     border, and let the stage take everything the controls do not. */
+  ${(props) =>
+    props.fullscreen
+      ? `
+    height: 100vh;
+    border-radius: 0;
+    border: none;
+    background: #000;
+  `
+      : ''}
 `;
 
-const VideoWrapper = styled.div`
+const VideoWrapper = styled.div<{ fullscreen?: boolean }>`
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -47,6 +89,17 @@ const VideoWrapper = styled.div`
   margin: 0 auto;
   background: #000;
   overflow: hidden;
+
+  /* the 16:9 cap is there to keep Play above the fold on a laptop; in
+     fullscreen there is no fold, and the cap would letterbox twice */
+  ${(props) =>
+    props.fullscreen
+      ? `
+    aspect-ratio: auto;
+    flex: 1;
+    max-height: none;
+  `
+      : ''}
 `;
 
 const GestureChip = styled.button`
@@ -229,6 +282,50 @@ const SyncToggle = styled.button<{ active?: boolean }>`
   border-color: ${props => (props.active ? color.mustardDeep : color.lineBright)};
 `;
 
+
+/** Icon-only control: square, quiet, same focus ring as everything else. */
+const IconControl = styled.button`
+  ${chip.sm}
+  ${chipInteractive}
+  background: ${color.bg2};
+  color: ${color.dim};
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  &:hover {
+    color: ${color.text};
+  }
+`;
+
+/* The slider only appears on hover/focus-within so the bar stays quiet, but
+   it never collapses on touch, where there is no hover to reveal it. */
+const VolumeGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+`;
+
+const VolumeSlider = styled.input`
+  width: 84px;
+  accent-color: ${color.mustard};
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: ${focusRing};
+  }
+
+  @media (max-width: 880px) {
+    display: none;
+  }
+`;
+
 interface VideoPlayerProps {
   videoUrl: string;
   roomCode: string;
@@ -337,14 +434,90 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [socket, roomCode]);
 
-  // HUD toggle on backtick
+  // ---- local audio: never synced, never sent (see EngineAdapter) ----
+  // Persisted so the level survives a reload mid-film; a room you had muted
+  // must not come back at full volume with people asleep next door.
+  const [volume, setVolumeState] = useState(() => {
+    const stored = Number(localStorage.getItem(VOLUME_KEY));
+    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 1;
+  });
+  const [muted, setMutedState] = useState(
+    () => localStorage.getItem(MUTED_KEY) === '1',
+  );
+
+  // Re-applied whenever the adapter changes: a source switch builds a new
+  // player at its own default, which would otherwise blast an unmuted 100%.
+  useEffect(() => {
+    const adapter = adapterRef.current;
+    if (!adapter) return;
+    adapter.setVolume?.(muted ? 0 : volume);
+    adapter.setMuted?.(muted);
+    localStorage.setItem(VOLUME_KEY, String(volume));
+    localStorage.setItem(MUTED_KEY, muted ? '1' : '0');
+  }, [volume, muted, isReady]);
+
+  const toggleMuted = useCallback(() => setMutedState((m) => !m), []);
+
+  // ---- fullscreen ----
+  // The whole shell goes fullscreen, not the video element: the controls,
+  // sync readout and chat toggle have to remain reachable, and on the
+  // YouTube path the element is a cross-origin iframe we cannot decorate.
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement !== null);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = shellRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    } else {
+      // Safari <16.4 and any embedded webview can refuse; a rejected promise
+      // here is a browser saying no, not a bug to surface.
+      void el.requestFullscreen?.().catch(() => undefined);
+    }
+  }, []);
+
+  // ---- keyboard ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === '`') setShowHud((v) => !v);
+      if (e.key === '`') {
+        setShowHud((v) => !v);
+        return;
+      }
+      // Never steal a key from someone typing - chat lives on this page, and
+      // a space that pauses the film mid-sentence is worse than no shortcut.
+      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      switch (e.key) {
+        case ' ':
+        case 'k':
+          // space scrolls the page by default, which is what it did before
+          e.preventDefault();
+          handlePlayPause();
+          break;
+        case 'f':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        case 'm':
+          e.preventDefault();
+          toggleMuted();
+          break;
+        default:
+          break;
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+    // handlePlayPause closes over live status/canControl, so it must be a dep
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toggleFullscreen, toggleMuted, status.roomPlaying, canControl, isReady]);
 
   // Mount callbacks: stable so mounts don't remount on shell re-renders
   const handleAdapter = useCallback((adapter: EngineAdapter | null) => {
@@ -521,8 +694,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   return (
-    <PlayerContainer>
-      <VideoWrapper>
+    <PlayerContainer ref={shellRef} fullscreen={isFullscreen}>
+      <VideoWrapper fullscreen={isFullscreen}>
         {mount ?? overlay}
         {mount && status.needsGesture && (
           <GestureChip onClick={() => engineRef.current?.resumeFromGesture()}>
@@ -570,6 +743,50 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
             <TimeDisplay>
               {formatTime(shownTime)} / {formatTime(status.durationS)}
             </TimeDisplay>
+
+            <VolumeGroup>
+              <IconControl
+                type="button"
+                onClick={toggleMuted}
+                aria-label={muted ? 'Unmute' : 'Mute'}
+                aria-pressed={muted}
+                title={muted ? 'Unmute (m)' : 'Mute (m)'}
+              >
+                {muted || volume === 0 ? (
+                  <IconVolumeOff size={15} />
+                ) : (
+                  <IconVolume size={15} />
+                )}
+              </IconControl>
+              <VolumeSlider
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={muted ? 0 : volume}
+                aria-label="Volume"
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setVolumeState(next);
+                  // dragging off zero is an unmute; nobody drags a slider up
+                  // and means "still silent"
+                  if (next > 0 && muted) setMutedState(false);
+                }}
+              />
+            </VolumeGroup>
+
+            <IconControl
+              type="button"
+              onClick={toggleFullscreen}
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              title={isFullscreen ? 'Exit fullscreen (f)' : 'Fullscreen (f)'}
+            >
+              {isFullscreen ? (
+                <IconExitFullscreen size={15} />
+              ) : (
+                <IconFullscreen size={15} />
+              )}
+            </IconControl>
           </ControlRow>
 
           <StatusRow>
