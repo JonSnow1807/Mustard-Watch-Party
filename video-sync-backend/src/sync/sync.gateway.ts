@@ -28,6 +28,7 @@ import {
 import { MetricsService } from '../metrics/metrics.service';
 import { TimelineService } from './timeline.service';
 import { ActorRoomStateStore } from './actor-room-state.store';
+import { VoiceRosterService } from './voice-roster.service';
 import {
   ROOM_STATE_STORE,
   RoomStateStore,
@@ -107,6 +108,7 @@ export class SyncGateway
     private clock: ClockDomainService,
     private metrics: MetricsService,
     @Inject(ROOM_STATE_STORE) private store: RoomStateStore,
+    private voiceRoster: VoiceRosterService,
   ) {
     if (this.store instanceof ActorRoomStateStore) {
       // actor plane: intents forwarded by non-owners execute HERE, on the
@@ -325,6 +327,15 @@ export class SyncGateway
 
       // Send chat history to the joining user
       await this.handleGetMessageHistory(client, { roomCode: data.roomCode });
+
+      // ...and who is already on the voice call. The roster is otherwise
+      // only broadcast on a join or leave, so anyone who opened the room
+      // after the last transition saw an empty call and no way to know
+      // otherwise - which is the exact question the panel answers.
+      client.emit('voice-roster', {
+        roomCode: data.roomCode,
+        users: this.voiceRoster.list(data.roomCode),
+      });
     } catch (error) {
       this.logger.error({ err: String(error) }, 'join failed');
       client.emit('error', { message: 'Failed to join room' });

@@ -372,14 +372,24 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
 
   useEffect(() => {
     if (!socket) return;
-    const onRoster = (p: { users?: { userId: string; username: string }[] }) => {
+    const onRoster = (p: {
+      roomCode?: string;
+      users?: { userId: string; username: string }[];
+    }) => {
+      // a roster for a room you have left says nothing about this one
+      if (p?.roomCode && p.roomCode !== roomCode) return;
       setOnCall(p?.users ?? []);
     };
     socket.on('voice-roster', onRoster);
     return () => {
       socket.off('voice-roster', onRoster);
     };
-  }, [socket]);
+  }, [socket, roomCode]);
+
+  // whatever was true of the last room's call is not true of this one
+  useEffect(() => {
+    setOnCall([]);
+  }, [roomCode]);
 
   const handleJoinVoice = async () => {
     try {
@@ -516,8 +526,11 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
       <Header>
         <HeaderLeft>
           <Title>Voice</Title>
+          {/* voiceUsers is everyone ELSE - the server excludes the joining
+              client and this component renders its own card separately, so
+              the chip was always one short */}
           {isInVoice ? (
-            <CountChip>{voiceUsers.length} in voice</CountChip>
+            <CountChip>{voiceUsers.length + 1} in voice</CountChip>
           ) : (
             onCall.length > 0 && <CountChip>{onCall.length} on the call</CountChip>
           )}

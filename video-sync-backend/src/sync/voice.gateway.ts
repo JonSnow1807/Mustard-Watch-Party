@@ -12,6 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
 import { SyncGateway } from './sync.gateway';
+import { VoiceRosterService } from './voice-roster.service';
 
 interface VoiceUser {
   userId: string;
@@ -74,6 +75,7 @@ export class VoiceGateway
   constructor(
     private jwt: JwtService,
     private sync: SyncGateway,
+    private roster: VoiceRosterService,
   ) {}
 
   afterInit(server: Server): void {
@@ -146,6 +148,10 @@ export class VoiceGateway
         this.roomVoiceUsers.set(data.roomCode, new Set());
       }
       this.roomVoiceUsers.get(data.roomCode)!.add(client.id);
+      this.roster.join(data.roomCode, client.id, {
+        userId: voiceUser.userId,
+        username: voiceUser.username,
+      });
 
       // Join voice room
       await client.join(`voice-${data.roomCode}`);
@@ -195,6 +201,7 @@ export class VoiceGateway
 
       // Remove from maps
       this.voiceUsers.delete(client.id);
+      this.roster.leave(client.id);
 
       const roomUsers = this.roomVoiceUsers.get(room);
       if (roomUsers) {

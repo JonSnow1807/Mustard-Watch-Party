@@ -61,6 +61,11 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       reconnectionDelayMax: 10000,
     });
 
+    // A fresh socket starts with a clean slate: the previous session's
+    // teardown fires 'disconnect', which would otherwise leave this true
+    // and make the NEXT session's first connection read as a reconnect.
+    setReconnecting(false);
+
     // The first connect is not news - it is the page loading, and it used to
     // fire a success toast on top of "Joined the room" every single time.
     // A RE-connect is news: it says the gap you just noticed is over.
@@ -96,7 +101,10 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     setSocket(socketInstance);
 
     return () => {
+      // stop the teardown's own disconnect from being mistaken for a drop
+      hasConnected = false;
       socketInstance.disconnect();
+      setReconnecting(false);
     };
   }, [token]);
 

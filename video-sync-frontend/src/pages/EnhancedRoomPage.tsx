@@ -575,7 +575,11 @@ export const EnhancedRoomPage: React.FC = () => {
   // until they happened to click something and got "couldn't load the room".
   useEffect(() => {
     if (!socket) return;
-    const onClosed = () => {
+    const onClosed = (p?: { roomCode?: string }) => {
+      // The socket is not guaranteed to have left a previous room, so an
+      // event can arrive for one you are no longer in. Acting on it would
+      // eject you from the room you ARE in and forget the wrong one.
+      if (p?.roomCode && p.roomCode !== roomCode) return;
       // and stop offering it under "Jump back in", where it would now 404
       if (roomCode) forgetRoom(roomCode);
       toast('The host ended this room', { icon: '👋' });
