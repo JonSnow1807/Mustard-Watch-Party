@@ -1,6 +1,7 @@
 // src/sync/sync.module.ts
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { VoiceRosterService } from './voice-roster.service';
 import { SyncGateway } from './sync.gateway';
 import { VoiceGateway } from './voice.gateway';
 import { SyncService } from './sync.service';
@@ -27,6 +28,7 @@ function storeClass() {
   imports: [AuthModule],
   providers: [
     SyncGateway,
+    VoiceRosterService,
     VoiceGateway,
     SyncService,
     TimelineService,
@@ -34,6 +36,6 @@ function storeClass() {
     // in-memory otherwise (single instance, CI protocol-only mode)
     { provide: ROOM_STATE_STORE, useClass: storeClass() },
   ],
-  exports: [SyncService],
+  exports: [SyncService, SyncGateway],
 })
 export class SyncModule {}

@@ -234,6 +234,13 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
   const [voiceUsers, setVoiceUsers] = useState<VoiceUser[]>([]);
+  // Who is on the call, whether or not YOU are. The server used to send the
+  // roster only to the person joining, so deciding whether to join meant
+  // joining to find out - and walking into an empty call, or interrupting
+  // three people, with no way to tell which.
+  const [onCall, setOnCall] = useState<{ userId: string; username: string }[]>(
+    [],
+  );
   const [speakingUsers, setSpeakingUsers] = useState<Set<string>>(new Set());
 
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -244,10 +251,20 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
   useEffect(() => {
     if (!socket || !user) return;
 
-    // Create connection to voice namespace
-    const io = (socket as any).io;
-    if (io) {
-      voiceSocketRef.current = io.connect('/voice');
+    // Create connection to the voice namespace.
+    //
+    // manager.socket(nsp), NOT manager.connect(nsp): on socket.io-client v4
+    // `connect` is an alias of `open(callback)` - it opens the underlying
+    // transport and treats its argument as a completion callback, so
+    // `connect('/voice')` never produced a namespace socket at all. What
+    // landed in this ref was the Manager, whose `emit` is a local event
+    // emitter that sends nothing to the server.
+    const manager = (socket as any).io;
+    if (manager) {
+      voiceSocketRef.current = manager.socket('/voice', {
+        // the voice gateway runs the same handshake auth as the main one
+        auth: { token: (socket as any).auth?.token },
+      });
 
       const voiceSocket = voiceSocketRef.current;
 
@@ -352,6 +369,27 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
 
     peersRef.current.set(targetSocketId, peer);
   };
+
+  useEffect(() => {
+    if (!socket) return;
+    const onRoster = (p: {
+      roomCode?: string;
+      users?: { userId: string; username: string }[];
+    }) => {
+      // a roster for a room you have left says nothing about this one
+      if (p?.roomCode && p.roomCode !== roomCode) return;
+      setOnCall(p?.users ?? []);
+    };
+    socket.on('voice-roster', onRoster);
+    return () => {
+      socket.off('voice-roster', onRoster);
+    };
+  }, [socket, roomCode]);
+
+  // whatever was true of the last room's call is not true of this one
+  useEffect(() => {
+    setOnCall([]);
+  }, [roomCode]);
 
   const handleJoinVoice = async () => {
     try {
@@ -488,7 +526,14 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
       <Header>
         <HeaderLeft>
           <Title>Voice</Title>
-          {isInVoice && <CountChip>{voiceUsers.length} in voice</CountChip>}
+          {/* voiceUsers is everyone ELSE - the server excludes the joining
+              client and this component renders its own card separately, so
+              the chip was always one short */}
+          {isInVoice ? (
+            <CountChip>{voiceUsers.length + 1} in voice</CountChip>
+          ) : (
+            onCall.length > 0 && <CountChip>{onCall.length} on the call</CountChip>
+          )}
         </HeaderLeft>
 
         <ControlButtons>
@@ -601,7 +646,14 @@ export const EnhancedVoiceChat: React.FC<EnhancedVoiceChatProps> = ({ roomCode }
         </>
       ) : (
         <EmptyState>
-          <p>Join and talk while you watch.</p>
+          {onCall.length > 0 ? (
+            <p>
+              {onCall.map((u) => u.username).join(', ')}{' '}
+              {onCall.length === 1 ? 'is' : 'are'} on the call.
+            </p>
+          ) : (
+            <p>Join and talk while you watch.</p>
+          )}
         </EmptyState>
       )}
     </VoiceContainer>

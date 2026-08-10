@@ -119,6 +119,18 @@ export interface RoomController {
   reason: 'creator' | 'succession' | 'reclaim';
 }
 
+/**
+ * S→room when the host ends the room.
+ *
+ * Deleting a room used to be silent to everyone in it: the row went, the
+ * link stopped working, and the people watching sat in a room that no longer
+ * existed until they happened to act. This is the goodbye.
+ */
+export interface RoomClosed {
+  v: 1;
+  roomCode: string;
+}
+
 /** C→S batched telemetry (off unless debug/harness enables it). */
 export interface SyncReport {
   v: 1;
@@ -148,4 +160,6 @@ export const SYNC_EVENTS = {
   report: 'sync:report',
   /** S→room RoomController */
   controller: 'room:controller',
+  /** S→room RoomClosed */
+  closed: 'room:closed',
 } as const;

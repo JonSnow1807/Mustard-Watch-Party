@@ -7,7 +7,7 @@ import { EnhancedVideoPlayer } from './EnhancedVideoPlayer';
 // mocked engine's status stream instead.
 let mockSocket: unknown = null;
 jest.mock('../contexts/SocketContext', () => ({
-  useSocket: () => ({ socket: mockSocket, connected: false }),
+  useSocket: () => ({ socket: mockSocket, connected: false, reconnecting: false }),
 }));
 
 // captures the shell's onStatus listener so tests can push engine status
@@ -187,5 +187,73 @@ describe('the stored volume', () => {
     expect(resolve('0.4')).toBe(0.4);
     expect(resolve('nonsense')).toBe(1);
     expect(resolve('7')).toBe(1);
+  });
+});
+
+describe('P3 succession reaches the person who was promoted', () => {
+  const controllerHandlers: Record<string, (p: unknown) => void> = {};
+
+  const socketCapturing = () => ({
+    on: (event: string, cb: (p: unknown) => void) => {
+      controllerHandlers[event] = cb;
+    },
+    off: jest.fn(),
+    emit: jest.fn(),
+    connected: true,
+  });
+
+  it('a promoted guest stops being refused by their own client', () => {
+    // The server already promotes the longest-connected participant when the
+    // host leaves and WOULD accept their commands - but this client computed
+    // control locally as isHost || allowGuestControl, so it blocked the click
+    // before it was ever sent. Succession was dead at the last inch.
+    for (const k of Object.keys(controllerHandlers)) delete controllerHandlers[k];
+    mockSocket = socketCapturing();
+
+    render(
+      <EnhancedVideoPlayer
+        videoUrl="https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+        roomCode="ABC123"
+        isHost={false}
+        allowGuestControl={false}
+        userId="guest-1"
+      />,
+    );
+
+    // before promotion this client is a passenger
+    expect(screen.getByText('Host only')).toBeInTheDocument();
+
+    act(() => {
+      controllerHandlers['room:controller']?.({
+        controllerId: 'guest-1',
+        reason: 'succession',
+      });
+    });
+
+    expect(screen.getByText('You have the remote')).toBeInTheDocument();
+  });
+
+  it('someone else being promoted does not hand this client the remote', () => {
+    for (const k of Object.keys(controllerHandlers)) delete controllerHandlers[k];
+    mockSocket = socketCapturing();
+
+    render(
+      <EnhancedVideoPlayer
+        videoUrl="https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+        roomCode="ABC123"
+        isHost={false}
+        allowGuestControl={false}
+        userId="guest-1"
+      />,
+    );
+
+    act(() => {
+      controllerHandlers['room:controller']?.({
+        controllerId: 'someone-else',
+        reason: 'succession',
+      });
+    });
+
+    expect(screen.getByText('Host only')).toBeInTheDocument();
   });
 });

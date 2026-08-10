@@ -16,6 +16,7 @@ import { DatabaseService } from '../database/database.service';
 import {
   ClockPing,
   ClockPong,
+  RoomClosed,
   SYNC_EVENTS,
   SyncControl,
 } from '../shared/sync-protocol';
@@ -27,6 +28,7 @@ import {
 import { MetricsService } from '../metrics/metrics.service';
 import { TimelineService } from './timeline.service';
 import { ActorRoomStateStore } from './actor-room-state.store';
+import { VoiceRosterService } from './voice-roster.service';
 import {
   ROOM_STATE_STORE,
   RoomStateStore,
@@ -63,6 +65,37 @@ export class SyncGateway
   @WebSocketServer()
   server: Server;
 
+  /**
+   * Tell everyone still sitting in a room that it is over.
+   *
+   * Called from the REST delete path, not from a socket handler: ending a
+   * room is a REST action by the host, and until now it was silent to
+   * everyone else - the row went, the link died, and the people watching
+   * stayed in a room that no longer existed until they happened to act.
+   *
+   * With the Redis adapter this reaches participants on every instance, not
+   * just the one that served the DELETE.
+   */
+  /**
+   * Who is on the voice call, told to the whole ROOM.
+   *
+   * This has to come from here, not from VoiceGateway: voice lives on the
+   * '/voice' namespace and its `server.to(roomCode)` addresses a room in
+   * THAT namespace, which the people merely watching have never joined.
+   * They are all in the main namespace's room, which is this server.
+   */
+  announceVoiceRoster(
+    roomCode: string,
+    users: { userId: string; username: string }[],
+  ): void {
+    this.server?.to(roomCode).emit('voice-roster', { roomCode, users });
+  }
+
+  announceRoomClosed(roomCode: string): void {
+    const payload: RoomClosed = { v: 1, roomCode };
+    this.server?.to(roomCode).emit(SYNC_EVENTS.closed, payload);
+  }
+
   private readonly logger = new Logger(SyncGateway.name);
   private userRooms: Map<string, string> = new Map();
   private roomHosts: Map<string, string> = new Map(); // Track room hosts
@@ -75,6 +108,7 @@ export class SyncGateway
     private clock: ClockDomainService,
     private metrics: MetricsService,
     @Inject(ROOM_STATE_STORE) private store: RoomStateStore,
+    private voiceRoster: VoiceRosterService,
   ) {
     if (this.store instanceof ActorRoomStateStore) {
       // actor plane: intents forwarded by non-owners execute HERE, on the
@@ -293,6 +327,15 @@ export class SyncGateway
 
       // Send chat history to the joining user
       await this.handleGetMessageHistory(client, { roomCode: data.roomCode });
+
+      // ...and who is already on the voice call. The roster is otherwise
+      // only broadcast on a join or leave, so anyone who opened the room
+      // after the last transition saw an empty call and no way to know
+      // otherwise - which is the exact question the panel answers.
+      client.emit('voice-roster', {
+        roomCode: data.roomCode,
+        users: this.voiceRoster.list(data.roomCode),
+      });
     } catch (error) {
       this.logger.error({ err: String(error) }, 'join failed');
       client.emit('error', { message: 'Failed to join room' });

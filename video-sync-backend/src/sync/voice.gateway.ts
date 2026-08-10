@@ -11,6 +11,8 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
+import { SyncGateway } from './sync.gateway';
+import { VoiceRosterService } from './voice-roster.service';
 
 interface VoiceUser {
   userId: string;
@@ -48,7 +50,33 @@ export class VoiceGateway
   private voiceUsers: Map<string, VoiceUser> = new Map();
   private roomVoiceUsers: Map<string, Set<string>> = new Map();
 
-  constructor(private jwt: JwtService) {}
+  /**
+   * Broadcast who is on the call to the WHOLE room, not just the call.
+   *
+   * The roster used to go only to the person joining ('voice-users-list' on
+   * their own socket), so anyone deciding whether to join could not see
+   * whether they would be walking into an empty call or interrupting three
+   * people. This goes to the room channel, which everyone watching is
+   * already in.
+   */
+  private broadcastVoiceRoster(roomCode: string): void {
+    const ids = Array.from(this.roomVoiceUsers.get(roomCode) ?? []);
+    const users = ids
+      .map((id) => this.voiceUsers.get(id))
+      .filter((u): u is NonNullable<typeof u> => Boolean(u))
+      .map((u) => ({ userId: u.userId, username: u.username }));
+    // Handed to the main-namespace gateway deliberately: broadcasting from
+    // here would address a room inside '/voice' that only people already on
+    // the call have joined - i.e. exactly the people who did not need
+    // telling. My first attempt did that and reached nobody.
+    this.sync.announceVoiceRoster(roomCode, users);
+  }
+
+  constructor(
+    private jwt: JwtService,
+    private sync: SyncGateway,
+    private roster: VoiceRosterService,
+  ) {}
 
   afterInit(server: Server): void {
     server.use(wsAuthMiddleware(this.jwt));
@@ -120,6 +148,10 @@ export class VoiceGateway
         this.roomVoiceUsers.set(data.roomCode, new Set());
       }
       this.roomVoiceUsers.get(data.roomCode)!.add(client.id);
+      this.roster.join(data.roomCode, client.id, {
+        userId: voiceUser.userId,
+        username: voiceUser.username,
+      });
 
       // Join voice room
       await client.join(`voice-${data.roomCode}`);
@@ -144,6 +176,8 @@ export class VoiceGateway
       });
 
       // Notify others that a new user joined
+      this.broadcastVoiceRoster(data.roomCode);
+
       client.to(`voice-${data.roomCode}`).emit('voice-user-joined', {
         userId: this.identity(client).userId,
         username: this.identity(client).username,
@@ -167,6 +201,7 @@ export class VoiceGateway
 
       // Remove from maps
       this.voiceUsers.delete(client.id);
+      this.roster.leave(client.id);
 
       const roomUsers = this.roomVoiceUsers.get(room);
       if (roomUsers) {
@@ -180,6 +215,8 @@ export class VoiceGateway
       await client.leave(`voice-${room}`);
 
       // Notify others
+      this.broadcastVoiceRoster(room);
+
       client.to(`voice-${room}`).emit('voice-user-left', {
         userId: this.identity(client).userId,
         socketId: client.id,

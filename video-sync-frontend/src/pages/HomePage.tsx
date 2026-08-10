@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import styled from '@emotion/styled';
 import { apiService } from '../services/api';
+import { listRecentRooms, type RecentRoom } from '../services/recent-rooms';
 import { toast } from 'react-hot-toast';
 import {
   color,
@@ -216,6 +217,22 @@ const EmptyActions = styled.div`
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
+`;
+
+const RecentRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 28px;
+`;
+
+const RecentChip = styled.button`
+  ${chip.md}
+  ${chipInteractive}
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `;
 
 const SectionActions = styled.div`
@@ -534,6 +551,16 @@ const DangerFilledButton = styled.button`
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  // A snapshot, so the row does not churn while you are looking at it - but
+  // re-taken whenever the session changes. Reading it once for the lifetime
+  // of the component meant a sign-out followed by a different sign-in, with
+  // no reload in between, showed the previous person's room names.
+  const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([]);
+  const userId = user?.id;
+  useEffect(() => {
+    setRecentRooms(userId ? listRecentRooms() : []);
+  }, [userId]);
+
   const [publicFilter, setPublicFilter] = useState('all');
   const [deleteModal, setDeleteModal] = useState<{ show: boolean; room: any | null }>({ show: false, room: null });
   const cancelDeleteRef = useRef<HTMLButtonElement>(null);
@@ -732,6 +759,24 @@ export const HomePage: React.FC = () => {
       </TopBar>
 
       <Content>
+        {recentRooms.length > 0 && (
+          <>
+            <SectionLabel as="h2">Jump back in</SectionLabel>
+            <RecentRow>
+              {recentRooms.map((r) => (
+                <RecentChip
+                  key={r.code}
+                  type="button"
+                  title={`Rejoin ${r.name}`}
+                  onClick={() => navigate(`/room/${r.code}`)}
+                >
+                  {r.name}
+                </RecentChip>
+              ))}
+            </RecentRow>
+          </>
+        )}
+
         {/* Your Rooms Section */}
         <Section>
           <SectionHead>

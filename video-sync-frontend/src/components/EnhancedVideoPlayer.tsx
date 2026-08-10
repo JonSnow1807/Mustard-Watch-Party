@@ -32,6 +32,8 @@ import {
   IconFullscreen,
   IconPause,
   IconPlay,
+  IconSkipBack,
+  IconSkipForward,
   IconSync,
   IconUsers,
   IconVolume,
@@ -364,6 +366,8 @@ interface VideoPlayerProps {
   roomCode: string;
   isHost?: boolean;
   allowGuestControl?: boolean;
+  /** who this client is, so it can recognise being promoted (P3 succession) */
+  userId?: string;
 }
 
 const EMPTY_STATUS: EngineStatus = {
@@ -387,6 +391,17 @@ const EMPTY_STATUS: EngineStatus = {
 const SEEK_STEP_S = 5;
 
 /**
+ * Skip step for the buttons and J/L.
+ *
+ * Buttons rather than a double-tap gesture on the stage: on the YouTube and
+ * Vimeo paths the stage is a cross-origin iframe that swallows touch events,
+ * so a gesture would work for a direct file and silently do nothing for the
+ * two sources most rooms actually use. A control that works everywhere beats
+ * a gesture that works sometimes.
+ */
+const SKIP_STEP_S = 10;
+
+/**
  * The player SHELL: engine lifecycle, controls, HUD, failure card. Which
  * player actually renders is decided by classifyMediaSource - the same
  * classification the backend validates against, so a URL the API admitted
@@ -398,9 +413,10 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   videoUrl,
   roomCode,
   isHost = false,
-  allowGuestControl = false
+  allowGuestControl = false,
+  userId,
 }) => {
-  const { socket, connected } = useSocket();
+  const { socket, connected, reconnecting } = useSocket();
   const [isReady, setIsReady] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   // Bumped by Retry: it rides in the mount's key, so a retry tears the dead
@@ -415,7 +431,19 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const engineRef = useRef<SyncEngine | null>(null);
   const adapterRef = useRef<EngineAdapter | null>(null);
-  const canControl = isHost || allowGuestControl;
+  // The server promotes the longest-connected participant when the host
+  // leaves (P3 succession, timeline.service.ts) and broadcasts it. It would
+  // ALSO accept the promoted person's commands - but this client used to
+  // compute control purely locally, so their own UI blocked the click before
+  // it was ever sent, and succession was dead at the last inch.
+  const [controllerId, setControllerId] = useState<string | null>(null);
+  useEffect(() => {
+    // belt and braces with the roomCode check above: whatever the server
+    // said about the last room says nothing about this one
+    setControllerId(null);
+  }, [roomCode]);
+  const canControl =
+    isHost || allowGuestControl || (userId != null && controllerId === userId);
 
   // Which video the room is showing: the TIMELINE is the authority once one
   // exists - set-video switches every participant through sync:timeline -
@@ -461,15 +489,43 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     };
     socket.on(SYNC_EVENTS.controlRejected, onRejected);
 
+    // P3 succession: the host left and the server handed the remote to
+    // someone. Everyone tracks it, because everyone's UI says who is
+    // driving; the person promoted also stops being refused by their own
+    // client, which is what made the feature invisible before.
+    const onController = (c: {
+      controllerId: string;
+      reason: string;
+      roomCode?: string;
+    }) => {
+      // A controller event names its room. Without checking it, a promotion
+      // in one room would still be believed after switching to another -
+      // this component is not remounted when the room code changes.
+      if (c.roomCode && c.roomCode !== roomCode) return;
+      setControllerId(c.controllerId);
+      if (c.controllerId !== userId) return;
+      // The contract allows reason 'creator' too, which is simply "you are
+      // the host" - telling that person the host left would be nonsense.
+      if (c.reason === 'succession') {
+        toast.success('The host left - you have the remote now', {
+          duration: 4000,
+        });
+      } else if (c.reason === 'reclaim') {
+        toast.success('You have the remote back', { duration: 4000 });
+      }
+    };
+    socket.on(SYNC_EVENTS.controller, onController);
+
     return () => {
       socket.off(SYNC_EVENTS.controlRejected, onRejected);
+      socket.off(SYNC_EVENTS.controller, onController);
       unsubscribe();
       engine.dispose();
       engineRef.current = null;
       // adapterRef is owned by the active mount - clearing it here orphaned
       // a live adapter (and its poll timer) on every reconnect
     };
-  }, [socket, roomCode]);
+  }, [socket, roomCode, userId]);
 
   // ---- local audio: never synced, never sent (see EngineAdapter) ----
   // Persisted so the level survives a reload mid-film; a room you had muted
@@ -538,6 +594,14 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
           // space scrolls the page by default, which is what it did before
           e.preventDefault();
           handlePlayPause();
+          break;
+        case 'j':
+          e.preventDefault();
+          seekBy(-SKIP_STEP_S);
+          break;
+        case 'l':
+          e.preventDefault();
+          seekBy(SKIP_STEP_S);
           break;
         case 'f':
           e.preventDefault();
@@ -708,6 +772,25 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
    * leaves through the same seek intent the click path uses - the local
    * player is never touched here, the broadcast moves everyone.
    */
+  /**
+   * Seek by a relative amount, through the same intent path as everything
+   * else - nobody's player is touched locally; everyone converges from the
+   * broadcast.
+   */
+  const seekBy = (deltaS: number) => {
+    if (!canControl) {
+      toast.error('Only the host can seek the video', { duration: 2000 });
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine || !status.durationS) return;
+    const target = Math.max(
+      0,
+      Math.min(status.durationS, shownTime + deltaS),
+    );
+    engine.sendIntent('seek', target);
+  };
+
   const handleProgressKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     let target: number;
     switch (e.key) {
@@ -754,6 +837,16 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       {mount && (
         <Controls>
           <ControlRow>
+            <IconControl
+              type="button"
+              onClick={() => seekBy(-SKIP_STEP_S)}
+              disabled={!isReady}
+              aria-label={`Back ${SKIP_STEP_S} seconds`}
+              title={`Back ${SKIP_STEP_S}s (J)`}
+            >
+              <IconSkipBack size={15} />
+            </IconControl>
+
             <PlayButton
               data-testid="play-button"
               onClick={handlePlayPause}
@@ -763,6 +856,16 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
               {status.roomPlaying ? <IconPause size={16} /> : <IconPlay size={16} />}
               {status.roomPlaying ? 'Pause' : 'Play'}
             </PlayButton>
+
+            <IconControl
+              type="button"
+              onClick={() => seekBy(SKIP_STEP_S)}
+              disabled={!isReady}
+              aria-label={`Forward ${SKIP_STEP_S} seconds`}
+              title={`Forward ${SKIP_STEP_S}s (L)`}
+            >
+              <IconSkipForward size={15} />
+            </IconControl>
 
             <ProgressContainer>
               {/* a slider in fact, not just in looks: whoever may seek can
@@ -836,9 +939,24 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
           <StatusRow>
             <StatusGroup>
+              {/* Three states, not two: before the first connect there is
+                  nothing wrong yet, and "Disconnected" on a room that is
+                  still opening reads as broken. */}
               <ConnectionState connected={connected}>
-                <StatusDot tone={connected ? color.ok : color.danger} />
-                {connected ? 'Connected' : 'Disconnected'}
+                <StatusDot
+                  tone={
+                    connected
+                      ? color.ok
+                      : reconnecting
+                        ? color.mustard
+                        : color.danger
+                  }
+                />
+                {connected
+                  ? 'Connected'
+                  : reconnecting
+                    ? 'Reconnecting…'
+                    : 'Connecting…'}
               </ConnectionState>
 
               {/* "it is loading" and "it is broken" look identical when the
@@ -853,7 +971,11 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
 
               <CollaborativeIndicator enabled={allowGuestControl}>
                 {allowGuestControl ? <IconUsers size={13} /> : <IconCrown size={13} />}
-                {allowGuestControl ? 'Collaborative' : 'Host only'}
+                {allowGuestControl
+                  ? 'Collaborative'
+                  : canControl
+                    ? 'You have the remote'
+                    : 'Host only'}
               </CollaborativeIndicator>
             </StatusGroup>
 

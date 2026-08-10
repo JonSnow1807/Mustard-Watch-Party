@@ -6,6 +6,12 @@ import { useAuth } from './AuthContext';
 interface SocketContextType {
   socket: Socket | null;
   connected: boolean;
+  /**
+   * Dropped, but socket.io is still trying. Distinct from `!connected`,
+   * which is also true for the first moment of a page load - and a room that
+   * says "Disconnected" before it has ever connected reads as broken.
+   */
+  reconnecting: boolean;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -26,6 +32,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const { user } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const token = user?.token;
 
   useEffect(() => {
@@ -54,16 +61,32 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       reconnectionDelayMax: 10000,
     });
 
+    // A fresh socket starts with a clean slate: the previous session's
+    // teardown fires 'disconnect', which would otherwise leave this true
+    // and make the NEXT session's first connection read as a reconnect.
+    setReconnecting(false);
+
+    // The first connect is not news - it is the page loading, and it used to
+    // fire a success toast on top of "Joined the room" every single time.
+    // A RE-connect is news: it says the gap you just noticed is over.
+    let hasConnected = false;
+
     socketInstance.on('connect', () => {
       console.log('Connected to server');
       setConnected(true);
-      toast.success('Connected to sync server');
+      setReconnecting(false);
+      if (hasConnected) toast.success('Back in sync');
+      hasConnected = true;
     });
 
     socketInstance.on('disconnect', () => {
       console.log('Disconnected from server');
       setConnected(false);
-      toast.error('Disconnected from sync server');
+      // Only claim to be reconnecting once there is something to reconnect
+      // TO. No toast: socket.io retries by itself, the status chip carries
+      // it, and a red toast on every brief blip trains people to ignore
+      // toasts entirely.
+      setReconnecting(hasConnected);
     });
 
     socketInstance.on('connect_error', (error: Error) => {
@@ -78,12 +101,15 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     setSocket(socketInstance);
 
     return () => {
+      // stop the teardown's own disconnect from being mistaken for a drop
+      hasConnected = false;
       socketInstance.disconnect();
+      setReconnecting(false);
     };
   }, [token]);
 
   return (
-    <SocketContext.Provider value={{ socket, connected }}>
+    <SocketContext.Provider value={{ socket, connected, reconnecting }}>
       {children}
     </SocketContext.Provider>
   );
