@@ -161,3 +161,31 @@ test('a hostile scheme never reaches a media element', () => {
   expect(screen.queryByTestId('html5-video')).toBeNull();
   expect(document.getElementById('youtube-player')).toBeNull();
 });
+
+describe('the stored volume', () => {
+  // Number(null) === 0, so reading a missing key straight through Number()
+  // made silence the default for every first-time visitor.
+  it('defaults to full volume when nothing has been stored', () => {
+    localStorage.removeItem('mustard:volume');
+    const raw = localStorage.getItem('mustard:volume');
+    const resolved =
+      raw === null
+        ? 1
+        : Number.isFinite(Number(raw)) && Number(raw) >= 0 && Number(raw) <= 1
+          ? Number(raw)
+          : 1;
+    expect(resolved).toBe(1);
+  });
+
+  it('honours a stored level, and ignores a corrupt one', () => {
+    const resolve = (raw: string | null) => {
+      if (raw === null) return 1;
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 0 && n <= 1 ? n : 1;
+    };
+    expect(resolve('0')).toBe(0);
+    expect(resolve('0.4')).toBe(0.4);
+    expect(resolve('nonsense')).toBe(1);
+    expect(resolve('7')).toBe(1);
+  });
+});

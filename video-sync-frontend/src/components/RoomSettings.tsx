@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styled from '@emotion/styled';
 import { toast } from 'react-hot-toast';
 import { useSocket } from '../contexts/SocketContext';
+import { apiService } from '../services/api';
 import { isAcceptableVideoUrl } from '../shared/media-source';
 import { sendSetVideo } from '../sync/SyncEngine';
 import { card, color, font, input, button, ghostIconButton, radius, focusRing, sectionLabel } from '../theme';
@@ -146,7 +148,11 @@ interface RoomSettingsProps {
 const DEFAULT_MAX_USERS = 20;
 
 export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpdate }) => {
+  const [name, setName] = useState<string>(room.name || '');
   const [isPublic, setIsPublic] = useState(room.isPublic || false);
+  const [allowGuestControl, setAllowGuestControl] = useState(
+    Boolean(room.allowGuestControl),
+  );
   // '' is a legal intermediate state: a number field being retyped is empty
   // for a keystroke, and parsing that into NaN would blank the control and
   // make React complain about the value attribute. Blur settles it back to a
@@ -155,12 +161,9 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
   const [videoUrl, setVideoUrl] = useState(room.videoUrl || '');
   const [loading, setLoading] = useState(false);
   const { socket } = useSocket();
+  const navigate = useNavigate();
 
-  const handleUpdateSettings = () => {
-    // Changing the video is a SYNCED CONTROL, not a REST write: everyone in
-    // the room switches together through the sync:timeline broadcast, with
-    // the same exactly-once machinery as play/pause/seek. The server
-    // persists the room row from the committed timeline.
+  const handleUpdateSettings = async () => {
     const url = videoUrl.trim();
     if (url !== '' && !isAcceptableVideoUrl(url)) {
       // the same shared rule the gateway enforces - refused here it is
@@ -168,33 +171,83 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
       toast.error("That URL can't be played - use a video link or YouTube id");
       return;
     }
-    setLoading(true);
-    if (socket !== null && sendSetVideo(socket, room.code, url)) {
-      // wait-for-broadcast: the player switches when sync:timeline arrives
-      toast.success('Video changed for everyone in the room');
-      if (onUpdate) onUpdate();
-    } else {
-      // dropped, never buffered: a stale reconnect flush must not change
-      // the room's video minutes later
-      toast.error('Not connected - try again in a moment');
-    }
-    setLoading(false);
-  };
 
-  const handleEndRoom = async () => {
-    if (!window.confirm('Are you sure you want to end this room? All participants will be disconnected.')) {
+    const trimmedName = name.trim();
+    if (trimmedName === '') {
+      toast.error('A room needs a name');
       return;
     }
 
+    setLoading(true);
     try {
-      // For now, just navigate away - room deletion handled separately
-      // await apiService.updateRoom(room.code, {
-      //   isActive: false,
-      // });
+      // Two different kinds of change, deliberately on two different paths.
+      //
+      // The room's PROPERTIES are a REST write: they are facts about the row,
+      // nobody's playhead moves, and the creator check lives on the route.
+      // Until now this function never sent them at all - the name, the public
+      // flag, the participant cap and guest control were collected by the form
+      // and dropped on the floor, and the toast still said it had saved.
+      const changed: Record<string, unknown> = {};
+      if (trimmedName !== room.name) changed.name = trimmedName;
+      if (isPublic !== Boolean(room.isPublic)) changed.isPublic = isPublic;
+      if (allowGuestControl !== Boolean(room.allowGuestControl)) {
+        changed.allowGuestControl = allowGuestControl;
+      }
+      if (typeof maxUsers === 'number' && maxUsers !== room.maxUsers) {
+        changed.maxUsers = maxUsers;
+      }
+      if (Object.keys(changed).length > 0) {
+        await apiService.updateRoom(room.code, changed);
+      }
+
+      // The VIDEO is a synced control, not a REST write: everyone switches
+      // together through the sync:timeline broadcast, with the same
+      // exactly-once machinery as play/pause/seek.
+      const videoChanged = url !== (room.videoUrl || '');
+      if (videoChanged) {
+        if (socket === null || !sendSetVideo(socket, room.code, url)) {
+          // dropped, never buffered: a stale reconnect flush must not change
+          // the room's video minutes later
+          toast.error('Not connected - the video was not changed');
+          return;
+        }
+      }
+
+      toast.success(
+        videoChanged
+          ? 'Saved - the video changed for everyone in the room'
+          : 'Settings saved',
+      );
+      if (onUpdate) onUpdate();
+      onClose();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || "Couldn't save the settings");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEndRoom = async () => {
+    if (
+      !window.confirm(
+        'End this room? It disappears for everyone in it, and the link stops working.',
+      )
+    ) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // This used to be a lie: the delete was commented out, so "End room"
+      // congratulated you and navigated away while the room carried on
+      // existing with everyone still in it.
+      await apiService.deleteRoom(room.code);
       toast.success('Room ended');
-      window.location.href = '/';
-    } catch (error) {
-      toast.error('Failed to end room');
+      navigate('/');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || "Couldn't end the room");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -210,6 +263,18 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
       {/* Every row's visible text IS its control's accessible name, so each
           Label points at its input by id - the painted toggle carries no
           text of its own to borrow. */}
+      <SettingRow>
+        <Label htmlFor="room-settings-name">Room name</Label>
+        <UrlInput
+          id="room-settings-name"
+          type="text"
+          value={name}
+          maxLength={120}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Movie night"
+        />
+      </SettingRow>
+
       <SettingRow>
         <Label htmlFor="room-settings-public">List publicly</Label>
         <Toggle>
@@ -229,7 +294,7 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
           id="room-settings-max-users"
           type="number"
           min="2"
-          max="100"
+          max="500"
           value={maxUsers}
           onChange={(e) => {
             const raw = e.target.value;
@@ -237,8 +302,11 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
               setMaxUsers('');
               return;
             }
-            const parsed = parseInt(raw, 10);
-            setMaxUsers(Number.isNaN(parsed) ? '' : parsed);
+            // Number, not parseInt: parseInt('8.5') is 8 and parseInt('2e2')
+            // is 2, so a value the person never chose would be persisted now
+            // that this field actually reaches the server.
+            const parsed = Number(raw);
+            setMaxUsers(Number.isInteger(parsed) ? parsed : '');
           }}
           onBlur={() => {
             if (maxUsers === '') {
@@ -246,6 +314,23 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
             }
           }}
         />
+      </SettingRow>
+
+      {/* The one setting that changes what other people can DO, rather than
+          what the room looks like - so it says which it is, not just its name. */}
+      <SettingRow>
+        <Label htmlFor="room-settings-guest-control">
+          Let everyone control playback
+        </Label>
+        <Toggle>
+          <input
+            id="room-settings-guest-control"
+            type="checkbox"
+            checked={allowGuestControl}
+            onChange={(e) => setAllowGuestControl(e.target.checked)}
+          />
+          <span />
+        </Toggle>
       </SettingRow>
 
       <SettingRow>
@@ -263,7 +348,7 @@ export const RoomSettings: React.FC<RoomSettingsProps> = ({ room, onClose, onUpd
         <SaveButton type="button" onClick={handleUpdateSettings} disabled={loading}>
           {loading ? 'Saving…' : 'Save changes'}
         </SaveButton>
-        <EndButton type="button" onClick={handleEndRoom}>
+        <EndButton type="button" onClick={handleEndRoom} disabled={loading}>
           End room
         </EndButton>
       </Actions>

@@ -15,6 +15,10 @@ import { PlayerAdapter } from '../shared/sync-core/player-adapter';
  * edge reconstruction is needed - which is itself a useful contrast when
  * reading the YouTube readout-noise histogram.
  */
+/** Volume is a fraction; anything outside 0..1 is a caller bug, not a mute. */
+const clamp01 = (n: number): number =>
+  Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
+
 export class Html5Adapter implements PlayerAdapter {
   private lastCommandAt = 0;
 
@@ -92,5 +96,14 @@ export class Html5Adapter implements PlayerAdapter {
 
   dispose(): void {
     /* nothing to tear down: the element is owned by the component */
+  }
+
+  // Local audio only - never synced.
+  setVolume(fraction: number): void {
+    this.el.volume = clamp01(fraction);
+  }
+
+  setMuted(muted: boolean): void {
+    this.el.muted = muted;
   }
 }

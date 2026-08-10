@@ -116,10 +116,15 @@ export const apiService = {
   getRoomByCode: (code: string) =>
     api.get(`/rooms/${code}`),
 
+  // Every field here is one the server's UpdateRoomDto actually accepts.
+  // allowGuestControl used to be listed and silently stripped by the pipe's
+  // whitelist, so the settings form appeared to save it and never did.
   updateRoom: (code: string, data: {
     name?: string;
     videoUrl?: string;
+    isPublic?: boolean;
     allowGuestControl?: boolean;
+    maxUsers?: number;
   }) => api.patch(`/rooms/${code}`, data),
 
   deleteRoom: (code: string) =>

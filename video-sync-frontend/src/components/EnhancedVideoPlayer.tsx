@@ -14,6 +14,7 @@ import { FailureCard } from './player/FailureCard';
 import { YouTubeMount } from './player/YouTubeMount';
 import { Html5Mount } from './player/Html5Mount';
 import { VimeoMount } from './player/VimeoMount';
+import { toggleFullscreen } from './player/fullscreen';
 import {
   button,
   card,
@@ -25,17 +26,59 @@ import {
   font,
   radius,
 } from '../theme';
-import { IconCrown, IconPause, IconPlay, IconSync, IconUsers } from './Icons';
+import {
+  IconCrown,
+  IconExitFullscreen,
+  IconFullscreen,
+  IconPause,
+  IconPlay,
+  IconSync,
+  IconUsers,
+  IconVolume,
+  IconVolumeOff,
+} from './Icons';
 
-const PlayerContainer = styled.div`
+
+const VOLUME_KEY = 'mustard:volume';
+const MUTED_KEY = 'mustard:muted';
+
+/**
+ * Is this keystroke destined for a text field? Chat sits on the same page as
+ * the player, so every global shortcut has to yield to it.
+ */
+const isTypingTarget = (target: EventTarget | null): boolean => {
+  const el = target as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  const tag = el.tagName.toLowerCase();
+  return (
+    tag === 'input' ||
+    tag === 'textarea' ||
+    tag === 'select' ||
+    el.isContentEditable === true
+  );
+};
+
+const PlayerContainer = styled.div<{ fullscreen?: boolean }>`
   ${card}
   width: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+
+  /* In fullscreen the shell IS the screen: square off the card, drop the
+     border, and let the stage take everything the controls do not. */
+  ${(props) =>
+    props.fullscreen
+      ? `
+    height: 100vh;
+    border-radius: 0;
+    border: none;
+    background: #000;
+  `
+      : ''}
 `;
 
-const VideoWrapper = styled.div`
+const VideoWrapper = styled.div<{ fullscreen?: boolean }>`
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -47,6 +90,17 @@ const VideoWrapper = styled.div`
   margin: 0 auto;
   background: #000;
   overflow: hidden;
+
+  /* the 16:9 cap is there to keep Play above the fold on a laptop; in
+     fullscreen there is no fold, and the cap would letterbox twice */
+  ${(props) =>
+    props.fullscreen
+      ? `
+    aspect-ratio: auto;
+    flex: 1;
+    max-height: none;
+  `
+      : ''}
 `;
 
 const GestureChip = styled.button`
@@ -213,6 +267,38 @@ const CollaborativeIndicator = styled.div<{ enabled: boolean }>`
   color: ${props => (props.enabled ? color.ok : color.dim)};
 `;
 
+const BufferingChip = styled.div`
+  ${chip.sm}
+  ${chipStatic}
+  background: ${color.bg2};
+  color: ${color.dim};
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+`;
+
+const Spinner = styled.span`
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid ${color.lineBright};
+  border-top-color: ${color.mustard};
+  animation: spin 700ms linear infinite;
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* a perpetual spinner is a headache for anyone who asked not to have one */
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    border-top-color: ${color.lineBright};
+  }
+`;
+
 const RttReadout = styled.div`
   font-family: ${font.mono};
   font-size: 12px;
@@ -227,6 +313,50 @@ const SyncToggle = styled.button<{ active?: boolean }>`
   background: ${props => (props.active ? color.mustardFaint : color.bg2)};
   color: ${props => (props.active ? color.mustard : color.dim)};
   border-color: ${props => (props.active ? color.mustardDeep : color.lineBright)};
+`;
+
+
+/** Icon-only control: square, quiet, same focus ring as everything else. */
+const IconControl = styled.button`
+  ${chip.sm}
+  ${chipInteractive}
+  background: ${color.bg2};
+  color: ${color.dim};
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  &:hover {
+    color: ${color.text};
+  }
+`;
+
+/* The slider only appears on hover/focus-within so the bar stays quiet, but
+   it never collapses on touch, where there is no hover to reveal it. */
+const VolumeGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+`;
+
+const VolumeSlider = styled.input`
+  width: 84px;
+  accent-color: ${color.mustard};
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: ${focusRing};
+  }
+
+  @media (max-width: 880px) {
+    display: none;
+  }
 `;
 
 interface VideoPlayerProps {
@@ -250,6 +380,7 @@ const EMPTY_STATUS: EngineStatus = {
   fractionalRateOK: false,
   needsGesture: false,
   seeksIssued: 0,
+  playerState: 'unstarted',
 };
 
 /** Keyboard seek step, in seconds - the arrow-key grain of the seek bar. */
@@ -272,6 +403,9 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   const { socket, connected } = useSocket();
   const [isReady, setIsReady] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  // Bumped by Retry: it rides in the mount's key, so a retry tears the dead
+  // player down and builds a fresh one rather than poking at the corpse.
+  const [playerEpoch, setPlayerEpoch] = useState(0);
   const [syncEnabled, setSyncEnabled] = useState(true);
   const syncEnabledRef = useRef(true);
   const [status, setStatus] = useState<EngineStatus>(EMPTY_STATUS);
@@ -337,14 +471,91 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [socket, roomCode]);
 
-  // HUD toggle on backtick
+  // ---- local audio: never synced, never sent (see EngineAdapter) ----
+  // Persisted so the level survives a reload mid-film; a room you had muted
+  // must not come back at full volume with people asleep next door.
+  const [volume, setVolumeState] = useState(() => {
+    // Read the raw string first: Number(null) is 0, not NaN, so parsing
+    // straight from a missing key made every new visitor's default silence.
+    const raw = localStorage.getItem(VOLUME_KEY);
+    if (raw === null) return 1;
+    const stored = Number(raw);
+    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 1;
+  });
+  const [muted, setMutedState] = useState(
+    () => localStorage.getItem(MUTED_KEY) === '1',
+  );
+
+  // Re-applied whenever the adapter changes: a source switch builds a new
+  // player at its own default, which would otherwise blast an unmuted 100%.
+  useEffect(() => {
+    const adapter = adapterRef.current;
+    if (!adapter) return;
+    // Order matters: Vimeo has no mute call, so its setMuted is really
+    // "volume 0 or 1" - applying it AFTER setVolume threw away a chosen
+    // level of 0.4 on every unmute. Mute first, level last.
+    adapter.setMuted?.(muted);
+    adapter.setVolume?.(muted ? 0 : volume);
+    localStorage.setItem(VOLUME_KEY, String(volume));
+    localStorage.setItem(MUTED_KEY, muted ? '1' : '0');
+  }, [volume, muted, isReady]);
+
+  const toggleMuted = useCallback(() => setMutedState((m) => !m), []);
+
+  // ---- fullscreen ----
+  // The whole shell goes fullscreen, not the video element: the controls,
+  // sync readout and chat toggle have to remain reachable, and on the
+  // YouTube path the element is a cross-origin iframe we cannot decorate.
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement !== null);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const handleToggleFullscreen = useCallback(() => {
+    void toggleFullscreen(shellRef.current, document);
+  }, []);
+
+  // ---- keyboard ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === '`') setShowHud((v) => !v);
+      // Never steal a key from someone typing - chat lives on this page, and
+      // a space that pauses the film mid-sentence is worse than no shortcut.
+      // This guards the HUD key too: a backtick belongs to the message.
+      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === '`') {
+        setShowHud((v) => !v);
+        return;
+      }
+
+      switch (e.key) {
+        case ' ':
+        case 'k':
+          // space scrolls the page by default, which is what it did before
+          e.preventDefault();
+          handlePlayPause();
+          break;
+        case 'f':
+          e.preventDefault();
+          handleToggleFullscreen();
+          break;
+        case 'm':
+          e.preventDefault();
+          toggleMuted();
+          break;
+        default:
+          break;
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+    // handlePlayPause closes over live status/canControl, so it must be a dep
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleToggleFullscreen, toggleMuted, status.roomPlaying, canControl, isReady]);
 
   // Mount callbacks: stable so mounts don't remount on shell re-renders
   const handleAdapter = useCallback((adapter: EngineAdapter | null) => {
@@ -415,6 +626,13 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
         title="Couldn't play this video"
         detail={failure}
         url={activeVideoUrl}
+        onRetry={() => {
+          // A dead CDN, a flaky network or an ad-blocker swallowing the
+          // frame are all transient, and the only recovery on offer was
+          // reloading the whole page - which drops you out of the room.
+          setFailure(null);
+          setPlayerEpoch((n) => n + 1);
+        }}
       />
     );
   } else {
@@ -423,7 +641,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
         // key: a new video id must tear the old player down, not mutate it
         mount = (
           <YouTubeMount
-            key={source.videoId}
+            key={`${source.videoId}:${playerEpoch}`}
             videoId={source.videoId}
             onAdapter={handleAdapter}
             onFailure={handleFailure}
@@ -434,7 +652,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       case 'file':
         mount = (
           <Html5Mount
-            key={source.url}
+            key={`${source.url}:${playerEpoch}`}
             url={source.url}
             hls={source.kind === 'hls'}
             onAdapter={handleAdapter}
@@ -445,7 +663,7 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
       case 'vimeo':
         mount = (
           <VimeoMount
-            key={source.videoId}
+            key={`${source.videoId}:${playerEpoch}`}
             videoId={source.videoId}
             hash={source.hash}
             onAdapter={handleAdapter}
@@ -521,8 +739,8 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   return (
-    <PlayerContainer>
-      <VideoWrapper>
+    <PlayerContainer ref={shellRef} fullscreen={isFullscreen}>
+      <VideoWrapper fullscreen={isFullscreen}>
         {mount ?? overlay}
         {mount && status.needsGesture && (
           <GestureChip onClick={() => engineRef.current?.resumeFromGesture()}>
@@ -570,6 +788,50 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
             <TimeDisplay>
               {formatTime(shownTime)} / {formatTime(status.durationS)}
             </TimeDisplay>
+
+            <VolumeGroup>
+              <IconControl
+                type="button"
+                onClick={toggleMuted}
+                aria-label={muted ? 'Unmute' : 'Mute'}
+                aria-pressed={muted}
+                title={muted ? 'Unmute (m)' : 'Mute (m)'}
+              >
+                {muted || volume === 0 ? (
+                  <IconVolumeOff size={15} />
+                ) : (
+                  <IconVolume size={15} />
+                )}
+              </IconControl>
+              <VolumeSlider
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={muted ? 0 : volume}
+                aria-label="Volume"
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setVolumeState(next);
+                  // dragging off zero is an unmute; nobody drags a slider up
+                  // and means "still silent"
+                  if (next > 0 && muted) setMutedState(false);
+                }}
+              />
+            </VolumeGroup>
+
+            <IconControl
+              type="button"
+              onClick={handleToggleFullscreen}
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              title={isFullscreen ? 'Exit fullscreen (f)' : 'Fullscreen (f)'}
+            >
+              {isFullscreen ? (
+                <IconExitFullscreen size={15} />
+              ) : (
+                <IconFullscreen size={15} />
+              )}
+            </IconControl>
           </ControlRow>
 
           <StatusRow>
@@ -578,6 +840,16 @@ export const EnhancedVideoPlayer: React.FC<VideoPlayerProps> = ({
                 <StatusDot tone={connected ? color.ok : color.danger} />
                 {connected ? 'Connected' : 'Disconnected'}
               </ConnectionState>
+
+              {/* "it is loading" and "it is broken" look identical when the
+                  stage is just black - and during a stall everyone stares at
+                  it wondering whose connection is at fault */}
+              {status.playerState === 'buffering' && (
+                <BufferingChip role="status">
+                  <Spinner />
+                  Buffering
+                </BufferingChip>
+              )}
 
               <CollaborativeIndicator enabled={allowGuestControl}>
                 {allowGuestControl ? <IconUsers size={13} /> : <IconCrown size={13} />}

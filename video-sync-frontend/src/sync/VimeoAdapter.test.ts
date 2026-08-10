@@ -128,3 +128,32 @@ test('dispose unsubscribes every handler', () => {
   p.emit('play');
   expect(a.getLifecycle()).toBe('unstarted');
 });
+
+describe('local audio (never synced)', () => {
+  it('unmuting restores full level, and mute silences', () => {
+    // Vimeo has no mute call - muting IS volume 0 - so the player applies
+    // mute first and the level last. If that order flips, a chosen level of
+    // 0.4 is thrown away on every unmute.
+    const p = new FakePlayer();
+    const calls: number[] = [];
+    (p as unknown as { setVolume: (v: number) => Promise<number> }).setVolume = (
+      v: number,
+    ) => {
+      calls.push(v);
+      return Promise.resolve(v);
+    };
+    const adapter = new VimeoAdapter(p as never);
+
+    adapter.setMuted(true);
+    expect(calls[calls.length - 1]).toBe(0);
+
+    adapter.setVolume(0.4);
+    expect(calls[calls.length - 1]).toBe(0.4);
+
+    // out-of-range is a caller bug, not a mute
+    adapter.setVolume(5);
+    expect(calls[calls.length - 1]).toBe(1);
+    adapter.setVolume(Number.NaN);
+    expect(calls[calls.length - 1]).toBe(0);
+  });
+});

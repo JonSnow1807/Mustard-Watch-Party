@@ -16,6 +16,8 @@ export interface VimeoPlayerLike {
   pause(): Promise<void>;
   setPlaybackRate(rate: number): Promise<number>;
   getPlaybackRate(): Promise<number>;
+  /** local audio; optional because older embeds predate it */
+  setVolume?(volume: number): Promise<number>;
 }
 
 interface TimePayload {
@@ -33,6 +35,10 @@ interface TimePayload {
  * fiction. Same edge-reconstruction idea as YouTubeAdapter, different
  * transport: events push edges here, YT gets polled.
  */
+/** Volume is a fraction; anything outside 0..1 is a caller bug, not a mute. */
+const clamp01 = (n: number): number =>
+  Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
+
 export class VimeoAdapter implements PlayerAdapter {
   private edge: { tLocal: number; value: number } | null = null;
   private lastKnown = 0;
@@ -204,5 +210,15 @@ export class VimeoAdapter implements PlayerAdapter {
       this.player.off(event, callback);
     }
     this.handlers = [];
+  }
+
+  // Local audio only - never synced. Vimeo has no mute call: muting is
+  // volume 0, so the caller keeps the pre-mute level to restore.
+  setVolume(fraction: number): void {
+    void this.player.setVolume?.(clamp01(fraction));
+  }
+
+  setMuted(muted: boolean): void {
+    void this.player.setVolume?.(muted ? 0 : 1);
   }
 }

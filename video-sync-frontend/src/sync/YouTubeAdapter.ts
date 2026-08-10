@@ -10,6 +10,10 @@ import { PlayerAdapter } from '../shared/sync-core/player-adapter';
  * into fiction. The M1 baseline measured this readout's noise floor; the
  * controller's deadband respects it.
  */
+/** Volume is a fraction; anything outside 0..1 is a caller bug, not a mute. */
+const clamp01 = (n: number): number =>
+  Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
+
 export class YouTubeAdapter implements PlayerAdapter {
   private lastRaw = 0;
   private edge: { tLocal: number; value: number } | null = null;
@@ -142,5 +146,17 @@ export class YouTubeAdapter implements PlayerAdapter {
   dispose(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = null;
+  }
+
+  // Local audio only - never synced. YouTube takes 0-100 and keeps mute
+  // separate from volume, so a muted player restored to volume 40 is still
+  // muted until unMute() runs.
+  setVolume(fraction: number): void {
+    this.player.setVolume(Math.round(clamp01(fraction) * 100));
+  }
+
+  setMuted(muted: boolean): void {
+    if (muted) this.player.mute();
+    else this.player.unMute();
   }
 }

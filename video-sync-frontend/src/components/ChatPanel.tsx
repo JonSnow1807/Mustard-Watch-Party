@@ -2,7 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import styled from '@emotion/styled';
-import { card, color, font, input, button, buttonSm, sectionLabel } from '../theme';
+import {
+  card,
+  chip,
+  chipInteractive,
+  color,
+  font,
+  input,
+  button,
+  buttonSm,
+  sectionLabel,
+} from '../theme';
 
 // The chat is a linear log, not a chat-bubble app: one column, sender
 // names carrying the only color distinction. The 400px height and the
@@ -59,6 +69,20 @@ const EmptyHint = styled.div`
   color: ${color.faint};
 `;
 
+/** Sender and time share a line: the time is metadata, not a message. */
+const MessageHead = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+`;
+
+const Timestamp = styled.time`
+  font-family: ${font.mono};
+  font-size: 10.5px;
+  color: ${color.faint};
+  font-variant-numeric: tabular-nums;
+`;
+
 const Sender = styled.div<{ isOwn: boolean }>`
   font-family: ${font.body};
   font-size: 11.5px;
@@ -73,6 +97,21 @@ const MessageText = styled.div`
   color: ${color.text};
   overflow-wrap: break-word;
   word-break: break-word;
+`;
+
+/**
+ * Only appears when you have scrolled away AND missed something - it is the
+ * answer to "did I miss anything", which is otherwise invisible while you
+ * are reading back.
+ */
+const JumpToLatest = styled.button`
+  ${chip.sm}
+  ${chipInteractive}
+  align-self: center;
+  margin-bottom: 8px;
+  background: ${color.mustardFaint};
+  color: ${color.mustard};
+  border-color: ${color.mustardDeep};
 `;
 
 const InputArea = styled.form`
@@ -97,6 +136,25 @@ const SendButton = styled.button`
   flex-shrink: 0;
 `;
 
+/** Within this many pixels of the end counts as "reading the live end". */
+const NEAR_BOTTOM_PX = 48;
+
+/**
+ * A time, not a date: chat is read during a film, so the useful question is
+ * "was that just now or ten minutes ago", and anything older than today is
+ * scrollback where the day matters more than the minute.
+ */
+const formatStamp = (value: Date | string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const sameDay = new Date().toDateString() === date.toDateString();
+  return date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(sameDay ? {} : { month: 'short', day: 'numeric' }),
+  });
+};
+
 interface ChatMessage {
   id: string;
   userId: string;
@@ -115,6 +173,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomCode }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesAreaRef = useRef<HTMLDivElement>(null);
+  const [unread, setUnread] = useState(0);
+  // Whether the reader was at the live end BEFORE this message arrived.
+  // Measuring after the render is too late: a message taller than the
+  // near-bottom threshold pushes the end away by itself, so someone who was
+  // reading live gets classed as reading history and stops being followed.
+  const wasNearBottomRef = useRef(true);
 
   useEffect(() => {
     if (!socket) return;
@@ -133,8 +198,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomCode }) => {
     };
   }, [socket]);
 
+  // Only follow the conversation if the reader is already at the bottom.
+  // Unconditional scrolling yanked anyone scrolling back through history
+  // to the end every time somebody typed.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (wasNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setUnread(0);
+    } else {
+      setUnread((n) => n + 1);
+    }
   }, [messages]);
 
   const sendMessage = (e: React.FormEvent) => {
@@ -159,7 +232,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomCode }) => {
   return (
     <ChatContainer>
       <PanelTitle>Chat</PanelTitle>
-      <MessagesArea>
+      <MessagesArea
+        data-testid="chat-messages"
+        ref={messagesAreaRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const atBottom =
+            el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
+          wasNearBottomRef.current = atBottom;
+          if (atBottom) setUnread(0);
+        }}
+      >
         {messages.length === 0 && (
           <EmptyState>
             <EmptyTitle>No messages yet.</EmptyTitle>
@@ -168,12 +251,31 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ roomCode }) => {
         )}
         {messages.map((msg) => (
           <MessageRow key={msg.id}>
-            <Sender isOwn={msg.userId === user?.id}>{msg.username}</Sender>
+            <MessageHead>
+              <Sender isOwn={msg.userId === user?.id}>{msg.username}</Sender>
+              {formatStamp(msg.timestamp) && (
+                <Timestamp dateTime={new Date(msg.timestamp).toISOString()}>
+                  {formatStamp(msg.timestamp)}
+                </Timestamp>
+              )}
+            </MessageHead>
             <MessageText>{msg.message}</MessageText>
           </MessageRow>
         ))}
         <div ref={messagesEndRef} />
       </MessagesArea>
+
+      {unread > 0 && (
+        <JumpToLatest
+          type="button"
+          onClick={() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            setUnread(0);
+          }}
+        >
+          {unread} new {unread === 1 ? 'message' : 'messages'}
+        </JumpToLatest>
+      )}
 
       <InputArea onSubmit={sendMessage}>
         <Input

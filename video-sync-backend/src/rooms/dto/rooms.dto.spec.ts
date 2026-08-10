@@ -130,3 +130,44 @@ describe('UpdateRoomDto through the production pipe', () => {
     );
   });
 });
+
+describe('UpdateRoomDto: the settings the form was silently dropping', () => {
+  // These three were collected by the room-settings form and thrown away by
+  // the pipe's whitelist, so the UI reported a save that never happened.
+  it('admits isPublic, allowGuestControl and maxUsers', async () => {
+    const dto = await asUpdate({
+      isPublic: true,
+      allowGuestControl: true,
+      maxUsers: 8,
+    });
+    expect(dto.isPublic).toBe(true);
+    expect(dto.allowGuestControl).toBe(true);
+    expect(dto.maxUsers).toBe(8);
+  });
+
+  it('leaves untouched settings undefined, so Prisma skips them', async () => {
+    // A declared optional property is materialised on the instance as
+    // undefined rather than omitted, which is exactly what a partial update
+    // needs: Prisma reads undefined as "do not write this column". Asserting
+    // the KEY is absent would test class-transformer's internals; asserting
+    // the VALUE is undefined tests the thing that keeps `isPublic: false`
+    // from also clearing the participant cap.
+    const dto = await asUpdate({ isPublic: false });
+    expect(dto.isPublic).toBe(false);
+    expect(dto.allowGuestControl).toBeUndefined();
+    expect(dto.maxUsers).toBeUndefined();
+  });
+
+  it.each([
+    ['a string for a boolean', { isPublic: 'yes' }],
+    ['a string for the cap', { maxUsers: '8' }],
+    ['a fractional cap', { maxUsers: 8.5 }],
+    ['a cap of one - not a watch party', { maxUsers: 1 }],
+    ['a cap of zero', { maxUsers: 0 }],
+    ['an absurd cap', { maxUsers: 100000 }],
+    ['null isPublic', { isPublic: null }],
+    ['null maxUsers', { maxUsers: null }],
+  ])('refuses %s', async (_name, body) => {
+    await expect(asUpdate(body)).rejects.toThrow(BadRequestException);
+  });
+});

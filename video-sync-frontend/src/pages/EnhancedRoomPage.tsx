@@ -253,10 +253,30 @@ const HostChip = styled.span`
   flex-shrink: 0;
 `;
 
-// Page gutter only - RoomSettings owns its own max-width, centering and
-// top margin, so constraining it again here would double-inset the panel.
-const SettingsSlot = styled.div`
-  padding: 0 20px 20px;
+/**
+ * Settings is a modal, not a slot at the bottom of the document.
+ *
+ * It used to render after the video and voice sections, which on any normal
+ * window put it below the fold: pressing Settings appended a panel nobody
+ * could see, so the button read as broken. A dialog cannot be missed, and it
+ * is also the honest shape - changing the video for everyone in the room is a
+ * focused task, not something to do while scrolled past the player.
+ */
+const SettingsOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 6vh 20px 40px;
+  overflow-y: auto;
+`;
+
+const SettingsDialog = styled.div`
+  width: 100%;
+  max-width: 520px;
 `;
 
 const CenteredState = styled.div`
@@ -303,7 +323,7 @@ export const EnhancedRoomPage: React.FC = () => {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
   const { socket, connected } = useSocket();
-  const { user } = useAuth();
+  const { user, ready: authReady } = useAuth();
 
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -322,11 +342,77 @@ export const EnhancedRoomPage: React.FC = () => {
     participantsRef.current = participants;
   }, [participants]);
 
+  // With several rooms open, every tab read "Mustard Watch Party" and the
+  // only way to find the right one was to click through them.
+  useEffect(() => {
+    if (!room?.name) return;
+    const previous = document.title;
+    document.title = `${room.name} · mustard.watch`;
+    return () => {
+      document.title = previous;
+    };
+  }, [room?.name]);
+
+  // Escape closes the settings dialog, and focus moves into it on open so a
+  // keyboard user is not left tabbing through the page behind the overlay.
+  const settingsRef = useRef<HTMLDivElement | null>(null);
+  const settingsTriggerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!showSettings) return;
+
+    const FOCUSABLE =
+      'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowSettings(false);
+        return;
+      }
+      // Keep Tab inside the dialog. Without this, tabbing walks straight out
+      // onto the page behind the overlay - which is invisible, still
+      // clickable by keyboard, and a good way to change the video by
+      // accident while thinking you are still in the settings.
+      if (e.key !== 'Tab') return;
+      const focusable = Array.from(
+        settingsRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (active === first || !settingsRef.current?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    // Remember what opened it, so closing puts the caret back where it was
+    // rather than dumping focus at the top of the document.
+    settingsTriggerRef.current = document.activeElement as HTMLElement | null;
+    settingsRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      settingsTriggerRef.current?.focus?.();
+    };
+  }, [showSettings]);
+
   useEffect(() => {
     if (!roomCode) {
       navigate('/');
       return;
     }
+    // Wait for the stored session to be read. `user` is null on the first
+    // render of every page load, so redirecting here on !user alone sent
+    // signed-in people to the join page too - every room link, and every
+    // reload of the room you were already sitting in, cost an extra click.
+    if (!authReady) return;
+
     // Room details now require a token (the REST guard), and the socket has
     // always required one. A signed-out visitor arriving on a shared link
     // should be asked to sign in, not shown "Couldn't load the room" - so
@@ -339,7 +425,7 @@ export const EnhancedRoomPage: React.FC = () => {
     fetchRoomDetails();
     // intentional: fetch once per room code, and again if auth appears
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode, user]);
+  }, [roomCode, user, authReady]);
 
   useEffect(() => {
     if (!socket || !connected || !user || !room) return;
@@ -409,7 +495,15 @@ export const EnhancedRoomPage: React.FC = () => {
         participantsRef.current = roster;
         setParticipants(roster);
       }
-    } catch (error) {
+    } catch (error: any) {
+      // A rejected token is not "this room is broken", it is "sign in
+      // again" - and it must not throw the room away. Dropping people on
+      // the marketing page with the code discarded is what every expired
+      // session used to do, twelve hours after they last signed in.
+      if (error?.response?.status === 401) {
+        navigate(`/join-room/${roomCode}`, { replace: true });
+        return;
+      }
       toast.error("Couldn't load the room");
       navigate('/');
     } finally {
@@ -562,13 +656,25 @@ export const EnhancedRoomPage: React.FC = () => {
       </Grid>
 
       {showSettings && isHost && (
-        <SettingsSlot>
-          <RoomSettings
-            room={room}
-            onClose={() => setShowSettings(false)}
-            onUpdate={() => fetchRoomDetails()}
-          />
-        </SettingsSlot>
+        <SettingsOverlay
+          role="dialog"
+          aria-modal="true"
+          aria-label="Room settings"
+          // click-away closes, but only on the backdrop itself: without the
+          // target check, a click that starts inside the panel and drifts
+          // onto the overlay would discard whatever was being edited
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowSettings(false);
+          }}
+        >
+          <SettingsDialog ref={settingsRef}>
+            <RoomSettings
+              room={room}
+              onClose={() => setShowSettings(false)}
+              onUpdate={() => fetchRoomDetails()}
+            />
+          </SettingsDialog>
+        </SettingsOverlay>
       )}
     </Page>
   );
