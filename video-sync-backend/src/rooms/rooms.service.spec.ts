@@ -58,6 +58,12 @@ function violations(node: unknown, path: string[] = []): string[] {
   return found;
 }
 
+/**
+ * The gateway only exists here to receive the room-closed announcement; the
+ * broadcast itself is the gateway's business, not this suite's.
+ */
+const announcer = () => ({ announceRoomClosed: jest.fn() });
+
 describe("RoomsService - no query hands a client another user's secrets", () => {
   const room = {
     id: 'room-1',
@@ -95,7 +101,7 @@ describe("RoomsService - no query hands a client another user's secrets", () => 
     },
   } as unknown as DatabaseService;
 
-  const service = new RoomsService(database);
+  const service = new RoomsService(database, announcer() as never);
 
   beforeEach(() => {
     calls.length = 0;
@@ -138,5 +144,70 @@ describe("RoomsService - no query hands a client another user's secrets", () => 
         include: { creator: { select: { id: true, username: true } } },
       }),
     ).toEqual([]);
+  });
+});
+
+describe('ending a room says goodbye to the people in it', () => {
+  const roomRow = {
+    id: 'r1',
+    code: 'ABC123',
+    creatorId: 'owner',
+    creator: { id: 'owner', username: 'ada' },
+    participants: [],
+  };
+
+  const setup = () => {
+    const sync = announcer();
+    const database = {
+      room: {
+        findUnique: jest.fn().mockResolvedValue(roomRow),
+        delete: jest.fn().mockResolvedValue(roomRow),
+      },
+      chatMessage: { deleteMany: jest.fn() },
+      syncEvent: { deleteMany: jest.fn() },
+      participant: { deleteMany: jest.fn() },
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) =>
+        fn({
+          chatMessage: { deleteMany: jest.fn() },
+          syncEvent: { deleteMany: jest.fn() },
+          participant: { deleteMany: jest.fn() },
+          room: { delete: jest.fn() },
+        }),
+      ),
+    };
+    return { sync, database };
+  };
+
+  it('announces the closure to the room', async () => {
+    const { sync, database } = setup();
+    await new RoomsService(database as never, sync as never).deleteRoom(
+      'ABC123',
+      'owner',
+    );
+    expect(sync.announceRoomClosed).toHaveBeenCalledWith('ABC123');
+  });
+
+  it('says nothing when the caller is not the creator', async () => {
+    // a refused delete must not tell a room it is closing
+    const { sync, database } = setup();
+    await expect(
+      new RoomsService(database as never, sync as never).deleteRoom(
+        'ABC123',
+        'someone-else',
+      ),
+    ).rejects.toThrow();
+    expect(sync.announceRoomClosed).not.toHaveBeenCalled();
+  });
+
+  it('says nothing when the room does not exist', async () => {
+    const { sync, database } = setup();
+    database.room.findUnique.mockResolvedValue(null);
+    await expect(
+      new RoomsService(database as never, sync as never).deleteRoom(
+        'NOPE',
+        'owner',
+      ),
+    ).rejects.toThrow();
+    expect(sync.announceRoomClosed).not.toHaveBeenCalled();
   });
 });

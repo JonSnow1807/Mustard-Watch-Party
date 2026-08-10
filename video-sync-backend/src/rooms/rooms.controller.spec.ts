@@ -31,6 +31,12 @@ const ROOM = {
   participants: [],
 };
 
+/**
+ * The gateway only exists here to receive the room-closed announcement; the
+ * broadcast itself is the gateway's business, not this suite's.
+ */
+const announcer = () => ({ announceRoomClosed: jest.fn() });
+
 describe('RoomsController authorization', () => {
   let database: DatabaseService;
   let controller: RoomsController;
@@ -63,7 +69,9 @@ describe('RoomsController authorization', () => {
         .mockImplementation((fn: (tx: unknown) => unknown) => fn(db)),
     };
     database = db as unknown as DatabaseService;
-    controller = new RoomsController(new RoomsService(database));
+    controller = new RoomsController(
+      new RoomsService(database, announcer() as never),
+    );
   });
 
   describe('PATCH /rooms/:code', () => {

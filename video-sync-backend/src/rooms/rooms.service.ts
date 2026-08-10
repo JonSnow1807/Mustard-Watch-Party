@@ -4,11 +4,15 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { SyncGateway } from '../sync/sync.gateway';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class RoomsService {
-  constructor(private database: DatabaseService) {}
+  constructor(
+    private database: DatabaseService,
+    private sync: SyncGateway,
+  ) {}
 
   async createRoom(
     userId: string,
@@ -164,6 +168,12 @@ export class RoomsService {
         'Only the room creator can delete this room',
       );
     }
+
+    // Told BEFORE the row disappears, not after: once it is gone, a client
+    // that reacts by refetching gets a 404 and shows "couldn't load the
+    // room" instead of "the host ended it". The announcement is the last
+    // thing this room says, so it should still be able to say it.
+    this.sync.announceRoomClosed(code);
 
     // Delete all related data first (due to foreign key constraints)
     await this.database.$transaction(async (prisma) => {

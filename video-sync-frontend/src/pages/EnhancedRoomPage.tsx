@@ -7,7 +7,8 @@ import { ChatPanel } from '../components/ChatPanel';
 import { EnhancedVoiceChat } from '../components/EnhancedVoiceChat';
 import { RoomSettings } from '../components/RoomSettings';
 import { apiService } from '../services/api';
-import { rememberRoom } from '../services/recent-rooms';
+import { rememberRoom, forgetRoom } from '../services/recent-rooms';
+import { SYNC_EVENTS } from '../shared/sync-protocol';
 import styled from '@emotion/styled';
 import { toast } from 'react-hot-toast';
 import {
@@ -568,6 +569,23 @@ export const EnhancedRoomPage: React.FC = () => {
       setTimeout(() => setCopySuccess(false), 2000);
     }
   };
+
+  // The host ended the room. Until now this was silent: the row went, the
+  // link died, and whoever was watching sat in a room that no longer existed
+  // until they happened to click something and got "couldn't load the room".
+  useEffect(() => {
+    if (!socket) return;
+    const onClosed = () => {
+      // and stop offering it under "Jump back in", where it would now 404
+      if (roomCode) forgetRoom(roomCode);
+      toast('The host ended this room', { icon: '👋' });
+      navigate('/', { replace: true });
+    };
+    socket.on(SYNC_EVENTS.closed, onClosed);
+    return () => {
+      socket.off(SYNC_EVENTS.closed, onClosed);
+    };
+  }, [socket, navigate, roomCode]);
 
   const handleShareRoom = async () => {
     if (!room) return;

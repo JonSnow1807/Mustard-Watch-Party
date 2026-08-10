@@ -16,6 +16,7 @@ import { DatabaseService } from '../database/database.service';
 import {
   ClockPing,
   ClockPong,
+  RoomClosed,
   SYNC_EVENTS,
   SyncControl,
 } from '../shared/sync-protocol';
@@ -62,6 +63,22 @@ export class SyncGateway
 {
   @WebSocketServer()
   server: Server;
+
+  /**
+   * Tell everyone still sitting in a room that it is over.
+   *
+   * Called from the REST delete path, not from a socket handler: ending a
+   * room is a REST action by the host, and until now it was silent to
+   * everyone else - the row went, the link died, and the people watching
+   * stayed in a room that no longer existed until they happened to act.
+   *
+   * With the Redis adapter this reaches participants on every instance, not
+   * just the one that served the DELETE.
+   */
+  announceRoomClosed(roomCode: string): void {
+    const payload: RoomClosed = { v: 1, roomCode };
+    this.server?.to(roomCode).emit(SYNC_EVENTS.closed, payload);
+  }
 
   private readonly logger = new Logger(SyncGateway.name);
   private userRooms: Map<string, string> = new Map();

@@ -34,6 +34,6 @@ function storeClass() {
     // in-memory otherwise (single instance, CI protocol-only mode)
     { provide: ROOM_STATE_STORE, useClass: storeClass() },
   ],
-  exports: [SyncService],
+  exports: [SyncService, SyncGateway],
 })
 export class SyncModule {}
