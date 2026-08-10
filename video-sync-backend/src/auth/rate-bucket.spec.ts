@@ -1,4 +1,8 @@
-import { RateBucket, clientIpFrom } from './rate-bucket';
+import {
+  RateBucket,
+  clientIpFrom,
+  isInfrastructureAddress,
+} from './rate-bucket';
 import type { Request } from 'express';
 
 describe('RateBucket', () => {
@@ -133,5 +137,79 @@ describe('a keyless bucket, for what a key cannot defend', () => {
     const claims = ['a', 'b', 'c', 'd', 'e'];
     const results = claims.map(() => global.take('all', 1_000_000));
     expect(results).toEqual([true, true, true, false, false]);
+  });
+});
+
+describe('keying past a proxy chain of unknown length', () => {
+  // Production disproved two earlier rules. These pin the third against the
+  // shapes that broke them, so a fourth regression has to argue with a test.
+  const req = (xff?: string | string[], peer = '203.0.113.9') =>
+    ({
+      headers: xff === undefined ? {} : { 'x-forwarded-for': xff },
+      socket: { remoteAddress: peer },
+    }) as unknown as Request;
+
+  it('ignores a forged entry, because the caller can only prepend', () => {
+    // take one shipped this as the answer, and twelve invented values
+    // bought twelve separate allowances
+    const a = clientIpFrom(req('1.1.1.1, 198.51.100.7'), true);
+    const b = clientIpFrom(req('2.2.2.2, 198.51.100.7'), true);
+    expect(a).toBe('198.51.100.7');
+    expect(b).toBe(a);
+  });
+
+  it('sees past a trailing infrastructure hop - the take-two failure', () => {
+    // fifteen honest requests were all admitted in production because this
+    // trailing hop varies per request; keying on it made a fresh bucket
+    // every time
+    const a = clientIpFrom(req('198.51.100.7, 10.201.4.31'), true);
+    const b = clientIpFrom(req('198.51.100.7, 10.201.99.2'), true);
+    expect(a).toBe('198.51.100.7');
+    expect(b).toBe(a);
+  });
+
+  it('holds however many hops the platform adds', () => {
+    expect(
+      clientIpFrom(
+        req('9.9.9.9, 198.51.100.7, 10.0.0.1, 100.64.3.7, ::1'),
+        true,
+      ),
+    ).toBe('198.51.100.7');
+  });
+
+  it('is not fooled by a caller forging a private-looking address', () => {
+    // skipped as a hop, so we land on the address the edge actually saw
+    expect(clientIpFrom(req('10.0.0.5, 198.51.100.7'), true)).toBe(
+      '198.51.100.7',
+    );
+  });
+
+  it('falls back to the socket peer when every hop is infrastructure', () => {
+    expect(clientIpFrom(req('10.0.0.5, 127.0.0.1'), true)).toBe('203.0.113.9');
+    expect(clientIpFrom(req(undefined), true)).toBe('203.0.113.9');
+  });
+
+  it('ignores the header entirely when there is no proxy to trust', () => {
+    // with nothing in front of us the whole header is the caller's to write
+    expect(clientIpFrom(req('1.1.1.1'), false)).toBe('203.0.113.9');
+  });
+
+  it('reads the IPv4-mapped form Node hands back on a dual-stack socket', () => {
+    expect(isInfrastructureAddress('::ffff:10.0.0.1')).toBe(true);
+    expect(isInfrastructureAddress('::ffff:198.51.100.7')).toBe(false);
+  });
+
+  it('treats unique-local and link-local IPv6 as hops', () => {
+    expect(isInfrastructureAddress('fd00::1')).toBe(true);
+    expect(isInfrastructureAddress('fe80::1')).toBe(true);
+    expect(isInfrastructureAddress('2001:db8::1')).toBe(false);
+  });
+
+  it('does not mistake a public 100.x address for CGNAT', () => {
+    // 100.64/10 is shared address space; 100.128.x is ordinary internet
+    expect(isInfrastructureAddress('100.64.0.1')).toBe(true);
+    expect(isInfrastructureAddress('100.127.255.254')).toBe(true);
+    expect(isInfrastructureAddress('100.128.0.1')).toBe(false);
+    expect(isInfrastructureAddress('100.63.255.255')).toBe(false);
   });
 });
