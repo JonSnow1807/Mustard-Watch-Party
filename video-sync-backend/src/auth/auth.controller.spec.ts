@@ -133,3 +133,109 @@ describe('the OAuth routes when the provider is on', () => {
     );
   });
 });
+
+describe('the guest route under two limits at once', () => {
+  // Both buckets are real here. The point of these tests is the interaction
+  // between them, which is where I got it wrong: a mocked bucket would have
+  // agreed with either ordering.
+  const guestController = () => {
+    const createGuest = jest.fn().mockResolvedValue({
+      id: 'u1',
+      username: 'guest-1',
+      email: 'x@guest.invalid',
+      token: 't',
+    });
+    const controller = new AuthController(
+      { createGuest } as unknown as AuthService,
+      makeGoogle(false),
+    );
+    return { controller, createGuest };
+  };
+
+  // Under NODE_ENV=test there is no proxy to trust, so the key is the socket
+  // peer and the header is ignored on purpose - which is itself the correct
+  // behaviour, and why the peer varies here. How the chain is read when there
+  // IS a proxy is pinned in rate-bucket.spec.ts; these tests are about what
+  // the two buckets do to each other.
+  const from = (ip: string) =>
+    ({
+      headers: { 'x-forwarded-for': `${ip}, 10.201.4.31` },
+      socket: { remoteAddress: ip },
+    }) as unknown as Request;
+
+  const attempt = async (controller: AuthController, ip: string) => {
+    try {
+      await controller.guest(from(ip));
+      return 201;
+    } catch (err) {
+      return (err as { getStatus(): number }).getStatus();
+    }
+  };
+
+  it('allows one caller ten, then refuses them', async () => {
+    const { controller } = guestController();
+    const codes: number[] = [];
+    for (let i = 0; i < 12; i++)
+      codes.push(await attempt(controller, '198.51.100.7'));
+    expect(codes.filter((c) => c === 201)).toHaveLength(10);
+    expect(codes.slice(10)).toEqual([429, 429]);
+  });
+
+  it('does not let a refused caller spend the shared allowance', async () => {
+    // The bug this pins: with the shared bucket asked FIRST, every one of
+    // these ninety refusals still burned a token from it, so the caller
+    // being blocked was draining the budget for everyone else on the way
+    // down. Shared capacity is 300; the abuser should cost it exactly 10.
+    const { controller } = guestController();
+    for (let i = 0; i < 100; i++) await attempt(controller, '198.51.100.7');
+
+    // 29 more callers × 10 each = 290, which with the abuser's 10 is exactly
+    // the shared capacity. Every one of these must still be served.
+    for (let caller = 0; caller < 29; caller++) {
+      const codes: number[] = [];
+      for (let i = 0; i < 10; i++) {
+        codes.push(await attempt(controller, `203.0.113.${caller}`));
+      }
+      expect(codes).toEqual(Array(10).fill(201));
+    }
+  });
+
+  it('does not charge a caller for a request the shared cap refused', async () => {
+    // The mirror of the test above, and the half I missed: asking the
+    // per-caller bucket first fixed one direction and broke the other.
+    // Once the shared cap is empty, an honest caller's own ten must still
+    // be intact - they were never served anything.
+    const { controller } = guestController();
+    for (let i = 0; i < 300; i++)
+      await attempt(controller, `198.51.${Math.floor(i / 250)}.${i % 250}`);
+
+    const fresh = '203.0.113.200';
+    expect(await attempt(controller, fresh)).toBe(429); // shared cap, not theirs
+    // more than their own capacity, so a version that spends before asking
+    // leaves them empty rather than merely dented
+    for (let i = 0; i < 15; i++) await attempt(controller, fresh);
+
+    // their bucket is untouched, so when the shared cap refills they get
+    // their full allowance rather than a spent one
+    const bucket = (
+      controller as unknown as {
+        guestBucket: { peek(k: string, n: number): boolean };
+      }
+    ).guestBucket;
+    expect(bucket.peek(fresh, Date.now())).toBe(true);
+  });
+
+  it('still stops a flood spread across many addresses', async () => {
+    // What the per-caller bucket cannot see: 300 requests, every one from a
+    // different address, none of them individually over the line.
+    const { controller } = guestController();
+    const codes: number[] = [];
+    for (let i = 0; i < 310; i++) {
+      codes.push(
+        await attempt(controller, `198.51.${Math.floor(i / 250)}.${i % 250}`),
+      );
+    }
+    expect(codes.filter((c) => c === 201)).toHaveLength(300);
+    expect(codes.filter((c) => c === 429)).toHaveLength(10);
+  });
+});

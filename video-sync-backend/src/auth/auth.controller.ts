@@ -23,7 +23,7 @@ import {
 } from './google/google-oauth.service';
 import { readCookie } from './google/cookies';
 import { Interval } from '@nestjs/schedule';
-import { RateBucket, clientIp } from './rate-bucket';
+import { RateBucket, clientIp, isInfrastructureAddress } from './rate-bucket';
 
 @Controller('auth')
 export class AuthController {
@@ -38,6 +38,26 @@ export class AuthController {
   private readonly guestBucket = new RateBucket(10, 10 / 3600);
 
   /**
+   * A cap on guest creation for the WHOLE instance, on top of the per-caller
+   * one.
+   *
+   * The per-caller bucket is only as good as our ability to tell callers
+   * apart, and in production that turned out not to work: the same test that
+   * held locally (ten allowed, then 429) let twenty-two through against the
+   * deployed service, with and without a forged header. Whatever key the
+   * proxy chain is yielding, it is not stable per caller.
+   *
+   * This bucket has no key, so nothing a caller sends can move them out of
+   * it. It is deliberately loose - a real room of people joining a film must
+   * not trip it - and exists to bound the damage while the per-caller key is
+   * diagnosed rather than guessed at again.
+   */
+  private readonly guestGlobalBucket = new RateBucket(300, 300 / 3600);
+
+  /** Logged once, so the next fix is based on what the proxy actually sends. */
+  private loggedForwardShape = false;
+
+  /**
    * Nothing swept the bucket map, so it retained a key per distinct caller
    * forever - which turns a rate limiter into a slow memory leak that an
    * attacker controls the size of. Hourly, off the request path, because
@@ -47,6 +67,7 @@ export class AuthController {
   @Interval(3_600_000)
   sweepRateBuckets(): void {
     this.guestBucket.sweep(Date.now());
+    this.guestGlobalBucket.sweep(Date.now());
   }
 
   @Post('register')
@@ -76,13 +97,64 @@ export class AuthController {
    */
   @Post('guest')
   async guest(@Req() req: Request) {
+    const now = Date.now();
+
+    if (!this.loggedForwardShape) {
+      this.loggedForwardShape = true;
+      // The SHAPE, not the addresses: how many hops arrive and what the
+      // socket peer looks like is all that is needed to key correctly, and
+      // logging people's IPs to answer it would be a poor trade.
+      const xff = req.headers['x-forwarded-for'];
+      const raw = Array.isArray(xff) ? xff.join(',') : (xff ?? '');
+      // Which hops look like infrastructure and which look like a person,
+      // in order. This is the fact that distinguishes the two cases: a
+      // trailing `non-infra` means the platform's own last hop is public,
+      // and everyone behind it is being keyed together.
+      const hops = raw
+        ? raw
+            .split(',')
+            .map((h) => h.trim())
+            .filter(Boolean)
+            .map((h) => (isInfrastructureAddress(h) ? 'infra' : 'caller'))
+            .join('>')
+        : 'none';
+      this.logger.log(
+        `guest key diagnostic: xff shape=${hops} ` +
+          `headerPresent=${Boolean(xff)} ` +
+          `peerIsInfra=${isInfrastructureAddress(req.socket?.remoteAddress ?? '')} ` +
+          `otherForwardHeaders=${
+            Object.keys(req.headers)
+              .filter(
+                (h) =>
+                  h.includes('forward') ||
+                  h.includes('real-ip') ||
+                  h.includes('client-ip'),
+              )
+              .join('|') || 'none'
+          }`,
+      );
+    }
+
+    // Decide on both limits BEFORE spending from either. Asking one and
+    // then the other means the first is charged for a request the second
+    // refuses - so during a flood every honest caller would burn their own
+    // allowance on requests that were never served.
     const ip = clientIp(req);
-    if (!this.guestBucket.take(ip, Date.now())) {
+    if (!this.guestBucket.peek(ip, now)) {
       throw new HttpException(
         'Too many guests from this connection - try again shortly',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
+    if (!this.guestGlobalBucket.peek('all', now)) {
+      throw new HttpException(
+        'Too many guests right now - try again shortly',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    this.guestBucket.take(ip, now);
+    this.guestGlobalBucket.take('all', now);
+
     return await this.authService.createGuest();
   }
 

@@ -153,6 +153,46 @@ To enable it:
 No frontend rebuild is needed: the button is driven by `/auth/providers` at
 runtime, so one bundle serves an install with the provider and one without.
 
+## Rate limiting an endpoint that does not know who you are
+
+`POST /auth/guest` creates a database row for anyone who asks, so it is
+limited. Getting the *key* right took three attempts and two of them shipped,
+which is worth more than the rule itself.
+
+**Take one — leftmost `x-forwarded-for`.** Wrong, and it is the classic
+mistake: that entry is written by whoever is calling. Twelve requests with
+twelve invented values bought twelve separate allowances. A local test would
+never have caught it, because locally there is no proxy at all.
+
+**Take two — the last entry**, on the theory that our proxy appends the peer
+it saw, pushing any forged value leftward. Sound for a one-hop chain, and it
+passed locally. Production disagreed: **fifteen requests from one machine
+with no forged header at all, against a capacity of ten, were all admitted**.
+The limiter was not engaging for *anyone*. One instance, `NODE_ENV=production`,
+so the key was that last entry — and it varies per request, because the
+platform appends its own hop from a pool. Every request got a fresh bucket.
+
+**Take three — the rightmost address that could belong to a person**, walking
+the chain from the right and skipping private, loopback, link-local and CGNAT
+ranges. This does not depend on knowing the hop count, which is the fact that
+kept being wrong and cannot be checked from outside. A caller can only
+*prepend*, so the rightmost public entry is still theirs; a forged
+private-looking value is skipped as a hop.
+
+Its cost, stated rather than discovered later: if the platform's own last hop
+is public, everyone behind it keys together and is limited as one caller.
+Coarse — but it fails toward refusing rather than toward unbounded row
+creation.
+
+Underneath it sits a **keyless bucket** (300/hour for the instance) that no
+header can move a caller out of. It is not a substitute for per-caller
+limiting; it is the floor under it, sized to be invisible to a room of people
+joining a film.
+
+**The lesson worth keeping: a rate limiter cannot be verified locally.** Its
+whole behaviour depends on infrastructure that only exists in production.
+Both wrong versions passed their unit tests.
+
 ## Known gaps
 
 - No token refresh or revocation. A token is good for 12 hours, and a socket
