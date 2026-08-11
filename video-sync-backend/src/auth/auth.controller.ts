@@ -128,7 +128,9 @@ export class AuthController {
               // filter missed it: cf-connecting-ip contains neither
               // 'client-ip' nor 'forward', so the header carrying the actual
               // answer was invisible to the diagnostic looking for it.
-              .filter((h) => /forward|real-ip|client-ip|connecting-ip|cf-/.test(h))
+              .filter((h) =>
+                /forward|real-ip|client-ip|connecting-ip|cf-/.test(h),
+              )
               .join('|') || 'none'
           }`,
       );
