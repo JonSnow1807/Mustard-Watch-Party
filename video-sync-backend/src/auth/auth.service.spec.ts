@@ -28,6 +28,7 @@ const makeDb = () => ({
     findUnique: jest.fn(),
     findFirst: jest.fn().mockResolvedValue(null),
     create: jest.fn(),
+    update: jest.fn(),
   },
   oAuthAccount: {
     findUnique: jest.fn().mockResolvedValue(null),
@@ -320,5 +321,153 @@ describe('createGuest', () => {
     await expect(serviceWith(db).createGuest()).rejects.toThrow(
       'connection reset',
     );
+  });
+});
+
+describe('claiming a guest account', () => {
+  const guestRow = { id: 'g1', isGuest: true };
+
+  const claiming = () => {
+    const db = makeDb();
+    db.user.findUnique.mockResolvedValue(guestRow);
+    db.user.update.mockResolvedValue({
+      id: 'g1',
+      username: 'ada',
+      email: 'ada@example.com',
+    });
+    return { db, service: serviceWith(db) };
+  };
+
+  it('updates the guest row in place, keeping its id', async () => {
+    // The whole point. Chat messages and participant rows point at this id
+    // by foreign key - a new account would leave last night's conversation
+    // attributed to a name about to be swept.
+    const { db, service } = claiming();
+    const result = await service.claimGuestAccount(
+      'g1',
+      'ada',
+      'Ada@Example.com',
+      'a-real-password',
+    );
+
+    expect(db.user.create).not.toHaveBeenCalled();
+    const args = db.user.update.mock.calls[0][0] as {
+      where: { id: string; isGuest: boolean };
+      data: { isGuest: boolean; email: string; password: string };
+    };
+    expect(args.where).toEqual({ id: 'g1', isGuest: true });
+    expect(args.data.isGuest).toBe(false);
+    expect(result.id).toBe('g1');
+  });
+
+  it('narrows the update by isGuest too, not just by id', async () => {
+    // Belt and braces against the check-then-act window: the row is read,
+    // then written, and the guard has to be in the WRITE or a race can
+    // slip a full account through it.
+    const { db, service } = claiming();
+    await service.claimGuestAccount('g1', 'ada', 'a@b.co', 'a-real-password');
+    const args = db.user.update.mock.calls[0][0] as {
+      where: { isGuest: boolean };
+    };
+    expect(args.where.isGuest).toBe(true);
+  });
+
+  it('stores the address folded to lower case, and hashed credentials', async () => {
+    const { db, service } = claiming();
+    await service.claimGuestAccount(
+      'g1',
+      'ada',
+      '  Ada@Example.COM ',
+      'a-real-password',
+    );
+    const args = db.user.update.mock.calls[0][0] as {
+      data: { email: string; password: string };
+    };
+    expect(args.data.email).toBe('ada@example.com');
+    expect(args.data.password).not.toBe('a-real-password');
+    expect(await bcrypt.compare('a-real-password', args.data.password)).toBe(
+      true,
+    );
+  });
+
+  it('refuses when the row is already a full account', async () => {
+    // A stolen token must not be able to overwrite someone's credentials,
+    // so the guard is on the ROW - the token cannot be trusted to report
+    // this about itself.
+    const db = makeDb();
+    db.user.findUnique.mockResolvedValue({ id: 'u1', isGuest: false });
+    await expect(
+      serviceWith(db).claimGuestAccount(
+        'u1',
+        'ada',
+        'a@b.co',
+        'a-real-password',
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to keep the unroutable address the guest was born with', async () => {
+    const { db, service } = claiming();
+    await expect(
+      service.claimGuestAccount(
+        'g1',
+        'ada',
+        'x@guest.invalid',
+        'a-real-password',
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a short password, a bad name and a bad address', async () => {
+    const { service } = claiming();
+    await expect(
+      service.claimGuestAccount('g1', 'ada', 'a@b.co', 'short'),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.claimGuestAccount('g1', 'a b', 'a@b.co', 'a-real-password'),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.claimGuestAccount(
+        'g1',
+        'ada',
+        'not-an-address',
+        'a-real-password',
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('turns a lost race into a conflict rather than a 500', async () => {
+    // findFirst said the name was free; between that and the write someone
+    // else took it. The database is the only thing that can arbitrate.
+    const { db, service } = claiming();
+    db.user.update.mockRejectedValue(uniqueViolation('username'));
+    await expect(
+      service.claimGuestAccount('g1', 'ada', 'a@b.co', 'a-real-password'),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('refuses a name already taken, before writing anything', async () => {
+    const { db, service } = claiming();
+    db.user.findFirst.mockResolvedValue({ id: 'someone-else' });
+    await expect(
+      service.claimGuestAccount('g1', 'ada', 'a@b.co', 'a-real-password'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('issues a fresh token, because the guest name is about to be wrong', async () => {
+    const { service } = claiming();
+    const result = await service.claimGuestAccount(
+      'g1',
+      'ada',
+      'a@b.co',
+      'a-real-password',
+    );
+    expect(jwtService.decode(result.token)).toMatchObject({
+      sub: 'g1',
+      name: 'ada',
+    });
   });
 });

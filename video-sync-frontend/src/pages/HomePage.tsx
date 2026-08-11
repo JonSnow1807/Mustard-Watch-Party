@@ -19,6 +19,7 @@ import {
   chipMono,
   ghostIconButton,
   card,
+  input,
   sectionLabel,
 } from '../theme';
 import { Wordmark, IconPlus, IconUsers, IconFilm, IconLock, IconX } from '../components/Icons';
@@ -232,16 +233,6 @@ const RecentChip = styled.button`
   max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-`;
-
-const GuestNote = styled.span`
-  font-family: ${font.body};
-  font-size: 12px;
-  color: ${color.faint};
-  border: 1px solid ${color.line};
-  border-radius: ${radius.pill};
-  padding: 3px 10px;
   white-space: nowrap;
 `;
 
@@ -544,6 +535,30 @@ const ModalButtons = styled.div`
   justify-content: flex-end;
 `;
 
+const ClaimButton = styled.button`
+  ${button.secondary}
+  padding: 6px 12px;
+  font-size: 12.5px;
+  border-color: ${color.mustard};
+  color: ${color.mustard};
+`;
+
+const Field = styled.label`
+  display: block;
+  margin-bottom: 14px;
+`;
+
+const FieldLabel = styled.span`
+  ${sectionLabel}
+  display: block;
+  margin-bottom: 6px;
+`;
+
+const FieldInput = styled.input`
+  ${input}
+  width: 100%;
+`;
+
 const DangerFilledButton = styled.button`
   ${button.danger}
   background: ${color.danger};
@@ -560,7 +575,7 @@ const DangerFilledButton = styled.button`
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout, isGuest } = useAuth();
+  const { user, logout, isGuest, claimAccount } = useAuth();
   // A snapshot, so the row does not churn while you are looking at it - but
   // re-taken whenever the session changes. Reading it once for the lifetime
   // of the component meant a sign-out followed by a different sign-in, with
@@ -634,6 +649,50 @@ export const HomePage: React.FC = () => {
     e.stopPropagation();
     setDeleteModal({ show: true, room });
   };
+
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const claimTriggerRef = useRef<HTMLElement | null>(null);
+  const claimFirstFieldRef = useRef<HTMLInputElement | null>(null);
+
+  const closeClaim = useCallback(() => setClaimOpen(false), []);
+
+  const submitClaim = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    setClaiming(true);
+    try {
+      await claimAccount(
+        String(form.get('username') ?? ''),
+        String(form.get('email') ?? ''),
+        String(form.get('password') ?? ''),
+      );
+      setClaimOpen(false);
+    } catch {
+      // claimAccount has already said what went wrong; the dialog stays open
+      // so the typed values are still there to correct
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  // Same dialog manners as the delete confirmation: focus in on open,
+  // Escape closes, focus returns to whatever opened it.
+  useEffect(() => {
+    if (!claimOpen) return;
+    claimTriggerRef.current = document.activeElement as HTMLElement | null;
+    claimFirstFieldRef.current?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeClaim();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      claimTriggerRef.current?.focus();
+      claimTriggerRef.current = null;
+    };
+  }, [claimOpen, closeClaim]);
 
   const hideDeleteModal = useCallback(() => {
     setDeleteModal({ show: false, room: null });
@@ -764,17 +823,20 @@ export const HomePage: React.FC = () => {
           <SignedInAs>
             {isGuest ? `Guest · ${user.username}` : `Signed in as ${user.username}`}
           </SignedInAs>
-          {/* Deliberately NOT a "keep this account" button. Signing up from
-              here creates a DIFFERENT account and silently abandons the
-              guest's rooms and messages, so a button offering to keep them
-              would be a promise nothing behind it can honour. Promoting a
-              guest row in place is the real fix; until it exists, saying
-              plainly that the session is temporary beats an action that
-              does the opposite of what it says. */}
+          {/* This used to be a plain "temporary session" label, with a
+              comment explaining that a "keep this account" button would be a
+              promise nothing behind it could honour - signing up made a
+              DIFFERENT account and abandoned the guest's rooms and messages.
+              POST /auth/claim updates the row in place, so the promise can
+              now be kept and the button is honest. */}
           {isGuest && (
-            <GuestNote title="Guest sessions are not kept - sign up to start one that is">
-              temporary session
-            </GuestNote>
+            <ClaimButton
+              type="button"
+              onClick={() => setClaimOpen(true)}
+              title="Guest sessions expire - keep this one, with everything in it"
+            >
+              Keep this account
+            </ClaimButton>
           )}
           <SecondarySmButton type="button" onClick={logout}>
             Sign out
@@ -1007,6 +1069,65 @@ export const HomePage: React.FC = () => {
           )}
         </Section>
       </Content>
+
+      {claimOpen && (
+        <Overlay onClick={closeClaim}>
+          <ModalCard
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="claim-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ModalTitle id="claim-title">Keep this account</ModalTitle>
+            <ModalText>
+              You are {user.username}, and you stay {user.username} — the same
+              account, so the rooms you have joined and the messages you have
+              already sent stay yours. This only adds a way back in.
+            </ModalText>
+            <form onSubmit={submitClaim}>
+              <Field>
+                <FieldLabel>Name</FieldLabel>
+                <FieldInput
+                  name="username"
+                  ref={claimFirstFieldRef}
+                  defaultValue={user.username}
+                  autoComplete="username"
+                  required
+                />
+              </Field>
+              <Field>
+                <FieldLabel>Email</FieldLabel>
+                <FieldInput
+                  name="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  required
+                />
+              </Field>
+              <Field>
+                <FieldLabel>Password</FieldLabel>
+                <FieldInput
+                  name="password"
+                  type="password"
+                  minLength={8}
+                  placeholder="At least 8 characters"
+                  autoComplete="new-password"
+                  required
+                />
+              </Field>
+              <ModalButtons>
+                <SecondaryButton type="button" onClick={closeClaim}>
+                  Not now
+                </SecondaryButton>
+                <PrimaryButton type="submit" disabled={claiming}>
+                  {claiming ? 'Saving…' : 'Keep it'}
+                </PrimaryButton>
+              </ModalButtons>
+            </form>
+          </ModalCard>
+        </Overlay>
+      )}
 
       {/* Delete Confirmation Modal */}
       {deleteModal.show && deleteModal.room && (
