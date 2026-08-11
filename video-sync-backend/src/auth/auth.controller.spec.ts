@@ -239,3 +239,61 @@ describe('the guest route under two limits at once', () => {
     expect(codes.filter((c) => c === 429)).toHaveLength(10);
   });
 });
+
+describe('starting a link, which is a different thing from signing in', () => {
+  const makeLinkGoogle = () => {
+    const start = jest.fn().mockReturnValue({
+      authUrl: 'https://accounts.google.com/o/oauth2/v2/auth?x=1',
+      cookie: 'sealed',
+    });
+    return {
+      google: {
+        enabled: true,
+        assertEnabled: () => undefined,
+        start,
+        verifyCallback: jest.fn(),
+        callbackRedirect: (f: string) =>
+          `https://mustard.watch/auth/callback#${f}`,
+        redirectUri: 'https://api.mustard.watch/api/auth/google/callback',
+      } as unknown as GoogleOAuthService,
+      start,
+    };
+  };
+
+  it('seals the id the GUARD verified, not anything the caller sent', () => {
+    // The whole security of linking rests here: a caller who could nominate
+    // the account would be able to attach their Google identity to someone
+    // else's.
+    const { google, start } = makeLinkGoogle();
+    const controller = new AuthController({} as unknown as AuthService, google);
+    const res = makeRes();
+
+    const out = controller.linkStart(
+      'user-from-token',
+      { returnTo: '/room/abc' },
+      res as unknown as Response,
+    );
+
+    // cast the CALLS array, not the element - indexing an `any` array is
+    // itself the unsafe access, which is the same note CodeRabbit left on
+    // the claim tests
+    const calls = start.mock.calls as [string | undefined, number, string][];
+    expect(calls[0][2]).toBe('user-from-token');
+    expect(out.authUrl).toContain('accounts.google.com');
+    expect(res.cookies[0].name).toBe('mw_oauth');
+  });
+
+  it('returns the URL rather than redirecting to it', () => {
+    // It is a POST carrying a bearer token, so the browser has to navigate
+    // itself - a redirect here would be answered by fetch, not by the
+    // address bar, and the flow would silently go nowhere.
+    const { google } = makeLinkGoogle();
+    const res = makeRes();
+    new AuthController({} as unknown as AuthService, google).linkStart(
+      'u1',
+      {},
+      res as unknown as Response,
+    );
+    expect(res.redirectedTo).toBeUndefined();
+  });
+});

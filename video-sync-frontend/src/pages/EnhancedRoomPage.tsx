@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { EnhancedVideoPlayer } from '../components/EnhancedVideoPlayer';
 import { ChatPanel } from '../components/ChatPanel';
+import { ClaimAccountDialog } from '../components/ClaimAccount';
 import { EnhancedVoiceChat } from '../components/EnhancedVoiceChat';
 import { RoomSettings } from '../components/RoomSettings';
 import { apiService } from '../services/api';
@@ -138,6 +139,17 @@ const SecondaryAction = styled.button`
   ${button.secondary}
   ${buttonSm}
   ${actionTight}
+`;
+
+// Mustard-outlined rather than a third grey button: it is the only control
+// up here that is about the person rather than the room, and a guest should
+// be able to find it without reading every label.
+const ClaimAction = styled.button`
+  ${button.secondary}
+  ${buttonSm}
+  ${actionTight}
+  border-color: ${color.mustard};
+  color: ${color.mustard};
 `;
 
 const DangerAction = styled.button`
@@ -361,7 +373,12 @@ export const EnhancedRoomPage: React.FC = () => {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
   const { socket, connected } = useSocket();
-  const { user, ready: authReady } = useAuth();
+  const { user, ready: authReady, isGuest } = useAuth();
+  // A guest in a room is the person with the most to lose from the session
+  // expiring - they are the author of the chat on screen. Until now the only
+  // way to keep it was on the home page, which meant leaving the room.
+  const [claimOpen, setClaimOpen] = useState(false);
+  const closeClaim = useCallback(() => setClaimOpen(false), []);
 
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -678,6 +695,17 @@ export const EnhancedRoomPage: React.FC = () => {
           </Identity>
 
           <Actions>
+            {isGuest && (
+              <ClaimAction
+                type="button"
+                onClick={() => setClaimOpen(true)}
+                aria-label="Keep this account"
+                title="Guest sessions expire - keep this one, with everything in it"
+              >
+                <ActionLabel>Keep account</ActionLabel>
+              </ClaimAction>
+            )}
+
             <SecondaryAction type="button" onClick={handleShareRoom} aria-label="Share">
               <IconShare size={14} />
               <ActionLabel>Share</ActionLabel>
@@ -701,6 +729,16 @@ export const EnhancedRoomPage: React.FC = () => {
           </Actions>
         </TopBarInner>
       </TopBar>
+
+      {claimOpen && (
+        // Comes back to this room after the Google round trip, rather than
+        // to the home page - being bounced out of what you were watching is
+        // a poor reward for keeping your account.
+        <ClaimAccountDialog
+          onClose={closeClaim}
+          returnTo={`/room/${room.code}`}
+        />
+      )}
 
       <Grid>
         <MainColumn>

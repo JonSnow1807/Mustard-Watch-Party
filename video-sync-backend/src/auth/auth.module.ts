@@ -13,9 +13,17 @@ import { GuestSweeperService } from './guest-sweeper.service';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('jwt.secret'),
-        // verified at connect only; an accepted socket outlives its token
-        // (documented limitation - no refresh/revocation in scope)
-        signOptions: { expiresIn: '12h' },
+        // Read from config rather than hardcoded. It was hardcoded to '12h'
+        // while configuration.ts carried a JWT_EXPIRES_IN of '7d' that
+        // nothing read - so the documented knob did nothing and the two
+        // disagreed by a factor of fourteen. The config default is now 12h,
+        // so this changes the number in one file and the behaviour in none.
+        //
+        // Still verified at connect only; an accepted socket outlives its
+        // token (documented limitation - no refresh/revocation in scope).
+        signOptions: {
+          expiresIn: config.get<string>('jwt.expiresIn') ?? '12h',
+        },
       }),
     }),
   ],

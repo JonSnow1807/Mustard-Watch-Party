@@ -33,7 +33,10 @@ export default () => ({
     // no fallback secret: a deployment that forgets JWT_SECRET must fail to
     // boot, not silently issue tokens anyone can forge
     secret: requireOutsideLocal('JWT_SECRET', 'dev-only-insecure-secret'),
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    // 12h, matching what auth.module actually issued while this value sat
+    // unread. The default changes the number here, not the behaviour: the
+    // old '7d' was never reaching anything.
+    expiresIn: process.env.JWT_EXPIRES_IN || '12h',
   },
   cors: {
     origin: process.env.FRONTEND_URL || 'http://localhost:3001',

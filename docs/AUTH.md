@@ -197,9 +197,15 @@ Both wrong versions passed their unit tests.
 
 - No token refresh or revocation. A token is good for 12 hours, and a socket
   accepted at connect outlives its token (`docs/SCALING.md`).
-- `JWT_EXPIRES_IN` is dead config — the 12h lifetime is hardcoded in
-  `auth.module.ts`.
-- Linking a provider to an existing account is not implemented; see above.
+- ~~`JWT_EXPIRES_IN` is dead config~~ — fixed. It is read now; the default is
+  `12h`, which is what was hardcoded while the config file advertised `7d` to
+  nobody. Raising it raises how long a stolen token is useful, and there is
+  still no revocation, so it is not a free knob.
+- Linking a provider to an existing account is implemented **for guests
+  only** (`POST /auth/google/link-start`). A full account cannot add or swap a
+  provider - that needs a re-authentication step this does not have, and
+  adding one without it would let a stolen token attach an attacker's Google
+  identity to somebody's account.
 - `isPublic` on a room is a listing flag, not access control.
 - The "is this address already taken" check is a case-insensitive `findFirst`,
   which Postgres answers with a sequential scan — the `email` index is
