@@ -28,6 +28,15 @@ interface AuthContextType {
   register: (username: string, email: string, password: string) => Promise<void>;
   /** Adopt a token minted elsewhere - today, by the Google callback. */
   signInWithToken: (token: string) => Promise<void>;
+  /**
+   * Turn the guest session you are already in into a real account, keeping
+   * the same row - so chat you have already sent stays attributed to you.
+   */
+  claimAccount: (
+    username: string,
+    email: string,
+    password: string,
+  ) => Promise<void>;
   /** Sign in with no account at all; see docs/GUEST_ACCESS.md. */
   continueAsGuest: () => Promise<void>;
   /** True when this session has no password and no provider behind it. */
@@ -156,6 +165,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const claimAccount = useCallback(
+    async (username: string, email: string, password: string) => {
+      try {
+        const { data } = await apiService.claim(username, email, password);
+        // The server issues a fresh token here: the old one carries the
+        // guest name, which is about to be wrong everywhere it is shown.
+        setUser(data);
+        localStorage.setItem('user', JSON.stringify(data));
+        toast.success(`Welcome properly, ${data.username}`);
+      } catch (error: any) {
+        const status = error?.response?.status;
+        toast.error(
+          // The server's message is the useful one for 400/409 - it says
+          // which rule was broken - and a generic string would hide it.
+          status === 400 || status === 409
+            ? error?.response?.data?.message || "That didn't work"
+            : status === 403
+              ? 'This session is already a full account'
+              : "Couldn't save your account",
+        );
+        throw error;
+      }
+    },
+    [],
+  );
+
   const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem('user');
@@ -172,6 +207,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     register,
     signInWithToken,
     continueAsGuest,
+    claimAccount,
     // the synthetic address the server mints is the only marker the client
     // gets, and it is one no real account can have: .invalid is reserved
     isGuest: Boolean(user?.email?.endsWith('@guest.invalid')),

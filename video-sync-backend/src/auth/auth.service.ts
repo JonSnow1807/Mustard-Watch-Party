@@ -1,7 +1,9 @@
 // src/auth/auth.service.ts
 import {
   Injectable,
+  BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -180,6 +182,101 @@ export class AuthService {
    * the address is already spoken for locally we stop and say so, rather
    * than guessing which of the two humans is in front of us.
    */
+  /**
+   * Turn a guest into a real account IN PLACE.
+   *
+   * The row keeps its id, which is the whole point. A guest who spent an
+   * evening in a room is the author of its chat messages and a member of its
+   * participant list, both by foreign key; creating a fresh account and
+   * copying nothing would leave those rows pointing at a name that is about
+   * to be swept, and the conversation people are still reading would go
+   * blank. So this is an UPDATE, not an insert.
+   *
+   * Only a guest can do this. An account with a password reaching here would
+   * mean a stolen token could overwrite someone's credentials, so the guard
+   * is on the row rather than on the caller's word about themselves.
+   */
+  async claimGuestAccount(
+    userId: string,
+    username: string,
+    email: string,
+    password: string,
+  ): Promise<SessionUser> {
+    const cleanUsername = (username ?? '').trim();
+    const cleanEmail = (email ?? '').trim().toLowerCase();
+
+    // Checked here rather than in a DTO because register/1 does not validate
+    // either, and putting a class-validator on one of the two doors would
+    // read as though the other had been considered and passed. It has not -
+    // see the known-gaps note.
+    if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(cleanUsername)) {
+      throw new BadRequestException(
+        'Names are 3-32 characters: letters, numbers, dot, dash, underscore',
+      );
+    }
+    if (!/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(cleanEmail)) {
+      throw new BadRequestException('That email address does not look right');
+    }
+    if (cleanEmail.endsWith('@guest.invalid')) {
+      // The address the guest row was born with. Keeping it would leave an
+      // account that can never receive a reset.
+      throw new BadRequestException('Use an address you can actually receive');
+    }
+    if ((password ?? '').length < 8) {
+      throw new BadRequestException('Passwords are at least 8 characters');
+    }
+
+    const current = await this.database.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isGuest: true },
+    });
+
+    if (!current) throw new UnauthorizedException('No such session');
+    if (!current.isGuest) {
+      // Not a 409: telling an attacker holding a stolen token which accounts
+      // are claimable is a free enumeration oracle.
+      throw new ForbiddenException('This session is already a full account');
+    }
+
+    // Checked before the write for a clear error, and caught after it too -
+    // between these two statements someone else can take the same name, and
+    // the database is the only thing that can actually arbitrate.
+    const taken = await this.database.user.findFirst({
+      where: {
+        OR: [{ username: cleanUsername }, { email: cleanEmail }],
+        NOT: { id: userId },
+      },
+      select: { id: true },
+    });
+    if (taken) throw new ConflictException('That name or email is taken');
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    try {
+      const user = await this.database.user.update({
+        where: { id: userId, isGuest: true },
+        data: {
+          username: cleanUsername,
+          email: cleanEmail,
+          password: hashedPassword,
+          isGuest: false,
+        },
+        select: { id: true, username: true, email: true },
+      });
+      // A fresh token: the old one carries the guest name, which is about to
+      // be wrong everywhere it is displayed.
+      return { ...user, token: this.issueToken(user) };
+    } catch (err) {
+      if (
+        isUniqueViolation(err, 'username') ||
+        isUniqueViolation(err, 'email')
+      ) {
+        throw new ConflictException('That name or email is taken');
+      }
+      throw err;
+    }
+  }
+
   async signInWithGoogle(identity: GoogleIdentity): Promise<SessionUser> {
     const email = identity.email.trim().toLowerCase();
 

@@ -171,6 +171,33 @@ export class AuthController {
   }
 
   /**
+   * Keep the account you have been using.
+   *
+   * A guest session is a real row with real history hanging off it - chat
+   * messages, participant records - and it expires in twelve hours with no
+   * password to get back in with. This is the door out of that, and it
+   * updates the row in place rather than making a new one, so the name on
+   * last night's messages stays the name of the person who wrote them.
+   *
+   * Guarded, so the caller is whoever the token says; the service then
+   * checks the ROW is still a guest, because the token cannot be trusted to
+   * report that about itself.
+   */
+  @Post('claim')
+  @UseGuards(JwtAuthGuard)
+  async claim(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: { username: string; email: string; password: string },
+  ) {
+    return await this.authService.claimGuestAccount(
+      userId,
+      dto.username,
+      dto.email,
+      dto.password,
+    );
+  }
+
+  /**
    * Who the bearer token says you are. The OAuth callback hands the browser
    * a token and nothing else, so there has to be one place to exchange it
    * for the profile the UI shows.

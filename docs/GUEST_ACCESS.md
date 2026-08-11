@@ -1,13 +1,14 @@
-# Joining without an account — what it would actually take
+# Joining without an account
 
-The UX audit's largest open finding: someone sent an invite link has to
-create an account before they can watch anything. This note is the survey I
-did before writing any of it, because the shape of the change is decided by
-constraints that are already load-bearing, and picking the wrong shape here
-is expensive to undo.
+The UX audit's largest open finding: someone sent an invite link had to
+create an account before they could watch anything.
 
-Not implemented. This is the analysis, not the design being proposed as
-settled.
+**Built.** `POST /auth/guest` since #51, and `POST /auth/claim` — keeping the
+account you have been using — since #54. What follows is the survey done
+before any of it was written, kept because the shape of the change was
+decided by constraints that are still load-bearing, and the reasoning is
+worth more than the conclusion. Where a section still reads as a proposal,
+read it as the argument for what is now there.
 
 ## Why it is not a small change
 
@@ -73,3 +74,44 @@ lying about what the token means.
 
 Either way this wants to be its own PR with its own tests, not an
 afterthought bolted onto a UX sweep.
+
+## Keeping the account (`POST /auth/claim`)
+
+A guest session is a real row with real history hanging off it, and it expires
+in twelve hours with no password to get back in with. Claiming is the door out
+of that, and it is an **UPDATE, not an insert**: the row keeps its id.
+
+That is the whole design. `ChatMessage.userId` and `Participant.userId` are
+foreign keys — creating a fresh account and copying nothing would leave last
+night's conversation attributed to a name about to be swept, and the messages
+people are still reading would go blank.
+
+**The guard is on the row, not on the caller's word.** The route is
+authenticated, but the service re-reads `isGuest` and the `update` is narrowed
+by `isGuest: true` as well — check-then-act has a window, and the guard has to
+be in the write or a race can slip a full account through it. A caller whose
+row is already a full account gets 403, not 409: telling someone holding a
+stolen token which accounts are claimable is a free enumeration oracle.
+
+Verified against a real database, not mocks — `scripts/live-checks/claim-check.mjs`.
+The unit tests assert the service calls `update()` with the same id, which is
+the mock agreeing with itself. Only Postgres can say whether the chat rows
+still point at a live user afterwards.
+
+**Three things that check got wrong before it got them right**, all of them the
+harness rather than the product: chat history is served over the socket and not
+in the room's REST body; the participant row is removed on disconnect, so
+closing the socket before looking shows an empty list; and deleting the room at
+the end removes the very chat rows a later query was inspecting. Each looked
+exactly like data loss. A live check that does not assert its own setup will
+report its own failures as yours.
+
+### Still not built
+
+- **Linking Google to a guest row.** Claiming takes a password. Someone who
+  would rather use Google has to make a separate account, which is the case
+  this whole feature exists to avoid.
+- **Password strength beyond eight characters**, and `register` validates even
+  less — claim checks a name pattern, an address shape and a length; register
+  checks none of them. Fixing one door and not the other would read as though
+  the other had been considered.
