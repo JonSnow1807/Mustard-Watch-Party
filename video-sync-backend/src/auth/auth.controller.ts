@@ -106,8 +106,20 @@ export class AuthController {
       // logging people's IPs to answer it would be a poor trade.
       const xff = req.headers['x-forwarded-for'];
       const raw = Array.isArray(xff) ? xff.join(',') : (xff ?? '');
+      // Which hops look like infrastructure and which look like a person,
+      // in order. This is the fact that distinguishes the two cases: a
+      // trailing `non-infra` means the platform's own last hop is public,
+      // and everyone behind it is being keyed together.
+      const hops = raw
+        ? raw
+            .split(',')
+            .map((h) => h.trim())
+            .filter(Boolean)
+            .map((h) => (isInfrastructureAddress(h) ? 'infra' : 'caller'))
+            .join('>')
+        : 'none';
       this.logger.log(
-        `guest key diagnostic: xff hops=${raw ? raw.split(',').length : 0} ` +
+        `guest key diagnostic: xff shape=${hops} ` +
           `headerPresent=${Boolean(xff)} ` +
           `peerIsInfra=${isInfrastructureAddress(req.socket?.remoteAddress ?? '')} ` +
           `otherForwardHeaders=${
@@ -123,22 +135,25 @@ export class AuthController {
       );
     }
 
+    // Decide on both limits BEFORE spending from either. Asking one and
+    // then the other means the first is charged for a request the second
+    // refuses - so during a flood every honest caller would burn their own
+    // allowance on requests that were never served.
     const ip = clientIp(req);
-    if (!this.guestBucket.take(ip, now)) {
+    if (!this.guestBucket.peek(ip, now)) {
       throw new HttpException(
         'Too many guests from this connection - try again shortly',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    // Second, and only for callers who are within their own allowance: an
-    // attacker who is already being refused must not be able to spend the
-    // shared budget and lock everyone else out on their way down.
-    if (!this.guestGlobalBucket.take('all', now)) {
+    if (!this.guestGlobalBucket.peek('all', now)) {
       throw new HttpException(
         'Too many guests right now - try again shortly',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
+    this.guestBucket.take(ip, now);
+    this.guestGlobalBucket.take('all', now);
 
     return await this.authService.createGuest();
   }

@@ -41,6 +41,24 @@ export class RateBucket {
     return true;
   }
 
+  /**
+   * Whether a token is available, without spending one.
+   *
+   * For the case where a request must clear more than one bucket: spending
+   * from the first before asking the second charges callers for requests
+   * that were refused anyway.
+   */
+  peek(key: string, now: number): boolean {
+    const bucket = this.buckets.get(key);
+    if (!bucket) return this.capacity >= 1;
+    const elapsedS = Math.max(0, (now - bucket.at) / 1000);
+    const tokens = Math.min(
+      this.capacity,
+      bucket.tokens + elapsedS * this.refillPerSecond,
+    );
+    return tokens >= 1;
+  }
+
   /** Drop callers that have been full for a while, so the map cannot grow forever. */
   sweep(now: number, idleMs = 3_600_000): void {
     for (const [key, bucket] of this.buckets) {
@@ -72,7 +90,11 @@ export const isInfrastructureAddress = (raw: string): boolean => {
   // 100.64.0.0/10 - what load balancers and container networks hand out
   if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip)) return true;
   if (/^f[cd]/.test(ip)) return true; // fc00::/7, unique-local
-  if (/^fe80/.test(ip)) return true; // link-local
+  // fe80::/10 - which reaches febf, not just fe80. A hop anywhere in the
+  // rest of that range would have read as a caller and made a fresh bucket
+  // per request, which is exactly the failure this whole helper exists to
+  // stop.
+  if (/^fe[89ab]/.test(ip)) return true;
   return false;
 };
 

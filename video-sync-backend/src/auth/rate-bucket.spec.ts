@@ -201,8 +201,20 @@ describe('keying past a proxy chain of unknown length', () => {
 
   it('treats unique-local and link-local IPv6 as hops', () => {
     expect(isInfrastructureAddress('fd00::1')).toBe(true);
-    expect(isInfrastructureAddress('fe80::1')).toBe(true);
     expect(isInfrastructureAddress('2001:db8::1')).toBe(false);
+  });
+
+  it('covers link-local past fe80 - the range runs to febf', () => {
+    // A hop at fe90:: read as a caller under the first version of this, and
+    // a varying one would have made a fresh bucket per request: the exact
+    // failure the helper exists to prevent, reintroduced by an off-by-a-
+    // nibble.
+    for (const ip of ['fe80::1', 'fe90::1', 'fea0::1', 'febf::1']) {
+      expect(isInfrastructureAddress(ip)).toBe(true);
+    }
+    // fec0::/10 was site-local and is deprecated - not link-local, and not
+    // ours to claim
+    expect(isInfrastructureAddress('fec0::1')).toBe(false);
   });
 
   it('does not mistake a public 100.x address for CGNAT', () => {
@@ -211,5 +223,25 @@ describe('keying past a proxy chain of unknown length', () => {
     expect(isInfrastructureAddress('100.127.255.254')).toBe(true);
     expect(isInfrastructureAddress('100.128.0.1')).toBe(false);
     expect(isInfrastructureAddress('100.63.255.255')).toBe(false);
+  });
+});
+
+describe('peek, for a request that has to clear two buckets', () => {
+  it('reports availability without spending anything', () => {
+    const bucket = new RateBucket(1, 0);
+    const now = 1_000_000;
+    expect(bucket.peek('a', now)).toBe(true);
+    expect(bucket.peek('a', now)).toBe(true); // still there
+    expect(bucket.take('a', now)).toBe(true);
+    expect(bucket.peek('a', now)).toBe(false);
+  });
+
+  it('accounts for refill, so it agrees with take', () => {
+    const bucket = new RateBucket(1, 1);
+    const t0 = 1_000_000;
+    bucket.take('a', t0);
+    expect(bucket.peek('a', t0 + 500)).toBe(false);
+    expect(bucket.peek('a', t0 + 1000)).toBe(true);
+    expect(bucket.take('a', t0 + 1000)).toBe(true);
   });
 });

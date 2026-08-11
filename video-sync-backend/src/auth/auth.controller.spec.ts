@@ -175,7 +175,8 @@ describe('the guest route under two limits at once', () => {
   it('allows one caller ten, then refuses them', async () => {
     const { controller } = guestController();
     const codes: number[] = [];
-    for (let i = 0; i < 12; i++) codes.push(await attempt(controller, '198.51.100.7'));
+    for (let i = 0; i < 12; i++)
+      codes.push(await attempt(controller, '198.51.100.7'));
     expect(codes.filter((c) => c === 201)).toHaveLength(10);
     expect(codes.slice(10)).toEqual([429, 429]);
   });
@@ -199,13 +200,40 @@ describe('the guest route under two limits at once', () => {
     }
   });
 
+  it('does not charge a caller for a request the shared cap refused', async () => {
+    // The mirror of the test above, and the half I missed: asking the
+    // per-caller bucket first fixed one direction and broke the other.
+    // Once the shared cap is empty, an honest caller's own ten must still
+    // be intact - they were never served anything.
+    const { controller } = guestController();
+    for (let i = 0; i < 300; i++)
+      await attempt(controller, `198.51.${Math.floor(i / 250)}.${i % 250}`);
+
+    const fresh = '203.0.113.200';
+    expect(await attempt(controller, fresh)).toBe(429); // shared cap, not theirs
+    // more than their own capacity, so a version that spends before asking
+    // leaves them empty rather than merely dented
+    for (let i = 0; i < 15; i++) await attempt(controller, fresh);
+
+    // their bucket is untouched, so when the shared cap refills they get
+    // their full allowance rather than a spent one
+    const bucket = (
+      controller as unknown as {
+        guestBucket: { peek(k: string, n: number): boolean };
+      }
+    ).guestBucket;
+    expect(bucket.peek(fresh, Date.now())).toBe(true);
+  });
+
   it('still stops a flood spread across many addresses', async () => {
     // What the per-caller bucket cannot see: 300 requests, every one from a
     // different address, none of them individually over the line.
     const { controller } = guestController();
     const codes: number[] = [];
     for (let i = 0; i < 310; i++) {
-      codes.push(await attempt(controller, `198.51.${Math.floor(i / 250)}.${i % 250}`));
+      codes.push(
+        await attempt(controller, `198.51.${Math.floor(i / 250)}.${i % 250}`),
+      );
     }
     expect(codes.filter((c) => c === 201)).toHaveLength(300);
     expect(codes.filter((c) => c === 429)).toHaveLength(10);
