@@ -35,29 +35,37 @@ const run = async (label, headersFor) => {
 // code looked correct.
 const honest = await run('Honest caller, no forged header:', () => ({}));
 
-// A caller inventing a different address every time. They can only ever
-// PREPEND to the chain, so the address the edge saw is still theirs.
+// The SAME caller, now inventing a different address every request. They can
+// only ever PREPEND to the chain, so the address the edge saw is still
+// theirs - and they have just spent their allowance above. A correct
+// deployment therefore refuses every one of these.
+//
+// That coupling is the point, and getting the expectation wrong here would
+// make the check far weaker than it looks: "some were refused" would pass
+// even if forging worked, because the honest run had already emptied the
+// bucket.
 const forged = await run('Same caller, a different forged address each time:', (i) => ({
   'x-forwarded-for': `203.0.113.${i + 1}`,
 }));
 
 let failed = false;
-for (const [label, result] of [
-  ['honest caller', honest],
-  ['forged header', forged],
-]) {
-  if (result.allowed > CAPACITY) {
-    console.log(`\nFAIL  ${label}: ${result.allowed} allowed, capacity is ${CAPACITY}`);
-    failed = true;
-  }
-  if (result.refused === 0) {
-    console.log(`\nFAIL  ${label}: nothing was refused`);
-    failed = true;
-  }
-}
+const expect = (label, actual, wanted) => {
+  const good = actual === wanted;
+  console.log(`${good ? 'PASS ' : 'FAIL '} ${label}: ${actual} (expected ${wanted})`);
+  if (!good) failed = true;
+};
+
+console.log('');
+// Exactly ten, not "at most ten": fewer would mean the limit is too tight
+// and honest people are being turned away.
+expect('honest caller, allowed', honest.allowed, CAPACITY);
+expect('honest caller, refused', honest.refused, REQUESTS - CAPACITY);
+// Zero, because forging must not buy a fresh allowance.
+expect('forged header, allowed', forged.allowed, 0);
+expect('forged header, refused', forged.refused, REQUESTS);
 
 // Note the cost, rather than leaving it to be discovered: a passing run
-// creates about twenty guest rows. They have no rooms, no messages and no
+// creates about ten guest rows. They have no rooms, no messages and no
 // password, so the nightly sweeper removes them after seven days.
 console.log(
   failed

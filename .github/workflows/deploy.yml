@@ -60,42 +60,38 @@ jobs:
           curl -fsS -X POST "$HOOK" > /dev/null
           echo "Deploy requested."
 
-      - name: Wait for the new instance to be serving
+      - name: Wait for THIS commit to be the one serving
         if: steps.hook.outputs.configured == 'true' && inputs.verify_only != true
+        env:
+          WANT: ${{ github.sha }}
         run: |
-          # A Render deploy builds before it swaps, so the OLD instance answers
-          # /health perfectly for several minutes. Polling health alone would
-          # declare success against the very build we are replacing. Wait for
-          # the swap - the moment the service stops answering, or answers after
-          # a restart - by watching for a gap and then a recovery.
-          echo "Waiting for the old instance to go away..."
-          swapped=false
-          for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-              https://api.mustard.watch/health || echo 000)
-            if [ "$code" != "200" ]; then
-              echo "  t+${i}0s: $code - the instance is being replaced"
-              swapped=true
-              break
-            fi
-            sleep 10
-          done
-
-          if [ "$swapped" = "false" ]; then
-            echo "::warning::Never saw the instance go down in 10 minutes."
-            echo "::warning::A zero-downtime swap can look like this, so continuing to the checks -"
-            echo "::warning::if they fail, the deploy may simply not have landed yet."
-          fi
-
-          echo "Waiting for it to come back..."
-          for i in $(seq 1 60); do
-            if curl -fsS --max-time 5 https://api.mustard.watch/health > /dev/null; then
-              echo "  serving again after ${i}0s"
+          # "The service answers /health" is not the same as "the deploy
+          # landed". Render builds before it swaps, so the OLD instance
+          # answers perfectly for several minutes - the first version of this
+          # step watched for the instance to disappear and come back, which a
+          # zero-downtime swap never does. It would have verified the very
+          # build it was replacing.
+          #
+          # So compare revisions. /health reports RENDER_GIT_COMMIT, which is
+          # the commit of the process actually answering.
+          echo "Waiting for $WANT to be serving..."
+          for i in $(seq 1 90); do
+            got=$(curl -fsS --max-time 5 https://api.mustard.watch/health 2>/dev/null \
+              | sed -n 's/.*"revision":"\([^"]*\)".*/\1/p' || true)
+            if [ "$got" = "$WANT" ]; then
+              echo "  serving $got after ${i}0s"
               exit 0
             fi
+            if [ "$got" = "unknown" ]; then
+              echo "::error::/health reports revision=unknown - RENDER_GIT_COMMIT is not set"
+              echo "::error::on the service, so a deploy can never be told apart from the build"
+              echo "::error::it replaces. Fix that before trusting this workflow."
+              exit 1
+            fi
+            [ $((i % 6)) -eq 0 ] && echo "  t+${i}0s: serving ${got:-<unreachable>}"
             sleep 10
           done
-          echo "::error::The service did not come back within 10 minutes."
+          echo "::error::$WANT was not serving within 15 minutes."
           exit 1
 
       # Guarded on the same condition as the deploy: with no hook configured

@@ -143,9 +143,16 @@ describe('a keyless bucket, for what a key cannot defend', () => {
 describe('keying past a proxy chain of unknown length', () => {
   // Production disproved two earlier rules. These pin the third against the
   // shapes that broke them, so a fourth regression has to argue with a test.
-  const req = (xff?: string | string[], peer = '203.0.113.9') =>
+  const req = (
+    xff?: string | string[],
+    peer = '203.0.113.9',
+    cf?: string | string[],
+  ) =>
     ({
-      headers: xff === undefined ? {} : { 'x-forwarded-for': xff },
+      headers: {
+        ...(xff === undefined ? {} : { 'x-forwarded-for': xff }),
+        ...(cf === undefined ? {} : { 'cf-connecting-ip': cf }),
+      },
       socket: { remoteAddress: peer },
     }) as unknown as Request;
 
@@ -243,5 +250,74 @@ describe('peek, for a request that has to clear two buckets', () => {
     expect(bucket.peek('a', t0 + 500)).toBe(false);
     expect(bucket.peek('a', t0 + 1000)).toBe(true);
     expect(bucket.take('a', t0 + 1000)).toBe(true);
+  });
+});
+
+describe('behind Cloudflare, which is what production actually is', () => {
+  const req = (headers: Record<string, string | string[]>, peer = '10.0.0.1') =>
+    ({ headers, socket: { remoteAddress: peer } }) as unknown as Request;
+
+  it('prefers the address Cloudflare accepted the connection from', () => {
+    // Take three keyed on the rightmost public entry, which behind
+    // Cloudflare is the EDGE server - and which edge handles a request
+    // varies, so fifteen requests from one machine bought fifteen fresh
+    // allowances in production.
+    const a = clientIpFrom(
+      req({
+        'cf-connecting-ip': '45.25.208.233',
+        'x-forwarded-for': '45.25.208.233, 172.71.150.4',
+      }),
+      true,
+    );
+    const b = clientIpFrom(
+      req({
+        'cf-connecting-ip': '45.25.208.233',
+        'x-forwarded-for': '45.25.208.233, 104.23.209.88', // a different edge
+      }),
+      true,
+    );
+    expect(a).toBe('45.25.208.233');
+    expect(b).toBe(a);
+  });
+
+  it('is not moved by a forged chain, because Cloudflare overwrites its own header', () => {
+    expect(
+      clientIpFrom(
+        req({
+          'cf-connecting-ip': '45.25.208.233',
+          'x-forwarded-for': '1.1.1.1, 2.2.2.2, 45.25.208.233, 172.71.150.4',
+        }),
+        true,
+      ),
+    ).toBe('45.25.208.233');
+  });
+
+  it('falls back to the chain where there is no Cloudflare in front', () => {
+    // The header is absent entirely on a deployment without it, and the
+    // walk still has to work - this is not a Cloudflare-only service.
+    expect(
+      clientIpFrom(
+        req({ 'x-forwarded-for': '198.51.100.7, 10.201.4.31' }),
+        true,
+      ),
+    ).toBe('198.51.100.7');
+  });
+
+  it('ignores an empty header rather than keying everyone to blank', () => {
+    expect(
+      clientIpFrom(
+        req({ 'cf-connecting-ip': '  ', 'x-forwarded-for': '198.51.100.7' }),
+        true,
+      ),
+    ).toBe('198.51.100.7');
+  });
+
+  it('still ignores it when there is no proxy to trust at all', () => {
+    expect(
+      clientIpFrom(
+        req({ 'cf-connecting-ip': '1.1.1.1' }, '203.0.113.9'),
+        false,
+      ),
+    ).toBe('203.0.113.9');
   });
 });
