@@ -351,10 +351,14 @@ describe('claiming a guest account', () => {
     );
 
     expect(db.user.create).not.toHaveBeenCalled();
-    const args = db.user.update.mock.calls[0][0] as {
-      where: { id: string; isGuest: boolean };
-      data: { isGuest: boolean; email: string; password: string };
-    };
+    const args = (
+      db.user.update.mock.calls as [
+        {
+          where: { id: string; isGuest: boolean };
+          data: { isGuest: boolean; email: string; password: string };
+        },
+      ][]
+    )[0][0];
     expect(args.where).toEqual({ id: 'g1', isGuest: true });
     expect(args.data.isGuest).toBe(false);
     expect(result.id).toBe('g1');
@@ -366,9 +370,9 @@ describe('claiming a guest account', () => {
     // slip a full account through it.
     const { db, service } = claiming();
     await service.claimGuestAccount('g1', 'ada', 'a@b.co', 'a-real-password');
-    const args = db.user.update.mock.calls[0][0] as {
-      where: { isGuest: boolean };
-    };
+    const args = (
+      db.user.update.mock.calls as [{ where: { isGuest: boolean } }][]
+    )[0][0];
     expect(args.where.isGuest).toBe(true);
   });
 
@@ -380,9 +384,11 @@ describe('claiming a guest account', () => {
       '  Ada@Example.COM ',
       'a-real-password',
     );
-    const args = db.user.update.mock.calls[0][0] as {
-      data: { email: string; password: string };
-    };
+    const args = (
+      db.user.update.mock.calls as [
+        { data: { email: string; password: string } },
+      ][]
+    )[0][0];
     expect(args.data.email).toBe('ada@example.com');
     expect(args.data.password).not.toBe('a-real-password');
     expect(await bcrypt.compare('a-real-password', args.data.password)).toBe(

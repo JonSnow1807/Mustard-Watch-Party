@@ -2,7 +2,17 @@
 // The unit tests assert the service calls update() with the same id - which
 // is the mock agreeing with itself. Only a real database can say whether the
 // chat rows and participant rows still point at a live user afterwards.
-import { io } from '/Users/chinmayshrivastava/mustard-revamped/video-sync-frontend/node_modules/socket.io-client/build/esm-debug/index.js';
+// Resolved relative to THIS file. The first version hard-coded an absolute
+// path from the laptop it was written on, which works nowhere else - and the
+// point of keeping the check in the repo is that someone else can run it.
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const require = createRequire(
+  join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'video-sync-frontend', 'package.json'),
+);
+const { io } = require('socket.io-client');
 
 const API = 'http://localhost:3007/api';
 const WS = 'http://localhost:3007';

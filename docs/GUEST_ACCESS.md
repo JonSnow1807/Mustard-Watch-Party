@@ -1,13 +1,14 @@
-# Joining without an account — what it would actually take
+# Joining without an account
 
-The UX audit's largest open finding: someone sent an invite link has to
-create an account before they can watch anything. This note is the survey I
-did before writing any of it, because the shape of the change is decided by
-constraints that are already load-bearing, and picking the wrong shape here
-is expensive to undo.
+The UX audit's largest open finding: someone sent an invite link had to
+create an account before they could watch anything.
 
-Not implemented. This is the analysis, not the design being proposed as
-settled.
+**Built.** `POST /auth/guest` since #51, and `POST /auth/claim` — keeping the
+account you have been using — since #54. What follows is the survey done
+before any of it was written, kept because the shape of the change was
+decided by constraints that are still load-bearing, and the reasoning is
+worth more than the conclusion. Where a section still reads as a proposal,
+read it as the argument for what is now there.
 
 ## Why it is not a small change
 
