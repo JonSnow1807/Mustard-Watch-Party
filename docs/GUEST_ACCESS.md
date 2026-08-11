@@ -106,6 +106,28 @@ the end removes the very chat rows a later query was inspecting. Each looked
 exactly like data loss. A live check that does not assert its own setup will
 report its own failures as yours.
 
+### What the survey left open, and what the code decided
+
+A review of this document caught three places where the analysis was looser
+than the implementation turned out to be. Recorded rather than quietly
+tightened, because the gap between them is the interesting part:
+
+- **The survey never specified an email for a disposable user.** `User.email`
+  is non-null and unique, so "a generated username and a nullable password" is
+  not enough to insert a row - the argument had a hole the code had to fill.
+  It fills it with `randomUUID()@guest.invalid`: collision-safe by
+  construction, and `.invalid` is reserved by RFC 2606 so it can never route
+  anywhere real.
+- **It implied the socket handshake needs a `User` row.** It does not - the
+  handshake validates a signed token with `sub` and `name` and attaches the
+  identity, with no database lookup (`jwt-auth.guard.spec.ts`). The
+  persistence constraints are `Participant.userId` and `ChatMessage.userId`,
+  which is a narrower and more accurate statement of why a row is needed.
+- **Option C (row-less guests) was under-specified.** A `guest:` subject gives
+  a participant or message no stable identity across reconnects, so history
+  and de-duplication have nowhere to hang. That is a real reason it was not
+  chosen, and the survey did not say it.
+
 ### Still not built
 
 - **Linking Google to a guest row.** Claiming takes a password. Someone who
