@@ -23,7 +23,7 @@ import {
 } from './google/google-oauth.service';
 import { readCookie } from './google/cookies';
 import { Interval } from '@nestjs/schedule';
-import { RateBucket, clientIp } from './rate-bucket';
+import { RateBucket, clientIp, isInfrastructureAddress } from './rate-bucket';
 
 @Controller('auth')
 export class AuthController {
@@ -108,7 +108,8 @@ export class AuthController {
       const raw = Array.isArray(xff) ? xff.join(',') : (xff ?? '');
       this.logger.log(
         `guest key diagnostic: xff hops=${raw ? raw.split(',').length : 0} ` +
-          `headerPresent=${Boolean(xff)} peerIsPrivate=${/^(10\.|127\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|::ffff:10\.)/.test(req.socket?.remoteAddress ?? '')} ` +
+          `headerPresent=${Boolean(xff)} ` +
+          `peerIsInfra=${isInfrastructureAddress(req.socket?.remoteAddress ?? '')} ` +
           `otherForwardHeaders=${
             Object.keys(req.headers)
               .filter(
@@ -122,13 +123,6 @@ export class AuthController {
       );
     }
 
-    if (!this.guestGlobalBucket.take('all', now)) {
-      throw new HttpException(
-        'Too many guests right now - try again shortly',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
     const ip = clientIp(req);
     if (!this.guestBucket.take(ip, now)) {
       throw new HttpException(
@@ -136,6 +130,16 @@ export class AuthController {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
+    // Second, and only for callers who are within their own allowance: an
+    // attacker who is already being refused must not be able to spend the
+    // shared budget and lock everyone else out on their way down.
+    if (!this.guestGlobalBucket.take('all', now)) {
+      throw new HttpException(
+        'Too many guests right now - try again shortly',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     return await this.authService.createGuest();
   }
 
