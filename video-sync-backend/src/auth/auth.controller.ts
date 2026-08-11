@@ -124,12 +124,11 @@ export class AuthController {
           `peerIsInfra=${isInfrastructureAddress(req.socket?.remoteAddress ?? '')} ` +
           `otherForwardHeaders=${
             Object.keys(req.headers)
-              .filter(
-                (h) =>
-                  h.includes('forward') ||
-                  h.includes('real-ip') ||
-                  h.includes('client-ip'),
-              )
+              // 'connecting-ip' matters most and the first version of this
+              // filter missed it: cf-connecting-ip contains neither
+              // 'client-ip' nor 'forward', so the header carrying the actual
+              // answer was invisible to the diagnostic looking for it.
+              .filter((h) => /forward|real-ip|client-ip|connecting-ip|cf-/.test(h))
               .join('|') || 'none'
           }`,
       );

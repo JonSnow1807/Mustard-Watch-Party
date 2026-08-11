@@ -132,12 +132,39 @@ export const isInfrastructureAddress = (raw: string): boolean => {
  * toward the unbounded row creation this exists to stop. The one-shot
  * diagnostic in the controller reports which case we are actually in.
  *
+ * Take four, and the one that had the actual answer: production is behind
+ * CLOUDFLARE. Render fronts services with it - the response carries
+ * `server: cloudflare` and a `cf-ray`, which is how this was finally found,
+ * and nothing in the code or the dashboard said so.
+ *
+ * That is fatal to take three, because the rightmost public address in the
+ * chain is then the Cloudflare EDGE address, and which edge server handles a
+ * request varies. Fifteen requests from one machine produced fifteen
+ * different keys and fifteen fresh allowances. It is the exact failure mode
+ * written down above as a risk - only inverted: I predicted it would key
+ * everyone TOGETHER, and instead it keys one person apart.
+ *
+ * Cloudflare sets `cf-connecting-ip` to the address it accepted the
+ * connection from, and OVERWRITES any value the caller sent. So when it is
+ * present it is both the true client and unforgeable, which no position in
+ * x-forwarded-for is. The chain walk stays as the fallback for deployments
+ * with no Cloudflare in front.
+ *
+ * The assumption, stated because it is the one that would break this: all
+ * traffic reaches the app through Cloudflare. Someone who could hit the
+ * origin directly could forge this header - but they could forge the whole
+ * chain too, so it is not a step down.
+ *
  * `trustProxy` is a deployment fact, not a guess - a proxy in production,
  * none on a laptop.
  */
 export const clientIpFrom = (req: Request, trustProxy: boolean): string => {
   const peer = req.socket?.remoteAddress || 'unknown';
   if (!trustProxy) return peer;
+
+  const cloudflare = req.headers['cf-connecting-ip'];
+  const fromEdge = Array.isArray(cloudflare) ? cloudflare[0] : cloudflare;
+  if (fromEdge?.trim()) return fromEdge.trim();
 
   const forwarded = req.headers['x-forwarded-for'];
   const raw = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
