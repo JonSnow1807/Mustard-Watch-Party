@@ -1,0 +1,118 @@
+# Deploy the backend, then check the deploy did what it claimed.
+#
+# Render is connected by public-repo URL, which has no auto-deploy webhook, so
+# until now every backend release waited on someone opening the dashboard and
+# clicking Manual Deploy. That is a poor place for a person to be: the rate
+# limit shipped broken twice and the gap between "merged" and "actually
+# running" is where both of those hid.
+#
+# Needs one secret, set once:
+#   Render -> the service -> Settings -> Deploy Hook -> copy the URL
+#   gh secret set RENDER_DEPLOY_HOOK
+# The URL is a credential. It goes straight from Render into the secret store.
+
+name: deploy backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'video-sync-backend/**'
+      - 'render.yaml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      verify_only:
+        description: 'Skip the deploy and only run the production checks'
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the hook is configured
+        id: hook
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::RENDER_DEPLOY_HOOK is not set - skipping the deploy."
+            echo "::warning::Render -> Settings -> Deploy Hook, then: gh secret set RENDER_DEPLOY_HOOK"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger the deploy
+        if: steps.hook.outputs.configured == 'true' && inputs.verify_only != true
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          # -f so a non-2xx is a failure rather than a quiet page of HTML that
+          # the next step then waits patiently on
+          curl -fsS -X POST "$HOOK" > /dev/null
+          echo "Deploy requested."
+
+      - name: Wait for THIS commit to be the one serving
+        if: steps.hook.outputs.configured == 'true' && inputs.verify_only != true
+        env:
+          WANT: ${{ github.sha }}
+        run: |
+          # "The service answers /health" is not the same as "the deploy
+          # landed". Render builds before it swaps, so the OLD instance
+          # answers perfectly for several minutes - the first version of this
+          # step watched for the instance to disappear and come back, which a
+          # zero-downtime swap never does. It would have verified the very
+          # build it was replacing.
+          #
+          # So compare revisions. /health reports RENDER_GIT_COMMIT, which is
+          # the commit of the process actually answering.
+          echo "Waiting for $WANT to be serving..."
+          for i in $(seq 1 90); do
+            got=$(curl -fsS --max-time 5 https://api.mustard.watch/health 2>/dev/null \
+              | sed -n 's/.*"revision":"\([^"]*\)".*/\1/p' || true)
+            if [ "$got" = "$WANT" ]; then
+              echo "  serving $got after ${i}0s"
+              exit 0
+            fi
+            if [ "$got" = "unknown" ]; then
+              echo "::error::/health reports revision=unknown - RENDER_GIT_COMMIT is not set"
+              echo "::error::on the service, so a deploy can never be told apart from the build"
+              echo "::error::it replaces. Fix that before trusting this workflow."
+              exit 1
+            fi
+            [ $((i % 6)) -eq 0 ] && echo "  t+${i}0s: serving ${got:-<unreachable>}"
+            sleep 10
+          done
+          echo "::error::$WANT was not serving within 15 minutes."
+          exit 1
+
+      # Guarded on the same condition as the deploy: with no hook configured
+      # nothing was deployed, and failing every unrelated push with a red X
+      # about a known gap would train everyone to ignore this workflow.
+      - name: The limit has to hold in production, not in a unit test
+        if: steps.hook.outputs.configured == 'true' || inputs.verify_only == true
+        run: node scripts/verify-guest-limit.mjs https://api.mustard.watch
+
+      - name: Health and the shape of the API
+        if: steps.hook.outputs.configured == 'true' || inputs.verify_only == true
+        run: |
+          set -e
+          curl -fsS https://api.mustard.watch/health | tee /dev/stderr | grep -q '"status":"ok"'
+          # Google sign-in is either configured or it is not - a deploy that
+          # silently drops the credentials leaves a button that dead-ends
+          curl -fsS https://api.mustard.watch/api/auth/providers | tee /dev/stderr
+          # creating a room without a token must still be refused - the authz
+          # gap this repo closed once already
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'content-type: application/json' -d '{"name":"probe"}' \
+            https://api.mustard.watch/api/rooms)
+          echo "unauthenticated room creation -> $code"
+          test "$code" = "401" || { echo "::error::expected 401, got $code"; exit 1; }
