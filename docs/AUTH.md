@@ -206,6 +206,11 @@ Both wrong versions passed their unit tests.
   provider - that needs a re-authentication step this does not have, and
   adding one without it would let a stolen token attach an attacker's Google
   identity to somebody's account.
+- A linked account has **no password and no way to acquire one**. Google is
+  then the only way in, and losing access to that Google account loses the
+  account - there is no reset flow, because there is nothing to reset. Same
+  for accounts created through Google in the first place. Claiming with a
+  password is the alternative, and the two do not compose.
 - `isPublic` on a room is a listing flag, not access control.
 - The "is this address already taken" check is a case-insensitive `findFirst`,
   which Postgres answers with a sequential scan — the `email` index is

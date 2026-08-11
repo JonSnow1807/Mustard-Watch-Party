@@ -130,9 +130,15 @@ tightened, because the gap between them is the interesting part:
 
 ## Claiming with Google instead of a password
 
-`POST /auth/google/link-start` — the same outcome as `/auth/claim`, for
-someone who would rather not invent another password. Same rule underneath:
-the row keeps its id.
+`POST /auth/google/link-start` — for someone who would rather not invent
+another password. Same rule underneath: the row keeps its id.
+
+Not quite the *same* outcome as `/auth/claim`, and the difference is a one-way
+door: a linked account keeps `password: null`, and there is no path to add one
+later. Google becomes the only way in. That matches how Google-created
+accounts already behave here, so it is consistent rather than surprising - but
+someone who loses access to that Google account loses the account, and no
+password reset exists to rescue them.
 
 **Why it is a POST that returns a URL** rather than a link the browser
 follows. A navigation cannot carry an `Authorization` header, and the
@@ -166,3 +172,7 @@ to be corrected.
 - **Merging two accounts.** If the Google address already has an account, the
   answer is "sign in with that one" — we cannot tell from here that both are
   the same person.
+- **Adding a password to a linked account.** Linking leaves `password: null`
+  with no way to set one afterwards, so Google is the only way back in and
+  there is nothing for a reset flow to reset. Anyone who wants both should
+  claim with a password instead; the two paths do not compose.

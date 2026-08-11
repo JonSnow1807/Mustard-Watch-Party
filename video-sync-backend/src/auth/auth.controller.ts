@@ -1,7 +1,5 @@
 import {
   Controller,
-  ConflictException,
-  ForbiddenException,
   Get,
   Post,
   Body,
@@ -307,21 +305,29 @@ export class AuthController {
       // Reporting those as 'exchange' would log them as unexpected errors
       // and tell the person "sign-in failed", when what happened is
       // recoverable and has a specific instruction attached to it.
-      const refused =
-        err instanceof ConflictException || err instanceof ForbiddenException;
-
-      // The code the service attached, not a sentence: this channel is a
-      // redirect fragment, and the page on the other end owns the wording.
-      const linkCode = refused
-        ? (((err as ConflictException).getResponse() as { code?: string })
-            ?.code ?? 'link')
-        : undefined;
+      //
+      // Recognised by the CODE the service attached, not by the exception
+      // class. The first version tested `instanceof ConflictException` - which
+      // is ALSO what createGoogleUser throws when it runs out of username
+      // attempts, on a plain sign-in with nothing to do with linking. That one
+      // carries a string, so it has no code, and the person would have been
+      // told "your guest session is untouched" when they had no guest session,
+      // while the error log that would have shown a real allocation anomaly
+      // was skipped.
+      const payload =
+        err instanceof HttpException
+          ? (err.getResponse() as { code?: unknown })
+          : undefined;
+      const linkCode =
+        typeof payload?.code === 'string' && payload.code.startsWith('link_')
+          ? payload.code
+          : undefined;
 
       const failure =
         linkCode ??
         (err instanceof GoogleAuthError ? err.code : ('exchange' as const));
 
-      if (!refused && !(err instanceof GoogleAuthError)) {
+      if (!linkCode && !(err instanceof GoogleAuthError)) {
         this.logger.error(
           `google callback failed: ${err instanceof Error ? err.message : 'unknown'}`,
         );
