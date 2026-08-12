@@ -28,7 +28,28 @@ describe('JWT_EXPIRES_IN, once it actually does something', () => {
     expect(() => tokenLifetime('twelve hours')).toThrow(/JWT_EXPIRES_IN/);
     expect(() => tokenLifetime('12 fortnights')).toThrow(/JWT_EXPIRES_IN/);
     expect(() => tokenLifetime('-5')).toThrow(/JWT_EXPIRES_IN/);
-    expect(() => tokenLifetime('0')).toThrow(/positive/);
+  });
+
+  it('refuses anything under a second, which expires on arrival', () => {
+    // jsonwebtoken floors a duration to whole seconds, so these land on
+    // exp === iat - a token expired the instant it is issued, and nothing in
+    // the logs would say why. Both look like reasonable configuration.
+    expect(() => tokenLifetime('0.5s')).toThrow(/already expired/);
+    expect(() => tokenLifetime('999ms')).toThrow(/already expired/);
+    expect(() => tokenLifetime('0.9s')).toThrow(/already expired/);
+    expect(() => tokenLifetime('0')).toThrow(/already expired/);
+    // and the boundary holds from the other side
+    expect(tokenLifetime('1s')).toBe('1s');
+    expect(tokenLifetime('1000ms')).toBe('1000ms');
+    expect(tokenLifetime('1')).toBe(1);
+  });
+
+  it('refuses values too large to be an expiry at all', () => {
+    // a digit string long enough overflows to Infinity, and an expiry of
+    // Infinity is not an expiry
+    const huge = '9'.repeat(400);
+    expect(() => tokenLifetime(huge)).toThrow(/too large/);
+    expect(() => tokenLifetime(`${huge}d`)).toThrow(/too large/);
   });
 
   it('refuses uppercase rather than guessing what it meant', () => {

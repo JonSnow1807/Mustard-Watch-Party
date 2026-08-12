@@ -195,8 +195,9 @@ Both wrong versions passed their unit tests.
 
 ## Known gaps
 
-- No token refresh or revocation. A token is good for 12 hours, and a socket
-  accepted at connect outlives its token (`docs/SCALING.md`).
+- No token refresh or revocation. A token is good for its configured lifetime
+  (12 hours by default), and a socket accepted at connect outlives its token
+  (`docs/SCALING.md`).
 - ~~`JWT_EXPIRES_IN` is dead config~~ — fixed. Tokens **default** to `12h` and
   a deployment can change that by setting the variable; it is no longer a
   fixed lifetime. `12h` is what was hardcoded while the config file

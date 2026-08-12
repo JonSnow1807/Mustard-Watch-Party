@@ -8,30 +8,62 @@
  * and the intuitive one is seconds. Anything else throws, at boot, where
  * somebody is watching.
  */
+const UNIT_SECONDS: Record<string, number> = {
+  ms: 0.001,
+  s: 1,
+  m: 60,
+  h: 3600,
+  d: 86400,
+  w: 604800,
+  // what `ms` uses for a year: 365.25 days
+  y: 31557600,
+};
+
 export const tokenLifetime = (raw: string | undefined): string | number => {
   const value = (raw ?? '').trim();
   if (!value) return '12h';
-  if (/^\d+$/.test(value)) {
-    const seconds = Number(value);
-    if (seconds <= 0) {
-      throw new Error(
-        `JWT_EXPIRES_IN must be positive, got "${value}"`,
+
+  const reject = (why: string): never => {
+    throw new Error(`JWT_EXPIRES_IN ${why}, got "${value}"`);
+  };
+
+  const digitsOnly = /^\d+$/.test(value);
+  let seconds: number;
+
+  if (digitsOnly) {
+    seconds = Number(value);
+    // A digit string long enough to overflow becomes Infinity, and an expiry
+    // of Infinity is not an expiry.
+    if (!Number.isFinite(seconds)) reject('is too large to be a duration');
+  } else {
+    // Lowercase units only, which is stricter than the `ms` library and
+    // deliberately so. ms is case-insensitive and has no unit for months, so
+    // "6M" - which reads as six months to anyone writing it - is parsed as
+    // six MINUTES. Refusing the whole uppercase space removes that reading
+    // rather than guessing which uppercase letters were meant innocently.
+    const match = /^(\d+(?:\.\d+)?)(ms|s|m|h|d|w|y)$/.exec(value);
+    if (!match) {
+      reject(
+        'must be a lowercase duration like "12h" or "30m", or a plain number of seconds',
       );
     }
-    return seconds;
+    const [, amount, unit] = match as RegExpExecArray;
+    seconds = Number(amount) * UNIT_SECONDS[unit];
+    if (!Number.isFinite(seconds)) reject('is too large to be a duration');
   }
-  // Lowercase units only, which is stricter than the `ms` library and
-  // deliberately so. ms is case-insensitive and has no unit for months, so
-  // "6M" - which reads as six months to anyone writing it - is parsed as six
-  // MINUTES. Refusing the whole uppercase space removes that reading rather
-  // than trying to guess which uppercase letters were meant innocently.
-  if (!/^\d+(\.\d+)?(ms|s|m|h|d|w|y)$/.test(value)) {
-    throw new Error(
-      `JWT_EXPIRES_IN must be a lowercase duration like "12h", "30m", or a ` +
-        `plain number of seconds, got "${value}"`,
-    );
+
+  // jsonwebtoken floors a duration to whole seconds, so anything under one
+  // second lands on exp === iat: a token expired the instant it is issued,
+  // with nothing in the logs to say so. "0.5s" and "999ms" both do it, and
+  // both look like perfectly reasonable configuration.
+  if (Math.floor(seconds) < 1) {
+    reject('is under one second, which issues tokens that are already expired');
   }
-  return value;
+
+  // Numbers are unambiguous to jsonwebtoken - it reads them as seconds.
+  // Unitless STRINGS are milliseconds, which is the trap all of this exists
+  // for, so a digit-only value is handed back as a number.
+  return digitsOnly ? seconds : value;
 };
 
 /**
