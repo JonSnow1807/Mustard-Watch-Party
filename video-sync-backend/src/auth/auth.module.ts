@@ -16,8 +16,11 @@ import { GuestSweeperService } from './guest-sweeper.service';
         // Read from config rather than hardcoded. It was hardcoded to '12h'
         // while configuration.ts carried a JWT_EXPIRES_IN of '7d' that
         // nothing read - so the documented knob did nothing and the two
-        // disagreed by a factor of fourteen. The config default is now 12h,
-        // so this changes the number in one file and the behaviour in none.
+        // disagreed by a factor of fourteen.
+        //
+        // 12h is now the DEFAULT rather than the lifetime: a deployment that
+        // sets JWT_EXPIRES_IN changes it, which is the whole point of making
+        // this live. Unset, nothing about the behaviour changed.
         //
         // Still verified at connect only; an accepted socket outlives its
         // token (documented limitation - no refresh/revocation in scope).

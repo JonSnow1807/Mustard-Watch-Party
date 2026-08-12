@@ -78,7 +78,8 @@ afterthought bolted onto a UX sweep.
 ## Keeping the account (`POST /auth/claim`)
 
 A guest session is a real row with real history hanging off it, and it expires
-in twelve hours with no password to get back in with. Claiming is the door out
+in twelve hours by default (`JWT_EXPIRES_IN`) with no password to get back in
+with. Claiming is the door out
 of that, and it is an **UPDATE, not an insert**: the row keeps its id.
 
 That is the whole design. `ChatMessage.userId` and `Participant.userId` are

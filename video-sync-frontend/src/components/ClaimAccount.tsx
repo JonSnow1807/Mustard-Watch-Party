@@ -142,6 +142,7 @@ export const ClaimAccountDialog: React.FC<{
   const [googleOffered, setGoogleOffered] = useState(false);
   const triggerRef = useRef<HTMLElement | null>(null);
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
   // Asked at runtime, like the sign-in page does: one bundle is served to
   // every environment, and a button for a provider the API has no
@@ -157,14 +158,40 @@ export const ClaimAccountDialog: React.FC<{
     };
   }, []);
 
-  // Dialog manners: focus moves in, Escape closes, focus returns to whatever
-  // opened it.
+  // Dialog manners: focus moves in, Escape closes, Tab stays inside, and
+  // focus returns to whatever opened it.
   useEffect(() => {
     triggerRef.current = document.activeElement as HTMLElement | null;
     firstFieldRef.current?.focus();
 
+    const FOCUSABLE =
+      'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      // aria-modal="true" tells a screen reader this is modal; it does not
+      // stop Tab. Without this, tabbing walks straight out onto the page
+      // behind the overlay - invisible, still reachable by keyboard, and in
+      // a room that page has controls that change what everyone is watching.
+      // The settings dialog on the room page already does this; same pattern.
+      if (e.key !== 'Tab') return;
+      const focusable = Array.from(
+        cardRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (active === first || !cardRef.current?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
@@ -216,6 +243,7 @@ export const ClaimAccountDialog: React.FC<{
   return (
     <Overlay onClick={onClose}>
       <Card
+        ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="claim-title"

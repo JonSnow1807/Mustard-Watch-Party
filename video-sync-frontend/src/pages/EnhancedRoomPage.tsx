@@ -31,6 +31,7 @@ import {
   IconShare,
   IconSettings,
   IconLeave,
+  IconLock,
 } from '../components/Icons';
 
 const Page = styled.div`
@@ -702,6 +703,12 @@ export const EnhancedRoomPage: React.FC = () => {
                 aria-label="Keep this account"
                 title="Guest sessions expire - keep this one, with everything in it"
               >
+                {/* The icon is not decoration. Below 880px ActionLabel is
+                    display:none, and every other action here survives that
+                    because it also renders an icon - this one did not, so on
+                    a phone it was an empty outlined box. A guest on a phone
+                    is the main audience for this control. */}
+                <IconLock size={14} />
                 <ActionLabel>Keep account</ActionLabel>
               </ClaimAction>
             )}
