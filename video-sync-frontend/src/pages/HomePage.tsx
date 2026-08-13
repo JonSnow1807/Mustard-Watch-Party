@@ -776,7 +776,7 @@ export const HomePage: React.FC = () => {
               Keep this account
             </ClaimTrigger>
           )}
-          <SecondarySmButton type="button" onClick={logout}>
+          <SecondarySmButton type="button" onClick={() => logout()}>
             Sign out
           </SecondarySmButton>
         </TopBarRight>

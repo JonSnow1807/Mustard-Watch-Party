@@ -11,6 +11,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
+import { RevocationService } from '../auth/revocation.service';
 import { SyncGateway } from './sync.gateway';
 import { VoiceRosterService } from './voice-roster.service';
 
@@ -76,10 +77,13 @@ export class VoiceGateway
     private jwt: JwtService,
     private sync: SyncGateway,
     private roster: VoiceRosterService,
+    private revocations: RevocationService,
   ) {}
 
   afterInit(server: Server): void {
-    server.use(wsAuthMiddleware(this.jwt));
+    // Same check as the default namespace: a revoked token must not open a
+    // voice connection either, and this namespace has its own middleware.
+    server.use(wsAuthMiddleware(this.jwt, this.revocations));
   }
 
   /**

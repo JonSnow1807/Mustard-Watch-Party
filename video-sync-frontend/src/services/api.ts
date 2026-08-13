@@ -51,11 +51,37 @@ const clearStoredUser = () => {
   window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
 };
 
+/**
+ * The auth endpoints where a token is meaningless.
+ *
+ * This used to be the whole of `/auth/*`, and the reasoning was sound for
+ * the endpoints that existed at the time: sending a token to login or
+ * register makes a bad-password 401 indistinguishable from an
+ * expired-session 401 in the response interceptor below.
+ *
+ * Then `/auth` grew endpoints that REQUIRE a token - claim, google/link-start,
+ * logout, logout-all - and the blanket rule silently stripped it from every
+ * one of them. They called guarded routes with no Authorization header and
+ * got 401s, which is to say those features did not work from the browser at
+ * all. Nothing caught it: every live check sent its own headers and never
+ * went through this file.
+ *
+ * So the list is now the exception rather than the prefix, and a new guarded
+ * endpoint under /auth works by default instead of failing by default.
+ */
+const NO_TOKEN_NEEDED = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/guest',
+  '/auth/providers',
+  '/auth/google/start',
+  '/auth/google/callback',
+];
+
 api.interceptors.request.use(config => {
-  // Never attach to /auth/*: a token is meaningless to login/register, and
-  // sending one there makes a bad-password 401 indistinguishable from an
-  // expired-session 401 in the response interceptor below.
-  if (config.url?.startsWith('/auth/')) return config;
+  if (NO_TOKEN_NEEDED.some(path => config.url?.startsWith(path))) {
+    return config;
+  }
   const token = readStoredToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -85,6 +111,18 @@ export const apiService = {
 
   register: (username: string, email: string, password: string) =>
     api.post('/auth/register', { username, email, password }),
+
+  /**
+   * Tell the server to stop trusting this token.
+   *
+   * Signing out used to be a client-side event only - the browser dropped
+   * the token and the server never heard, so any copy of it kept working
+   * for the rest of its life.
+   */
+  logout: () => api.post('/auth/logout'),
+
+  /** Stop trusting every session this account has, anywhere. */
+  logoutEverywhere: () => api.post<{ version: number }>('/auth/logout-all'),
 
   /** A way in for someone who followed an invite link and wants no account. */
   guest: () => api.post('/auth/guest'),

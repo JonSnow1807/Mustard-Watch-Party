@@ -2,6 +2,7 @@ import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import type { Socket } from 'socket.io';
 import { AuthedRequest, JwtAuthGuard } from './jwt-auth.guard';
+import type { RevocationService } from './revocation.service';
 import { currentUser } from './current-user.decorator';
 import type { TokenPayload } from './token-payload';
 import { wsAuthMiddleware, AuthedSocketData } from '../sync/ws-auth';
@@ -23,7 +24,24 @@ const SECRET = 'test-secret-not-production';
 const OTHER_SECRET = 'a-different-secret';
 
 const jwt = new JwtService({ secret: SECRET });
-const guard = new JwtAuthGuard(jwt);
+/**
+ * A revocation service that has revoked nothing.
+ *
+ * Named rather than inlined because "nothing is revoked" is the assumption
+ * every test below already made implicitly, and it should be visible now
+ * that it is a real dependency with its own answers.
+ */
+const nothingRevoked = {
+  isRevoked: () => null,
+} as unknown as RevocationService;
+
+const guard = new JwtAuthGuard(jwt, nothingRevoked);
+
+/** A guard whose snapshot refuses the token, for the two cases below. */
+const guardRefusing = (why: 'token' | 'user') =>
+  new JwtAuthGuard(jwt, {
+    isRevoked: () => why,
+  } as unknown as RevocationService);
 
 /** A request carrying whatever Authorization header the test wants. */
 function contextFor(
@@ -184,5 +202,45 @@ describe('JwtAuthGuard', () => {
       userId: socketData.userId,
       username: socketData.username,
     }).toEqual(request.user);
+  });
+});
+
+describe('a token that is signed, unexpired, and no longer trusted', () => {
+  // The gap this closes: signing out was a client-side event. The server
+  // never heard, so any copy of the token kept working for the rest of its
+  // life. A valid signature is not permission.
+  const bearer = (token: string) =>
+    ({ headers: { authorization: `Bearer ${token}` } }) as AuthedRequest;
+
+  const ctx = (req: AuthedRequest) =>
+    ({
+      switchToHttp: () => ({ getRequest: () => req }),
+    }) as unknown as ExecutionContext;
+
+  it('refuses a token whose session was signed out', () => {
+    const token = jwt.sign({ sub: 'u1', name: 'ada', jti: 'j1' });
+    // The exact text, not /signed out/ - which also matches the account-wide
+    // message, so a guard that reported "all sessions" for both reasons would
+    // pass this and the test below. Telling them apart is the entire point of
+    // returning a reason.
+    expect(() =>
+      guardRefusing('token').canActivate(ctx(bearer(token))),
+    ).toThrow('This session was signed out - sign in again');
+  });
+
+  it('says something different when every session was signed out', () => {
+    // Worth telling apart: one is something you did, the other may be
+    // somebody else responding to a compromise.
+    const token = jwt.sign({ sub: 'u1', name: 'ada', jti: 'j1' });
+    expect(() => guardRefusing('user').canActivate(ctx(bearer(token)))).toThrow(
+      'All sessions were signed out - sign in again',
+    );
+  });
+
+  it('still lets an untouched token through', () => {
+    const token = jwt.sign({ sub: 'u1', name: 'ada', jti: 'j1' });
+    const req = bearer(token);
+    expect(guard.canActivate(ctx(req))).toBe(true);
+    expect(req.user).toEqual({ userId: 'u1', username: 'ada' });
   });
 });

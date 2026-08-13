@@ -35,6 +35,8 @@ import {
   SWEEP_INTERVAL_MS,
 } from './room-state.store';
 import { AuthedSocketData, wsAuthMiddleware } from './ws-auth';
+import { RevocationService } from '../auth/revocation.service';
+import { evictRevoked, startExpirySweep } from './socket-eviction';
 
 const CONTROL_INTENTS: ReadonlyArray<SyncControl['intent']> = [
   'play',
@@ -109,6 +111,7 @@ export class SyncGateway
     private metrics: MetricsService,
     @Inject(ROOM_STATE_STORE) private store: RoomStateStore,
     private voiceRoster: VoiceRosterService,
+    private revocations: RevocationService,
   ) {
     if (this.store instanceof ActorRoomStateStore) {
       // actor plane: intents forwarded by non-owners execute HERE, on the
@@ -154,7 +157,33 @@ export class SyncGateway
   afterInit(server: Server): void {
     // identity is derived server-side at connect; client-asserted userIds
     // in payloads are ignored by every handler below
-    server.use(wsAuthMiddleware(this.jwt));
+    server.use(wsAuthMiddleware(this.jwt, this.revocations));
+
+    // A socket is authenticated once and then trusted while it stays open,
+    // so revocation without these two would stop the REST calls and leave
+    // the live connection watching along - half a feature.
+    //
+    // Both namespaces are reachable from this server object: /voice is a
+    // namespace on the same io instance, and its sockets carry the same
+    // token, so evicting only the default namespace would leave voice up
+    // for someone who has just been signed out.
+    // of('/') and of('/voice'), because both are NAMESPACES - `server`
+    // itself is not one, and casting it to look like one type-checks and
+    // then throws on the first sweep.
+    const namespaces = [server.of('/'), server.of('/voice')];
+    this.revocations.onEvent((event) => {
+      const closed = evictRevoked(namespaces, event);
+      if (closed > 0) {
+        this.logger.log(`closed ${closed} connection(s) on revocation`);
+      }
+    });
+    this.stopExpirySweep = startExpirySweep(namespaces, this.logger);
+  }
+
+  private stopExpirySweep: (() => void) | null = null;
+
+  onModuleDestroy(): void {
+    this.stopExpirySweep?.();
   }
 
   handleConnection(client: Socket) {

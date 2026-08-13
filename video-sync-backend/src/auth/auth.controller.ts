@@ -14,6 +14,9 @@ import {
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { JwtService } from '@nestjs/jwt';
+import { RevocationService } from './revocation.service';
+import type { TokenPayload } from './token-payload';
 import { CurrentUser } from './current-user.decorator';
 import {
   GoogleAuthError,
@@ -32,6 +35,8 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private google: GoogleOAuthService,
+    private readonly revocations: RevocationService,
+    private readonly jwt: JwtService,
   ) {}
 
   /** 10 guests per IP per hour, refilling steadily rather than all at once. */
@@ -195,6 +200,64 @@ export class AuthController {
       dto.email,
       dto.password,
     );
+  }
+
+  /**
+   * Stop trusting the token this request arrived on.
+   *
+   * Sign-out used to be a client-side event: the browser dropped the token
+   * and the server never heard about it. Anyone holding a copy - a shared
+   * machine, a proxy log, a screenshot of a URL from before the fragment
+   * fix - kept a working session for the rest of its twelve hours.
+   *
+   * Reads the token again here rather than trusting the guard's decoded
+   * user, because the jti and exp are needed and the guard only attaches
+   * identity. Same token, same secret, verified twice - cheap.
+   */
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  async logout(@Req() req: Request): Promise<{ revoked: boolean }> {
+    const payload = this.decodeOwnToken(req);
+    if (!payload?.jti || !payload.sub) {
+      // A token from before jti existed. It cannot be revoked individually,
+      // and saying so is better than reporting a success that did nothing.
+      return { revoked: false };
+    }
+    await this.revocations.revokeToken(
+      payload.jti,
+      payload.sub,
+      // exp is in SECONDS; the record only has to outlive the token itself
+      new Date((payload.exp ?? Math.floor(Date.now() / 1000) + 43200) * 1000),
+    );
+    return { revoked: true };
+  }
+
+  /**
+   * Stop trusting everything this account holds, everywhere.
+   *
+   * The answer to "my token leaked" or "I left myself signed in somewhere I
+   * cannot get back to". One integer moves and every session that account
+   * has - phone, laptop, a socket someone left open - stops at once.
+   */
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  async logoutAll(
+    @CurrentUser('userId') userId: string,
+  ): Promise<{ version: number }> {
+    const version = await this.revocations.revokeAllForUser(userId);
+    return { version };
+  }
+
+  /** The raw token off the request, for the claims the guard does not keep. */
+  private decodeOwnToken(req: Request): TokenPayload | null {
+    const header = req.headers?.authorization;
+    const token = header?.trim().split(/\s+/)[1];
+    if (!token) return null;
+    try {
+      return this.jwt.verify<TokenPayload>(token);
+    } catch {
+      return null;
+    }
   }
 
   /**
