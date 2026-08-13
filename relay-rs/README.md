@@ -30,8 +30,10 @@ The earlier study measured **sync drift** and found Go tied Node (73 vs
 75ms P50) — because drift is bounded by the protocol and the network, not the
 runtime. That answer is correct and also unsatisfying: it measures the one
 thing where the runtime is *invisible*. So this study measures the things
-where it is not: **memory per connection, tail latency under load, and CPU**,
-at 1,000 and 10,000 concurrent connections.
+where it is not: **memory per connection, CPU, and latency under load**, at
+1,000 and 10,000 concurrent connections — with the finding, spelled out
+below, that memory is the clean result and the extreme tail is not cleanly
+measurable on one machine.
 
 ### Results
 
@@ -47,12 +49,20 @@ Committed run `fc6e0b9` (clean tree), the numbers cited here:
 | relay-go | 43 KB | 13 / 22 / 24 / 24 ms |
 | relay-rs | 16 KB | 11 / 17 / 23 / 23 ms |
 
-**10,000 connections**
+**10,000 connections** (committed run `bf9c5bf`)
 
-| | RSS / conn | RTT p50 / p95 / **p99.9** / max |
-|---|---|---|
-| relay-go | 49 KB | 63 / 189 / **238** / 267 ms |
-| relay-rs | 15 KB | 45 / 151 / **167** / 212 ms |
+| | RSS / conn | RTT p50 / p95 / p99.9 / max | CPU% |
+|---|---|---|---|
+| relay-go | 40 KB | 64 / 193 / 252 / 287 ms | 5.2 |
+| relay-rs | 15 KB | 50 / 155 / 270 / 277 ms | 1.6 |
+
+The **extreme tail (p99.9) does not cleanly separate the runtimes on this
+hardware** — across three 10k runs Go's p99.9 was 390 / 238 / 252 ms and
+Rust's was 175 / 167 / 270 ms. Rust is consistently better at the **median
+and p95** (this run 50/155 vs 64/193, and similarly in the others), and its
+memory and CPU wins are steady, but the p99.9 is noisy enough on a single
+co-resident machine that neither its magnitude nor its ordering is reliable
+run to run. See the honesty note.
 
 ### What the numbers say
 
@@ -101,19 +111,21 @@ Committed run `fc6e0b9` (clean tree), the numbers cited here:
 
 ### The verdict on "is Rust worth it for this"
 
-The drift study said the runtime does not matter. It was answering the wrong
-question. At the scale where a real-time relay actually hurts — tens of
-thousands of concurrent sockets — the runtime matters in exactly two places:
-**memory footprint** and **tail latency**, and Rust wins both, decisively on
-the tail. Sync *quality* is still protocol-bound and identical across all
-three planes, so the product works equally well on any of them; what changes
-is what it costs to run and how bad the worst request gets under load.
+The drift study said the runtime does not matter; it measured the one axis
+where the runtime is invisible. This study found the axis where it is not,
+and it is **memory** — a clean, large, reproducible ~3× (15 vs 40–49 KB per
+connection), which at 100k is the difference between ~1.5 GB and ~4.5 GB, and
+CPU roughly a fifth. That is the real, defensible result. The latency picture
+is smaller and partly inconclusive: median and p95 are consistently a little
+better on Rust, and the extreme tail — where a GC-free runtime *should* win —
+this single-machine harness cannot measure cleanly.
 
 So: **not worth deploying today** (you are not at that scale, and it doubles
-the maintenance surface), but the study answers the forward-looking question
-honestly — *if* you reach 10k+ concurrent, Rust is the plane whose worst case
-does not spike and whose memory lets you pack more per box. Until then it earns
-its place as a conformance target, which is where it is.
+the maintenance surface). The forward-looking case for Rust rests mostly on
+**memory density** — packing several times more connections per box — with a
+modest latency edge and a theoretical tail-latency advantage this setup could
+not confirm. Until you are at that scale it earns its place as a conformance
+target, which is where it stays.
 
 ## Running it
 
