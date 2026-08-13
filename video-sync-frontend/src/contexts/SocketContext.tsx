@@ -9,6 +9,7 @@ import { io, Socket } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
 import { useAuth } from './AuthContext';
 import { AUTH_EXPIRED_EVENT } from '../services/api';
+import { dropStaleControls } from '../sync/drop-stale-controls';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -124,11 +125,15 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       // an emit that raced a dying transport - connected still true, socket
       // half-open - sits in socket.io's sendBuffer, and socket.io flushes
       // that buffer on reconnect BEFORE app-level connect handlers run, so
-      // clearing on reconnect is too late. Cleared here, at the moment the
-      // death is detected, the stray is dropped instead of arriving
-      // arbitrarily late. A dropped gesture stays dropped; the user clicks
-      // again - the invariant sendIntent already documents.
-      socketInstance.sendBuffer = [];
+      // clearing on reconnect is too late. Filtered here, at the moment the
+      // death is detected: a stale CONTROL is dropped instead of arriving
+      // arbitrarily late (a dropped gesture stays dropped; the user clicks
+      // again), while everything else - a chat message someone typed, whose
+      // input was already cleared and which has no recovery path - keeps
+      // its place and flushes on reconnect like it should. The first
+      // version of this cleared the whole buffer and would have eaten
+      // exactly those chat messages.
+      socketInstance.sendBuffer = dropStaleControls(socketInstance.sendBuffer);
       setConnected(false);
       // Only claim to be reconnecting once there is something to reconnect
       // TO. No toast: socket.io retries by itself, the status chip carries

@@ -64,7 +64,12 @@ export class SocketIOTransport implements SyncTransport {
     // production client actually lives under, or the fleet proves a
     // different system than the one deployed.
     socket.on('disconnect', () => {
-      socket.sendBuffer = [];
+      // controls only, like the real client: a stale control re-commands
+      // the room from the past; everything else (clock pings, join-room)
+      // is harmless or idempotent late and keeps its place
+      socket.sendBuffer = socket.sendBuffer.filter(
+        (p: { data?: unknown[] }) => p?.data?.[0] !== SYNC_EVENTS.control,
+      );
     });
     this.pending.forEach((fn) => fn(socket));
     this.pending = [];
