@@ -83,6 +83,10 @@ const EXPLANATIONS: Record<string, { title: string; body: string }> = {
     title: 'This account is already a full one',
     body: 'Nothing to keep - you are signed in properly already.',
   },
+  reauth_mismatch: {
+    title: 'That was a different Google account',
+    body: 'The confirmation has to come from the Google account linked to THIS account. Pick that one at the Google screen and try again.',
+  },
   link: {
     title: "Couldn't attach Google to this session",
     body: 'Your guest session is untouched. Try again, or set a password instead.',
@@ -116,6 +120,18 @@ export const AuthCallbackPage: React.FC = () => {
     const token = params.get('token');
     const error = params.get('error');
     const to = params.get('to');
+
+    // A re-auth round trip hands back a five-minute ELEVATED token under
+    // its own name. It is parked in sessionStorage for the account dialog
+    // and never adopted as a session - elevation proves a moment, not an
+    // identity change, and storing it like a session would make it one.
+    const elev = params.get('elev');
+    if (elev) {
+      sessionStorage.setItem('mw_elevated', elev);
+      window.history.replaceState(null, '', window.location.pathname);
+      navigate(to && to.startsWith('/') ? to : '/', { replace: true });
+      return;
+    }
 
     if (error || !token) {
       setFailure((error && EXPLANATIONS[error]) || fallback);

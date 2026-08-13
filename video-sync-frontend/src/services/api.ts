@@ -83,7 +83,10 @@ api.interceptors.request.use(config => {
     return config;
   }
   const token = readStoredToken();
-  if (token) {
+  // An explicitly-set header wins: setPasswordElevated carries the
+  // five-minute elevated token, and overwriting it with the stored session
+  // here would silently un-elevate the one call that needs it.
+  if (token && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -124,6 +127,39 @@ export const apiService = {
   /** Stop trusting every session this account has, anywhere. */
   logoutEverywhere: () => api.post<{ version: number }>('/auth/logout-all'),
 
+  /**
+   * Trade a live token for a fresh one. The old token is revoked in the
+   * same call, so the copy that refreshed is the copy that survives; the
+   * slide is bounded server-side by the session's birth.
+   */
+  refresh: () => api.post<{ token: string; id: string; username: string }>('/auth/refresh'),
+
+  /**
+   * Set or change the password. Password accounts send currentPassword;
+   * provider-only accounts must be holding the five-minute elevated token
+   * from the Google re-auth flow instead. Every OTHER session ends when
+   * this succeeds - the response carries the one token that survives.
+   */
+  setPassword: (newPassword: string, currentPassword?: string) =>
+    api.post('/auth/set-password', { newPassword, currentPassword }),
+
+  /**
+   * set-password using the five-minute elevated token instead of the
+   * session: the token rides Authorization for THIS call only, proving the
+   * fresh Google round trip. Passed explicitly rather than stored - an
+   * elevation that lived in localStorage would be a session by another name.
+   */
+  setPasswordElevated: (newPassword: string, elevatedToken: string) =>
+    api.post(
+      '/auth/set-password',
+      { newPassword },
+      { headers: { Authorization: `Bearer ${elevatedToken}` } },
+    ),
+
+  /** Begin the Google re-auth round trip that mints the elevated token. */
+  googleReauthStart: (returnTo?: string) =>
+    api.post<{ authUrl: string }>('/auth/google/reauth-start', { returnTo }),
+
   /** A way in for someone who followed an invite link and wants no account. */
   guest: () => api.post('/auth/guest'),
 
@@ -143,8 +179,11 @@ export const apiService = {
    * the query string would write a credential into access logs and Referer
    * headers.
    */
-  googleLinkStart: (returnTo?: string) =>
-    api.post<{ authUrl: string }>('/auth/google/link-start', { returnTo }),
+  googleLinkStart: (returnTo?: string, password?: string) =>
+    api.post<{ authUrl: string }>('/auth/google/link-start', {
+      returnTo,
+      password,
+    }),
 
   // Which sign-in methods this deployment can actually complete. Asked at
   // runtime rather than baked in at build: the frontend is one bundle served

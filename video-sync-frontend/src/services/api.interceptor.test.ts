@@ -72,3 +72,29 @@ describe('with no stored session', () => {
     expect(authHeader('/rooms')).toBeUndefined();
   });
 });
+
+describe('an explicitly-set Authorization header', () => {
+  it('is never overwritten by the stored session', () => {
+    // setPasswordElevated carries the five-minute elevated token; the
+    // interceptor replacing it with the stored session would silently
+    // un-elevate the one call that needs elevation
+    const cfg = run('/auth/set-password');
+    expect(cfg.headers.Authorization).toBe('Bearer tok-123'); // default path
+    const handler = (
+      api.interceptors.request as unknown as {
+        handlers: {
+          fulfilled: (
+            c: import('axios').InternalAxiosRequestConfig,
+          ) => import('axios').InternalAxiosRequestConfig;
+        }[];
+      }
+    ).handlers[0].fulfilled;
+    const explicit = handler({
+      url: '/auth/set-password',
+      headers: { Authorization: 'Bearer elevated-token' },
+    } as unknown as import('axios').InternalAxiosRequestConfig);
+    expect((explicit.headers as Record<string, unknown>).Authorization).toBe(
+      'Bearer elevated-token',
+    );
+  });
+});

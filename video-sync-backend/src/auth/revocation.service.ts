@@ -176,6 +176,20 @@ export class RevocationService implements OnModuleInit {
   }
 
   /**
+   * Record a version bump that some OTHER write already performed.
+   *
+   * setPassword increments tokenVersion in the same database write as the
+   * new hash - atomically, which revokeAllForUser cannot offer it. This is
+   * the announce-only half: snapshot, mirror, pub/sub, socket eviction,
+   * without a second increment.
+   */
+  async noteVersionBumped(userId: string, version: number): Promise<void> {
+    this.rememberVersion(userId, version);
+    await this.mirrorVersion(userId, version);
+    await this.announce({ kind: 'user', userId, version });
+  }
+
+  /**
    * Reload the snapshot from Postgres.
    *
    * Also the recovery path: an instance that missed a pub/sub message, or

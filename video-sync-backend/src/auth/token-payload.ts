@@ -34,6 +34,25 @@ export interface TokenPayload {
    */
   ver?: number;
   /**
+   * When this SESSION was born - the first sign-in, in seconds, preserved
+   * verbatim across refreshes. A refresh slides the token's expiry but must
+   * never slide this: it is the anchor for the absolute session cap, and a
+   * cap anchored to anything refreshable is not a cap.
+   *
+   * Optional because tokens minted before refresh existed do not carry it;
+   * they refresh with sess = their own iat, which is the honest floor.
+   */
+  sess?: number;
+  /**
+   * Elevation marker, set only by the OAuth re-auth flow and only for five
+   * minutes: 'reauth' means the holder just completed a fresh Google round
+   * trip AS this account's linked identity. Required by set-password on
+   * accounts that have no password to verify instead. An elevated token is
+   * otherwise an ordinary session token for the same subject - elevation
+   * ADDS one right, it does not change who you are.
+   */
+  elev?: string;
+  /**
    * Expiry, written by jsonwebtoken itself. Declared here because two things
    * now read it - the socket sweep that closes connections whose token has
    * died, and the revocation record that only needs keeping until then.

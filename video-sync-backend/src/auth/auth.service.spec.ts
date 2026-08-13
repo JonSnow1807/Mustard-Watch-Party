@@ -32,6 +32,7 @@ const makeDb = () => ({
   },
   oAuthAccount: {
     findUnique: jest.fn().mockResolvedValue(null),
+    create: jest.fn().mockResolvedValue(undefined),
   },
 });
 
@@ -48,8 +49,17 @@ interface CreateUserArgs {
 const createCalls = (db: ReturnType<typeof makeDb>): CreateUserArgs[] =>
   (db.user.create.mock.calls as CreateUserArgs[][]).map((call) => call[0]);
 
-const serviceWith = (db: ReturnType<typeof makeDb>) =>
-  new AuthService(db as unknown as DatabaseService, jwtService);
+/** Revocations double: records bumps, revokes nothing on its own. */
+const makeRevocations = () =>
+  ({
+    revokeToken: jest.fn().mockResolvedValue(undefined),
+    noteVersionBumped: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as import('./revocation.service').RevocationService;
+
+const serviceWith = (
+  db: ReturnType<typeof makeDb>,
+  revocations = makeRevocations(),
+) => new AuthService(db as unknown as DatabaseService, jwtService, revocations);
 
 describe('login with provider-only accounts in the table', () => {
   it('answers a passwordless account with the same 401 as a wrong password', async () => {
@@ -640,5 +650,208 @@ describe('attaching Google to a guest', () => {
     ).rejects.toMatchObject({
       status: 409,
     });
+  });
+});
+
+describe('refreshing a session', () => {
+  const nowS = () => Math.floor(Date.now() / 1000);
+  /** decode() defaults to any; the generic names what this suite reads -
+   *  and unlike an `as` cast, eslint --fix cannot strip it. */
+  const claims = (t: string) =>
+    jwtService.decode<{ jti: string; ver: number; sess: number }>(t);
+
+  const refreshing = () => {
+    const db = makeDb();
+    db.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      username: 'ada',
+      tokenVersion: 2,
+    });
+    const revocations = makeRevocations();
+    return { db, revocations, service: serviceWith(db, revocations) };
+  };
+
+  it('rotates: new jti, old token revoked in the same call', async () => {
+    const { service, revocations } = refreshing();
+    const out = await service.refreshSession({
+      sub: 'u1',
+      jti: 'j-old',
+      ver: 2,
+      sess: nowS() - 3600,
+      exp: nowS() + 1000,
+    });
+
+    const decoded = claims(out.token);
+    expect(decoded.jti).not.toBe('j-old');
+    expect(decoded.ver).toBe(2);
+    const [jti, userId] = (revocations.revokeToken as jest.Mock).mock
+      .calls[0] as [string, string];
+    expect(jti).toBe('j-old');
+    expect(userId).toBe('u1');
+  });
+
+  it('preserves the session birth verbatim - the cap must not slide', async () => {
+    const { service } = refreshing();
+    const birth = nowS() - 5 * 24 * 3600;
+    const out = await service.refreshSession({
+      sub: 'u1',
+      jti: 'j1',
+      sess: birth,
+    });
+    expect(claims(out.token).sess).toBe(birth);
+  });
+
+  it('refuses a session past thirty days, however fresh its token', async () => {
+    // the whole point of anchoring to birth: a token refreshed every 11
+    // hours is perpetually young; the SESSION is not
+    const { service, revocations } = refreshing();
+    await expect(
+      service.refreshSession({
+        sub: 'u1',
+        jti: 'j1',
+        sess: nowS() - 31 * 24 * 3600,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect((revocations.revokeToken as jest.Mock).mock.calls).toHaveLength(0);
+  });
+
+  it('anchors a pre-sess token to its own iat, not to now', async () => {
+    // anchoring to now would grant every legacy token a fresh 30 days on
+    // first refresh - a cap that resets is not a cap
+    const { service } = refreshing();
+    const iat = nowS() - 40 * 24 * 3600;
+    await expect(
+      service.refreshSession({ sub: 'u1', jti: 'j1', iat }),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('still refreshes a legacy token with no jti - it just cannot revoke it', async () => {
+    const { service, revocations } = refreshing();
+    const out = await service.refreshSession({ sub: 'u1', sess: nowS() - 60 });
+    expect(typeof out.token).toBe('string');
+    expect((revocations.revokeToken as jest.Mock).mock.calls).toHaveLength(0);
+  });
+});
+
+describe('linking Google to a FULL account', () => {
+  const linking = () => {
+    const db = makeDb();
+    db.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      username: 'ada',
+      email: 'ada@example.com',
+      tokenVersion: 0,
+    });
+    return { db, service: serviceWith(db) };
+  };
+
+  it('adds the provider row and touches nothing else about the account', async () => {
+    // the guest path rewrites identity because a guest has none worth
+    // keeping; a full account's name and email are THEIRS
+    const { db, service } = linking();
+    const out = await service.linkGoogleToFull('u1', identity);
+    expect(db.user.update).not.toHaveBeenCalled();
+    expect(db.oAuthAccount.create).toHaveBeenCalledWith({
+      data: {
+        provider: 'google',
+        providerAccountId: 'google-sub-123',
+        userId: 'u1',
+      },
+    });
+    expect(out.username).toBe('ada');
+  });
+
+  it('refuses a Google account already linked to someone else', async () => {
+    const { db, service } = linking();
+    db.oAuthAccount.findUnique.mockResolvedValue({ userId: 'someone-else' });
+    await expect(
+      service.linkGoogleToFull('u1', identity),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(db.oAuthAccount.create).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent when already linked to THIS account', async () => {
+    // a double-submitted flow should not scold the person it worked for
+    const { db, service } = linking();
+    db.oAuthAccount.findUnique.mockResolvedValue({ userId: 'u1' });
+    const out = await service.linkGoogleToFull('u1', identity);
+    expect(db.oAuthAccount.create).not.toHaveBeenCalled();
+    expect(typeof out.token).toBe('string');
+  });
+});
+
+describe('setting a password', () => {
+  it('writes the hash and bumps the version in ONE database write', async () => {
+    // the bump ending every other session must be atomic with the new
+    // hash: two writes leave a window where the password changed but the
+    // attacker's token still works
+    const db = makeDb();
+    const revocations = makeRevocations();
+    db.user.update.mockResolvedValue({
+      id: 'u1',
+      username: 'ada',
+      email: 'a@b.co',
+      tokenVersion: 3,
+    });
+    const service = serviceWith(db, revocations);
+    const out = await service.setPassword('u1', 'a-new-password');
+
+    const args = (
+      db.user.update.mock.calls as [
+        { data: { password: unknown; tokenVersion: unknown } },
+      ][]
+    )[0][0];
+    expect(typeof args.data.password).toBe('string');
+    expect(args.data.tokenVersion).toEqual({ increment: 1 });
+    expect((revocations.noteVersionBumped as jest.Mock).mock.calls).toEqual([
+      ['u1', 3],
+    ]);
+    // the caller continues on a token AT the new version
+    expect(jwtService.decode<{ ver: number }>(out.token).ver).toBe(3);
+  });
+
+  it('refuses a short password before writing anything', async () => {
+    const db = makeDb();
+    await expect(
+      serviceWith(db).setPassword('u1', 'short'),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('which re-auth gate an account needs', () => {
+  const withUser = (row: unknown) => {
+    const db = makeDb();
+    db.user.findUnique.mockResolvedValue(row);
+    return serviceWith(db);
+  };
+
+  it('password accounts verify their password', async () => {
+    await expect(
+      withUser({ password: 'hash', oauthAccounts: [] }).reauthMethodFor('u1'),
+    ).resolves.toBe('password');
+  });
+
+  it('provider-only accounts re-run Google', async () => {
+    await expect(
+      withUser({
+        password: null,
+        oauthAccounts: [{ provider: 'google' }],
+      }).reauthMethodFor('u1'),
+    ).resolves.toBe('google');
+  });
+
+  it('guests have neither, which callers must treat as its own case', async () => {
+    await expect(
+      withUser({ password: null, oauthAccounts: [] }).reauthMethodFor('u1'),
+    ).resolves.toBeNull();
+  });
+
+  it('verifyPassword treats no-password-on-file as refusal, never a pass', async () => {
+    // an account that cannot be verified this way needs the OAuth gate;
+    // returning true here would make the weakest accounts the easiest to take
+    await expect(
+      withUser({ password: null }).verifyPassword('u1', 'anything'),
+    ).resolves.toBe(false);
   });
 });

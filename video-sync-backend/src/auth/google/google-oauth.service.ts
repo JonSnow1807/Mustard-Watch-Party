@@ -169,6 +169,7 @@ export class GoogleOAuthService {
     returnTo: string | undefined,
     now: number = Date.now(),
     linkUserId?: string,
+    purpose?: 'link-guest' | 'link-full' | 'reauth',
   ) {
     this.assertEnabled();
 
@@ -183,6 +184,7 @@ export class GoogleOAuthService {
       codeVerifier,
       returnTo: safeReturnTo(returnTo),
       linkUserId,
+      purpose,
       expiresAt: now + FLOW_TTL_MS,
     };
 
@@ -216,8 +218,9 @@ export class GoogleOAuthService {
   }): Promise<{
     identity: GoogleIdentity;
     returnTo?: string;
-    /** set when this flow is attaching Google to a guest, not signing in */
+    /** set when this flow acts on an existing account rather than signing in */
     linkUserId?: string;
+    purpose?: 'link-guest' | 'link-full' | 'reauth';
   }> {
     this.assertEnabled();
 
@@ -287,6 +290,7 @@ export class GoogleOAuthService {
       },
       returnTo: opened.returnTo,
       linkUserId: opened.linkUserId,
+      purpose: opened.purpose,
     };
   }
 

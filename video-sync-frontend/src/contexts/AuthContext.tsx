@@ -169,6 +169,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  /**
+   * Keep the session fresh without keeping it forever.
+   *
+   * Scheduled at ~90% of the token's remaining life (decoded locally - the
+   * expiry is not a secret, and mis-decoding only means a missed refresh,
+   * which the hard expiry already handles). On success the server has
+   * REVOKED the old token, so the update below is not cosmetic: the copy
+   * that refreshed is the only copy still alive. On refusal - revoked
+   * elsewhere, session past its thirty-day cap - nothing happens here;
+   * the existing expiry machinery (401 handling, socket eviction) ends
+   * the session the way it already knows how.
+   *
+   * The socket reconnects when the token changes (its effect keys on
+   * [token]); once per ~11 hours, that brief rejoin is the price of not
+   * being signed out mid-film at hour twelve.
+   */
+  useEffect(() => {
+    const token = user?.token;
+    if (!token) return;
+    let expMs: number | null = null;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1])) as {
+        exp?: number;
+        elev?: string;
+      };
+      // elevated tokens are five-minute instruments, never sessions
+      if (payload.elev) return;
+      if (typeof payload.exp === 'number') expMs = payload.exp * 1000;
+    } catch {
+      return; // undecodable: let the server be the judge at next request
+    }
+    if (expMs === null) return;
+    const delay = Math.max((expMs - Date.now()) * 0.9, 60_000);
+    const timer = setTimeout(() => {
+      apiService
+        .refresh()
+        .then(({ data }) => {
+          setUser((current) =>
+            current ? { ...current, token: data.token } : current,
+          );
+          const stored = localStorage.getItem('user');
+          if (stored) {
+            localStorage.setItem(
+              'user',
+              JSON.stringify({
+                ...(JSON.parse(stored) as object),
+                token: data.token,
+              }),
+            );
+          }
+        })
+        .catch(() => undefined);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [user?.token]);
+
   const claimAccount = useCallback(
     async (username: string, email: string, password: string) => {
       try {

@@ -14,6 +14,7 @@ import { DatabaseService } from '../database/database.service';
 import * as bcrypt from 'bcrypt';
 import { GoogleAuthError, GoogleIdentity } from './google/google-oauth.service';
 import { usernameBase, usernameCandidates } from './google/username';
+import { RevocationService } from './revocation.service';
 
 const GOOGLE = 'google';
 
@@ -26,6 +27,15 @@ export interface SessionUser {
 }
 
 /** Enough draws from 10^4 that exhausting them means something else is wrong. */
+/**
+ * The absolute ceiling on a session's life: thirty days after first
+ * sign-in, refreshes are refused and the person signs in again. A constant
+ * rather than a knob on purpose - JWT_EXPIRES_IN taught this codebase what
+ * a lifetime knob costs in validation, and this one is a correctness
+ * parameter for the refresh design, not tuning.
+ */
+export const SESSION_MAX_S = 30 * 24 * 3600;
+
 const USERNAME_ATTEMPTS = 8;
 
 const isUniqueViolation = (err: unknown, field: string): boolean =>
@@ -79,6 +89,7 @@ export class AuthService {
   constructor(
     private database: DatabaseService,
     private jwt: JwtService,
+    private revocations: RevocationService,
   ) {}
 
   /**
@@ -94,16 +105,22 @@ export class AuthService {
    * The jti is what lets ONE session be revoked later; without it the only
    * lever is the version, which takes out every session the user has.
    */
-  private issueToken(user: {
-    id: string;
-    username: string;
-    tokenVersion: number;
-  }): string {
+  private issueToken(
+    user: {
+      id: string;
+      username: string;
+      tokenVersion: number;
+    },
+    opts?: { sessionStart?: number },
+  ): string {
     return this.jwt.sign({
       sub: user.id,
       name: user.username,
       jti: randomUUID(),
       ver: user.tokenVersion,
+      // the session's birth, preserved across refreshes; a fresh sign-in
+      // starts a fresh session
+      sess: opts?.sessionStart ?? Math.floor(Date.now() / 1000),
     });
   }
 
@@ -226,17 +243,262 @@ export class AuthService {
   }
 
   /** The signed-in identity, for a client holding a token and nothing else. */
-  async me(userId: string) {
+  /**
+   * A new token for a session that is still alive - the sliding half of
+   * sliding sessions.
+   *
+   * The old objection to any lifetime extension was "a stolen token's value
+   * rises, and there is no revocation". Revocation exists now, and this
+   * flow is built to make a stolen copy WORTH LESS, not more: the new token
+   * gets a fresh jti and the old jti is revoked in the same call, so the
+   * first party to refresh - victim or thief - kills the other's copy, and
+   * a 12-hour theft window shrinks to the gap between refreshes.
+   *
+   * The slide is bounded absolutely by the session's BIRTH (`sess`), which
+   * refreshes preserve verbatim: thirty days after first sign-in, the
+   * session ends whatever anyone does. A cap anchored to anything
+   * refreshable is not a cap.
+   */
+  async refreshSession(payload: {
+    sub?: string;
+    name?: string;
+    jti?: string;
+    ver?: number;
+    sess?: number;
+    iat?: number;
+    exp?: number;
+  }): Promise<SessionUser & { sessionStartedAt: number }> {
+    const userId = payload.sub;
+    if (!userId) throw new UnauthorizedException('No such session');
+
+    const nowS = Math.floor(Date.now() / 1000);
+    // tokens minted before sess existed anchor to their own issue time:
+    // the honest floor, since nothing older can be proven about them
+    const sessionStart = payload.sess ?? payload.iat ?? nowS;
+    if (nowS - sessionStart > SESSION_MAX_S) {
+      throw new UnauthorizedException(
+        'This session has reached its age limit - sign in again',
+      );
+    }
+
+    const user = await this.database.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, tokenVersion: true },
+    });
+    if (!user) throw new UnauthorizedException('No such session');
+
+    const token = this.issueToken(user, { sessionStart });
+
+    // Rotate: the old token dies WITH the refresh, not on its own schedule.
+    // Tokens from before jti existed cannot be individually revoked - they
+    // refresh into revocable ones, which still narrows the fleet.
+    if (payload.jti) {
+      await this.revocations.revokeToken(
+        payload.jti,
+        userId,
+        new Date((payload.exp ?? nowS + 43200) * 1000),
+      );
+    }
+
+    return {
+      id: user.id,
+      username: user.username,
+      email: '',
+      token,
+      sessionStartedAt: sessionStart,
+    } as SessionUser & { sessionStartedAt: number };
+  }
+
+  /**
+   * Attach a Google identity to a FULL account.
+   *
+   * The guest path (linkGoogleToGuest) rewrites the row's identity; this
+   * one must not - the account already has its name and address, and
+   * linking only adds a second door. The uniqueness that matters is the
+   * provider's: a Google account attached elsewhere belongs to that user.
+   *
+   * The re-authentication happened at link-start (password verified before
+   * the state was sealed); by the time this runs, the sealed cookie is the
+   * proof. Nothing here trusts the bearer token alone.
+   */
+  async linkGoogleToFull(
+    userId: string,
+    identity: GoogleIdentity,
+  ): Promise<SessionUser> {
     const user = await this.database.user.findUnique({
       where: { id: userId },
       select: { id: true, username: true, email: true, tokenVersion: true },
+    });
+    if (!user) throw new UnauthorizedException('No such session');
+
+    const existingLink = await this.database.oAuthAccount.findUnique({
+      where: {
+        provider_providerAccountId: {
+          provider: 'google',
+          providerAccountId: identity.subject,
+        },
+      },
+      select: { userId: true },
+    });
+    if (existingLink && existingLink.userId !== userId) {
+      throw new ConflictException({
+        code: 'link_provider_taken',
+        message:
+          'That Google account is already signed in here - sign in with it instead',
+      });
+    }
+    if (existingLink) {
+      // already linked to THIS account: idempotent, not an error - a
+      // double-submitted flow should not scold the person it worked for
+      return { ...user, token: this.issueToken(user) };
+    }
+
+    try {
+      await this.database.oAuthAccount.create({
+        data: {
+          provider: 'google',
+          providerAccountId: identity.subject,
+          userId,
+        },
+      });
+    } catch (err) {
+      if (isUniqueViolation(err, 'providerAccountId')) {
+        throw new ConflictException({
+          code: 'link_provider_taken',
+          message:
+            'That Google account is already signed in here - sign in with it instead',
+        });
+      }
+      throw err;
+    }
+    return { ...user, token: this.issueToken(user) };
+  }
+
+  /**
+   * Does this password belong to this account? For re-authentication
+   * gates, where "no password on file" must read as refusal, never as a
+   * pass - an account that cannot be verified this way needs the OAuth
+   * re-auth path instead.
+   */
+  async verifyPassword(userId: string, password: string): Promise<boolean> {
+    const user = await this.database.user.findUnique({
+      where: { id: userId },
+      select: { password: true },
+    });
+    if (!user?.password) return false;
+    return bcrypt.compare(password ?? '', user.password);
+  }
+
+  /** Which re-auth gate set-password and link-start need for this account. */
+  async reauthMethodFor(userId: string): Promise<'password' | 'google' | null> {
+    const user = await this.database.user.findUnique({
+      where: { id: userId },
+      select: {
+        password: true,
+        oauthAccounts: { select: { provider: true }, take: 1 },
+      },
+    });
+    if (!user) return null;
+    if (user.password) return 'password';
+    if (user.oauthAccounts.length > 0) return 'google';
+    return null;
+  }
+
+  /**
+   * Set or change the account password - and end every other session.
+   *
+   * Re-authentication is the CALLER's job (the controller verifies either
+   * the current password or a fresh Google re-auth before calling); this
+   * method assumes it and does the two things that must then happen
+   * together: the new hash is written, and tokenVersion bumps so every
+   * token issued before this moment - including whichever one an attacker
+   * may be holding, which is the scenario password changes exist for -
+   * stops working. The caller gets a fresh token at the new version, so
+   * the person who changed the password is the one session that survives.
+   */
+  async setPassword(userId: string, newPassword: string): Promise<SessionUser> {
+    if ((newPassword ?? '').length < 8) {
+      throw new BadRequestException('Passwords are at least 8 characters');
+    }
+    const hashed = await bcrypt.hash(newPassword, 10);
+    const user = await this.database.user.update({
+      where: { id: userId },
+      data: { password: hashed, tokenVersion: { increment: 1 } },
+      select: { id: true, username: true, email: true, tokenVersion: true },
+    });
+    // the version moved in the SAME write as the password; announce it so
+    // live sockets close and other instances hear (this also refreshes the
+    // in-memory snapshot on this instance)
+    await this.revocations.noteVersionBumped(userId, user.tokenVersion);
+    return { ...user, token: this.issueToken(user) };
+  }
+
+  /** Which user a Google subject is linked to, if any. */
+  async googleSubjectOwner(subject: string): Promise<string | null> {
+    const link = await this.database.oAuthAccount.findUnique({
+      where: {
+        provider_providerAccountId: {
+          provider: 'google',
+          providerAccountId: subject,
+        },
+      },
+      select: { userId: true },
+    });
+    return link?.userId ?? null;
+  }
+
+  /**
+   * Five minutes of proof that the holder just re-authenticated. An
+   * ordinary token for the same subject in every other respect - elevation
+   * adds the one right set-password checks for, nothing else - and
+   * deliberately short: it exists to be spent, not kept. Refresh refuses
+   * it, so it cannot be slid past its purpose.
+   */
+  async mintElevatedToken(userId: string): Promise<string> {
+    const user = await this.database.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, tokenVersion: true },
+    });
+    if (!user) throw new UnauthorizedException('No such session');
+    return this.jwt.sign(
+      {
+        sub: user.id,
+        name: user.username,
+        jti: randomUUID(),
+        ver: user.tokenVersion,
+        elev: 'reauth',
+      },
+      { expiresIn: '5m' },
+    );
+  }
+
+  async me(userId: string) {
+    const user = await this.database.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        tokenVersion: true,
+        isGuest: true,
+        // booleans about the credentials, never the credentials: the
+        // account UI needs to know WHICH re-auth gate to show, and
+        // deriving that client-side from anything else would be a guess
+        password: true,
+        oauthAccounts: { select: { provider: true }, take: 1 },
+      },
     });
     if (!user) {
       // A valid signature over a user that no longer exists - a deleted
       // account holding a token that has not expired yet.
       throw new NotFoundException('User not found');
     }
-    return user;
+    const { password, oauthAccounts, ...rest } = user;
+    return {
+      ...rest,
+      hasPassword: password !== null,
+      googleLinked: oauthAccounts.length > 0,
+    };
   }
 
   /**
