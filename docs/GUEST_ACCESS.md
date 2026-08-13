@@ -116,9 +116,14 @@ tightened, because the gap between them is the interesting part:
 - **The survey never specified an email for a disposable user.** `User.email`
   is non-null and unique, so "a generated username and a nullable password" is
   not enough to insert a row - the argument had a hole the code had to fill.
-  It fills it with `randomUUID()@guest.invalid`: collision-safe by
-  construction, and `.invalid` is reserved by RFC 2606 so it can never route
-  anywhere real.
+  It fills it with `randomUUID()@guest.invalid`: collision-*resistant* rather
+  than collision-*proof*, which is a distinction worth keeping. A v4 UUID has
+  122 random bits, so a repeat is not impossible, only absurd — and
+  `createGuest()` retries a username collision but not an email one, so the
+  absurd case would surface as a 500 rather than a retry. That asymmetry is
+  deliberate at these odds and recorded here rather than defended in code.
+  `.invalid` is reserved by RFC 2606, so the address can never route anywhere
+  real.
 - **It implied the socket handshake needs a `User` row.** It does not - the
   handshake validates a signed token with `sub` and `name` and attaches the
   identity, with no database lookup (`jwt-auth.guard.spec.ts`). The
