@@ -53,11 +53,22 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** One token from the Node backend; every simulated client reuses it - the
  *  server derives identity from the token, and we are measuring the transport
- *  and connection cost, not per-user state. */
+ *  and connection cost, not per-user state. Registers rather than mints a
+ *  guest: guest creation is rate limited (by design), and a load harness
+ *  making one token would otherwise trip that cap after enough runs. */
 const mintToken = async (apiUrl: string): Promise<string> => {
-  const r = await fetch(`${apiUrl}/auth/guest`, { method: 'POST' });
+  const rnd = Math.random().toString(36).slice(2, 10);
+  const r = await fetch(`${apiUrl}/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      username: `load-${rnd}`,
+      email: `load-${rnd}@example.com`,
+      password: 'a-real-password',
+    }),
+  });
   const body = (await r.json()) as { token?: string };
-  if (!body.token) throw new Error(`no token from ${apiUrl}/auth/guest`);
+  if (!body.token) throw new Error(`no token from ${apiUrl}/auth/register: ${JSON.stringify(body)}`);
   return body.token;
 };
 
