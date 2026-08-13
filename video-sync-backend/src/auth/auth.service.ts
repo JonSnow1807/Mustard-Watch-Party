@@ -35,6 +35,45 @@ const isUniqueViolation = (err: unknown, field: string): boolean =>
     t.includes(field),
   );
 
+/**
+ * What a name, an address and a password have to be to open an account.
+ *
+ * One function, because there are two doors into the same table - register
+ * and claimGuestAccount - and for a while only the newer one checked
+ * anything. Validating the door you happen to be building reads as though
+ * the other was considered and passed. It had not been.
+ *
+ * Returns the cleaned values so callers cannot validate one string and then
+ * store a different one.
+ */
+export const credentialsOrThrow = (
+  username: string,
+  email: string,
+  password: string,
+): { username: string; email: string } => {
+  const cleanUsername = (username ?? '').trim();
+  const cleanEmail = (email ?? '').trim().toLowerCase();
+
+  if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(cleanUsername)) {
+    throw new BadRequestException(
+      'Names are 3-32 characters: letters, numbers, dot, dash, underscore',
+    );
+  }
+  if (!/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(cleanEmail)) {
+    throw new BadRequestException('That email address does not look right');
+  }
+  if (cleanEmail.endsWith('@guest.invalid')) {
+    // The address a guest row is born with. An account that keeps it can
+    // never receive a password reset.
+    throw new BadRequestException('Use an address you can actually receive');
+  }
+  if ((password ?? '').length < 8) {
+    throw new BadRequestException('Passwords are at least 8 characters');
+  }
+
+  return { username: cleanUsername, email: cleanEmail };
+};
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -47,10 +86,16 @@ export class AuthService {
   }
 
   async register(username: string, email: string, password: string) {
+    const { username: cleanUsername, email: cleanEmail } = credentialsOrThrow(
+      username,
+      email,
+      password,
+    );
+
     // Check if user exists
     const existingUser = await this.database.user.findFirst({
       where: {
-        OR: [{ username }, { email }],
+        OR: [{ username: cleanUsername }, { email: cleanEmail }],
       },
     });
 
@@ -64,8 +109,8 @@ export class AuthService {
     // Create user
     const user = await this.database.user.create({
       data: {
-        username,
-        email,
+        username: cleanUsername,
+        email: cleanEmail,
         password: hashedPassword,
       },
       select: {
@@ -202,29 +247,11 @@ export class AuthService {
     email: string,
     password: string,
   ): Promise<SessionUser> {
-    const cleanUsername = (username ?? '').trim();
-    const cleanEmail = (email ?? '').trim().toLowerCase();
-
-    // Checked here rather than in a DTO because register/1 does not validate
-    // either, and putting a class-validator on one of the two doors would
-    // read as though the other had been considered and passed. It has not -
-    // see the known-gaps note.
-    if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(cleanUsername)) {
-      throw new BadRequestException(
-        'Names are 3-32 characters: letters, numbers, dot, dash, underscore',
-      );
-    }
-    if (!/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(cleanEmail)) {
-      throw new BadRequestException('That email address does not look right');
-    }
-    if (cleanEmail.endsWith('@guest.invalid')) {
-      // The address the guest row was born with. Keeping it would leave an
-      // account that can never receive a reset.
-      throw new BadRequestException('Use an address you can actually receive');
-    }
-    if ((password ?? '').length < 8) {
-      throw new BadRequestException('Passwords are at least 8 characters');
-    }
+    const { username: cleanUsername, email: cleanEmail } = credentialsOrThrow(
+      username,
+      email,
+      password,
+    );
 
     const current = await this.database.user.findUnique({
       where: { id: userId },
@@ -275,6 +302,124 @@ export class AuthService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Attach a Google identity to the guest row already in use.
+   *
+   * The password path for this is claimGuestAccount; this is the same
+   * promise for someone who would rather not invent another password. Same
+   * rule, and the same reason: the row keeps its id, so the chat messages
+   * and participant rows pointing at it stay pointing at a live account.
+   *
+   * Order matters here. The provider link is checked BEFORE anything is
+   * written, because a Google account already attached to a real account
+   * must not be quietly moved onto a guest row - that would be an account
+   * takeover with the victim's own credentials.
+   */
+  async linkGoogleToGuest(
+    userId: string,
+    identity: GoogleIdentity,
+  ): Promise<SessionUser> {
+    const current = await this.database.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isGuest: true },
+    });
+    if (!current) throw new UnauthorizedException('No such session');
+    if (!current.isGuest) {
+      throw new ForbiddenException({
+        code: 'link_not_guest',
+        message: 'This session is already a full account',
+      });
+    }
+
+    const email = identity.email.trim().toLowerCase();
+
+    // Already linked somewhere? Then this Google account belongs to that
+    // user, and the answer is to sign in as them - not to graft it onto a
+    // guest.
+    const existingLink = await this.database.oAuthAccount.findUnique({
+      where: {
+        provider_providerAccountId: {
+          provider: 'google',
+          providerAccountId: identity.subject,
+        },
+      },
+      select: { userId: true },
+    });
+    if (existingLink && existingLink.userId !== userId) {
+      throw new ConflictException({
+        // A CODE alongside the message, because the OAuth callback answers in
+        // a redirect fragment and that channel carries codes by design - the
+        // API does not know how the frontend words things, and a code cannot
+        // leak anything about the account it refused.
+        code: 'link_provider_taken',
+        message:
+          'That Google account is already signed in here - sign in with it instead',
+      });
+    }
+
+    // The address is unique on User, and we are about to take it.
+    const addressTaken = await this.database.user.findFirst({
+      where: { email, NOT: { id: userId } },
+      select: { id: true },
+    });
+    if (addressTaken) {
+      throw new ConflictException({
+        code: 'link_email_taken',
+        message:
+          'An account with that email already exists - sign in with it instead',
+      });
+    }
+
+    // A guest is called guest_1234, which is nobody's name. Take one from
+    // the Google profile, with the same collision walk registration uses.
+    const candidates = usernameCandidates(usernameBase(identity.name, email));
+
+    for (let attempt = 0; attempt < USERNAME_ATTEMPTS; attempt++) {
+      const username = candidates.next().value as string;
+      try {
+        const user = await this.database.user.update({
+          where: { id: userId, isGuest: true },
+          data: {
+            username,
+            email,
+            isGuest: false,
+            // password stays null: this account signs in with Google, and
+            // login() already refuses a null password rather than passing it
+            // to bcrypt
+            oauthAccounts: {
+              create: {
+                provider: 'google',
+                providerAccountId: identity.subject,
+              },
+            },
+          },
+          select: { id: true, username: true, email: true },
+        });
+        return { ...user, token: this.issueToken(user) };
+      } catch (err) {
+        if (isUniqueViolation(err, 'username')) continue;
+        if (isUniqueViolation(err, 'providerAccountId')) {
+          // lost a race with another flow linking the same Google account
+          throw new ConflictException({
+            code: 'link_provider_taken',
+            message:
+              'That Google account is already signed in here - sign in with it instead',
+          });
+        }
+        if (isUniqueViolation(err, 'email')) {
+          throw new ConflictException({
+            code: 'link_email_taken',
+            message:
+              'An account with that email already exists - sign in with it instead',
+          });
+        }
+        throw err;
+      }
+    }
+
+    throw new ConflictException('Could not allocate a name');
   }
 
   async signInWithGoogle(identity: GoogleIdentity): Promise<SessionUser> {

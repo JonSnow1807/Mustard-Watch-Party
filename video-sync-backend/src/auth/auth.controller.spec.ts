@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -237,5 +237,164 @@ describe('the guest route under two limits at once', () => {
     }
     expect(codes.filter((c) => c === 201)).toHaveLength(300);
     expect(codes.filter((c) => c === 429)).toHaveLength(10);
+  });
+});
+
+describe('starting a link, which is a different thing from signing in', () => {
+  const makeLinkGoogle = () => {
+    const start = jest.fn().mockReturnValue({
+      authUrl: 'https://accounts.google.com/o/oauth2/v2/auth?x=1',
+      cookie: 'sealed',
+    });
+    return {
+      google: {
+        enabled: true,
+        assertEnabled: () => undefined,
+        start,
+        verifyCallback: jest.fn(),
+        callbackRedirect: (f: string) =>
+          `https://mustard.watch/auth/callback#${f}`,
+        redirectUri: 'https://api.mustard.watch/api/auth/google/callback',
+      } as unknown as GoogleOAuthService,
+      start,
+    };
+  };
+
+  it('seals the id the GUARD verified, not anything the caller sent', () => {
+    // The whole security of linking rests here: a caller who could nominate
+    // the account would be able to attach their Google identity to someone
+    // else's.
+    const { google, start } = makeLinkGoogle();
+    const controller = new AuthController({} as unknown as AuthService, google);
+    const res = makeRes();
+
+    const out = controller.linkStart(
+      'user-from-token',
+      { returnTo: '/room/abc' },
+      res as unknown as Response,
+    );
+
+    // cast the CALLS array, not the element - indexing an `any` array is
+    // itself the unsafe access, which is the same note CodeRabbit left on
+    // the claim tests
+    const calls = start.mock.calls as [string | undefined, number, string][];
+    expect(calls[0][2]).toBe('user-from-token');
+    expect(out.authUrl).toContain('accounts.google.com');
+    expect(res.cookies[0].name).toBe('mw_oauth');
+  });
+
+  it('returns the URL rather than redirecting to it', () => {
+    // It is a POST carrying a bearer token, so the browser has to navigate
+    // itself - a redirect here would be answered by fetch, not by the
+    // address bar, and the flow would silently go nowhere.
+    const { google } = makeLinkGoogle();
+    const res = makeRes();
+    new AuthController({} as unknown as AuthService, google).linkStart(
+      'u1',
+      {},
+      res as unknown as Response,
+    );
+    expect(res.redirectedTo).toBeUndefined();
+  });
+});
+
+describe('what the callback tells someone when it fails', () => {
+  const callbackWith = (signInWithGoogle: jest.Mock) => {
+    const google = {
+      enabled: true,
+      assertEnabled: () => undefined,
+      start: jest.fn(),
+      verifyCallback: jest.fn().mockResolvedValue({
+        identity: { subject: 's', email: 'a@b.co', emailVerified: true },
+      }),
+      callbackRedirect: (f: string) =>
+        `https://mustard.watch/auth/callback#${f}`,
+      redirectUri: 'https://api.mustard.watch/api/auth/google/callback',
+    } as unknown as GoogleOAuthService;
+    const logger = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const controller = new AuthController(
+      { signInWithGoogle } as unknown as AuthService,
+      google,
+    );
+    return { controller, logger };
+  };
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('reports a coded link refusal as that code, and does not log it', async () => {
+    const { controller, logger } = callbackWith(
+      jest.fn().mockRejectedValue(
+        new ConflictException({
+          code: 'link_email_taken',
+          message: 'An account with that email already exists',
+        }),
+      ),
+    );
+    const res = makeRes();
+    await controller.callback(
+      'c',
+      's',
+      undefined,
+      emptyReq,
+      res as unknown as Response,
+    );
+
+    expect(res.redirectedTo).toContain('error=link_email_taken');
+    // nobody's bug, so nothing to alert on
+    expect(logger).not.toHaveBeenCalled();
+  });
+
+  it('does NOT dress an uncoded conflict up as a link refusal', async () => {
+    // createGoogleUser throws ConflictException with a plain string when it
+    // runs out of username attempts - a sign-in, not a link. Reading the
+    // CLASS rather than the code told that person their guest session was
+    // untouched, when they had no guest session, and skipped the log that
+    // would have shown a real allocation anomaly.
+    const { controller, logger } = callbackWith(
+      jest
+        .fn()
+        .mockRejectedValue(
+          new ConflictException('Could not allocate a username'),
+        ),
+    );
+    const res = makeRes();
+    await controller.callback(
+      'c',
+      's',
+      undefined,
+      emptyReq,
+      res as unknown as Response,
+    );
+
+    expect(res.redirectedTo).toContain('error=exchange');
+    expect(res.redirectedTo).not.toContain('link');
+    expect(logger).toHaveBeenCalled();
+  });
+
+  it('never puts a sentence in the fragment, only a code', async () => {
+    // The channel is a redirect URL: the API does not know how the frontend
+    // words things, and a code cannot leak anything about the account it
+    // refused. An earlier version of mine sent the message text.
+    const { controller } = callbackWith(
+      jest.fn().mockRejectedValue(
+        new ConflictException({
+          code: 'link_provider_taken',
+          message: 'That Google account is already signed in here',
+        }),
+      ),
+    );
+    const res = makeRes();
+    await controller.callback(
+      'c',
+      's',
+      undefined,
+      emptyReq,
+      res as unknown as Response,
+    );
+
+    expect(res.redirectedTo).not.toContain('already signed in');
+    expect(res.redirectedTo).not.toContain('detail');
   });
 });

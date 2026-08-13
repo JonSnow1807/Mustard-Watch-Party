@@ -195,11 +195,28 @@ Both wrong versions passed their unit tests.
 
 ## Known gaps
 
-- No token refresh or revocation. A token is good for 12 hours, and a socket
-  accepted at connect outlives its token (`docs/SCALING.md`).
-- `JWT_EXPIRES_IN` is dead config — the 12h lifetime is hardcoded in
-  `auth.module.ts`.
-- Linking a provider to an existing account is not implemented; see above.
+- No token refresh or revocation. A token is good for its configured lifetime
+  (12 hours by default), and a socket accepted at connect outlives its token
+  (`docs/SCALING.md`).
+- ~~`JWT_EXPIRES_IN` is dead config~~ — fixed. Tokens **default** to `12h` and
+  a deployment can change that by setting the variable; it is no longer a
+  fixed lifetime. `12h` is what was hardcoded while the config file
+  advertised `7d` to nobody. Raising it raises how long a stolen token is
+  useful, and there is still no revocation, so it is not a free knob. The
+  value is validated at boot: a plain number means seconds, durations must be
+  lowercase (`12h`, `30m`), and anything else refuses to start — because
+  `jsonwebtoken` reads a unitless string as *milliseconds*, so `3600` would
+  otherwise mean 3.6 seconds.
+- Linking a provider to an existing account is implemented **for guests
+  only** (`POST /auth/google/link-start`). A full account cannot add or swap a
+  provider - that needs a re-authentication step this does not have, and
+  adding one without it would let a stolen token attach an attacker's Google
+  identity to somebody's account.
+- A linked account has **no password and no way to acquire one**. Google is
+  then the only way in, and losing access to that Google account loses the
+  account - there is no reset flow, because there is nothing to reset. Same
+  for accounts created through Google in the first place. Claiming with a
+  password is the alternative, and the two do not compose.
 - `isPublic` on a room is a listing flag, not access control.
 - The "is this address already taken" check is a case-insensitive `findFirst`,
   which Postgres answers with a sequential scan — the `email` index is

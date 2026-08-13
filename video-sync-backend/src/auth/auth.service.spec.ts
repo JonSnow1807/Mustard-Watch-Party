@@ -477,3 +477,168 @@ describe('claiming a guest account', () => {
     });
   });
 });
+
+describe('both doors into the users table enforce the same rules', () => {
+  // register went a long time checking nothing while claimGuestAccount
+  // checked three things. These run the same table against both, because a
+  // rule that only one door knows about is not a rule.
+  const bad: [string, string, string, string][] = [
+    ['a short password', 'ada', 'ada@example.com', 'short12'],
+    [
+      'a name with a space',
+      'ada lovelace',
+      'ada@example.com',
+      'a-real-password',
+    ],
+    ['a name of two characters', 'ad', 'ada@example.com', 'a-real-password'],
+    ['an address with no domain', 'ada', 'ada@localhost', 'a-real-password'],
+    ['the guest address', 'ada', 'x@guest.invalid', 'a-real-password'],
+  ];
+
+  describe.each(bad)('%s', (_label, username, email, password) => {
+    it('is refused by register, before anything is written', async () => {
+      const db = makeDb();
+      await expect(
+        serviceWith(db).register(username, email, password),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(db.user.create).not.toHaveBeenCalled();
+    });
+
+    it('is refused by claim, before anything is written', async () => {
+      const db = makeDb();
+      db.user.findUnique.mockResolvedValue({ id: 'g1', isGuest: true });
+      await expect(
+        serviceWith(db).claimGuestAccount('g1', username, email, password),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(db.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  it('stores what it validated, not what it was handed', async () => {
+    // validating a trimmed, lower-cased string and then writing the raw one
+    // would make the check decorative
+    const db = makeDb();
+    db.user.create.mockResolvedValue({
+      id: 'u1',
+      username: 'ada',
+      email: 'ada@example.com',
+    });
+    await serviceWith(db).register(
+      '  ada  ',
+      '  Ada@Example.COM ',
+      'a-real-password',
+    );
+    const args = (
+      db.user.create.mock.calls as [
+        { data: { username: string; email: string } },
+      ][]
+    )[0][0];
+    expect(args.data.username).toBe('ada');
+    expect(args.data.email).toBe('ada@example.com');
+  });
+});
+
+describe('attaching Google to a guest', () => {
+  const guestRow = { id: 'g1', isGuest: true };
+
+  const linking = () => {
+    const db = makeDb();
+    db.user.findUnique.mockResolvedValue(guestRow);
+    db.user.update.mockResolvedValue({
+      id: 'g1',
+      username: 'ada_lovelace',
+      email: 'ada@example.com',
+    });
+    return { db, service: serviceWith(db) };
+  };
+
+  it('updates the guest row in place and links the provider', async () => {
+    const { db, service } = linking();
+    const result = await service.linkGoogleToGuest('g1', identity);
+
+    expect(db.user.create).not.toHaveBeenCalled();
+    const args = (
+      db.user.update.mock.calls as [
+        {
+          where: { id: string; isGuest: boolean };
+          data: {
+            isGuest: boolean;
+            oauthAccounts: { create: { providerAccountId: string } };
+          };
+        },
+      ][]
+    )[0][0];
+    expect(args.where).toEqual({ id: 'g1', isGuest: true });
+    expect(args.data.isGuest).toBe(false);
+    expect(args.data.oauthAccounts.create.providerAccountId).toBe(
+      'google-sub-123',
+    );
+    expect(result.id).toBe('g1');
+  });
+
+  it('leaves the password null, so the only way in is the provider', async () => {
+    const { db, service } = linking();
+    await service.linkGoogleToGuest('g1', identity);
+    const args = (
+      db.user.update.mock.calls as [{ data: Record<string, unknown> }][]
+    )[0][0];
+    expect(args.data.password).toBeUndefined();
+  });
+
+  it('refuses a Google account already attached to someone else', async () => {
+    // the takeover this guards: grafting a real user's Google identity onto
+    // a guest row would hand the guest that person's way in
+    const { db, service } = linking();
+    db.oAuthAccount.findUnique.mockResolvedValue({ userId: 'someone-else' });
+    await expect(
+      service.linkGoogleToGuest('g1', identity),
+    ).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the address already belongs to another account', async () => {
+    const { db, service } = linking();
+    db.user.findFirst.mockResolvedValue({ id: 'someone-else' });
+    await expect(
+      service.linkGoogleToGuest('g1', identity),
+    ).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a row that is already a full account', async () => {
+    const db = makeDb();
+    db.user.findUnique.mockResolvedValue({ id: 'u1', isGuest: false });
+    await expect(
+      serviceWith(db).linkGoogleToGuest('u1', identity),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('walks past a taken name rather than failing', async () => {
+    const { db, service } = linking();
+    db.user.update
+      .mockRejectedValueOnce(uniqueViolation('username'))
+      .mockResolvedValueOnce({
+        id: 'g1',
+        username: 'ada_lovelace2',
+        email: 'a@b.co',
+      });
+    const result = await service.linkGoogleToGuest('g1', identity);
+    expect(result.username).toBe('ada_lovelace2');
+    expect(db.user.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('turns a lost race on the provider link into a conflict, not a 500', async () => {
+    const { db, service } = linking();
+    db.user.update.mockRejectedValue(uniqueViolation('providerAccountId'));
+    await expect(
+      service.linkGoogleToGuest('g1', identity),
+    ).rejects.toMatchObject({
+      status: 409,
+    });
+  });
+});

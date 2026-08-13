@@ -208,6 +208,37 @@ export class AuthController {
     return await this.authService.me(userId);
   }
 
+  /**
+   * Step one for a guest ATTACHING Google to the account they are already
+   * using, rather than signing in.
+   *
+   * A POST with a bearer token, not a GET the browser can navigate to,
+   * because a navigation cannot carry an Authorization header - and the
+   * alternative, putting the token in the query string, writes a credential
+   * into access logs and Referer headers. So the browser asks for the URL
+   * here and navigates to it itself.
+   *
+   * The id sealed into the state is the one the guard verified from the
+   * token. Nothing the caller says about who they are is used: a caller who
+   * could nominate the account would be able to attach their Google identity
+   * to someone else's.
+   */
+  @Post('google/link-start')
+  @UseGuards(JwtAuthGuard)
+  linkStart(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { returnTo?: string },
+    @Res({ passthrough: true }) res: Response,
+  ): { authUrl: string } {
+    const { authUrl, cookie } = this.google.start(
+      body?.returnTo,
+      Date.now(),
+      userId,
+    );
+    res.cookie(OAUTH_COOKIE, cookie, this.cookieOptions());
+    return { authUrl };
+  }
+
   /** Step one: bounce to Google, carrying a sealed CSRF/PKCE cookie. */
   @Get('google/start')
   start(
@@ -247,14 +278,20 @@ export class AuthController {
     res.clearCookie(OAUTH_COOKIE, this.cookieOptions());
 
     try {
-      const { identity, returnTo } = await this.google.verifyCallback({
-        code,
-        state,
-        error,
-        cookie: readCookie(req.headers.cookie, OAUTH_COOKIE),
-      });
+      const { identity, returnTo, linkUserId } =
+        await this.google.verifyCallback({
+          code,
+          state,
+          error,
+          cookie: readCookie(req.headers.cookie, OAUTH_COOKIE),
+        });
 
-      const user = await this.authService.signInWithGoogle(identity);
+      // Two flows come back through this one door, and which it is was
+      // decided at /link-start by a token we verified - not by anything in
+      // the request that is arriving now.
+      const user = linkUserId
+        ? await this.authService.linkGoogleToGuest(linkUserId, identity)
+        : await this.authService.signInWithGoogle(identity);
 
       // The token rides in the FRAGMENT, never the query string: fragments
       // are not sent to servers, do not reach access logs, and are not
@@ -263,13 +300,39 @@ export class AuthController {
       if (returnTo) params.set('to', returnTo);
       res.redirect(this.google.callbackRedirect(params.toString()));
     } catch (err) {
+      // Linking has its own ways to fail that are nobody's bug: the Google
+      // account is already attached to a real account, or its address is.
+      // Reporting those as 'exchange' would log them as unexpected errors
+      // and tell the person "sign-in failed", when what happened is
+      // recoverable and has a specific instruction attached to it.
+      //
+      // Recognised by the CODE the service attached, not by the exception
+      // class. The first version tested `instanceof ConflictException` - which
+      // is ALSO what createGoogleUser throws when it runs out of username
+      // attempts, on a plain sign-in with nothing to do with linking. That one
+      // carries a string, so it has no code, and the person would have been
+      // told "your guest session is untouched" when they had no guest session,
+      // while the error log that would have shown a real allocation anomaly
+      // was skipped.
+      const payload =
+        err instanceof HttpException
+          ? (err.getResponse() as { code?: unknown })
+          : undefined;
+      const linkCode =
+        typeof payload?.code === 'string' && payload.code.startsWith('link_')
+          ? payload.code
+          : undefined;
+
       const failure =
-        err instanceof GoogleAuthError ? err.code : ('exchange' as const);
-      if (!(err instanceof GoogleAuthError)) {
+        linkCode ??
+        (err instanceof GoogleAuthError ? err.code : ('exchange' as const));
+
+      if (!linkCode && !(err instanceof GoogleAuthError)) {
         this.logger.error(
           `google callback failed: ${err instanceof Error ? err.message : 'unknown'}`,
         );
       }
+
       res.redirect(
         this.google.callbackRedirect(
           new URLSearchParams({ error: failure }).toString(),

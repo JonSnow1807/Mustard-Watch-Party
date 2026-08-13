@@ -19,10 +19,10 @@ import {
   chipMono,
   ghostIconButton,
   card,
-  input,
   sectionLabel,
 } from '../theme';
 import { Wordmark, IconPlus, IconUsers, IconFilm, IconLock, IconX } from '../components/Icons';
+import { ClaimAccountDialog, ClaimTrigger } from '../components/ClaimAccount';
 
 const MEASUREMENTS_URL =
   'https://github.com/JonSnow1807/Mustard-Watch-Party/tree/main/docs/measurements';
@@ -535,30 +535,6 @@ const ModalButtons = styled.div`
   justify-content: flex-end;
 `;
 
-const ClaimButton = styled.button`
-  ${button.secondary}
-  padding: 6px 12px;
-  font-size: 12.5px;
-  border-color: ${color.mustard};
-  color: ${color.mustard};
-`;
-
-const Field = styled.label`
-  display: block;
-  margin-bottom: 14px;
-`;
-
-const FieldLabel = styled.span`
-  ${sectionLabel}
-  display: block;
-  margin-bottom: 6px;
-`;
-
-const FieldInput = styled.input`
-  ${input}
-  width: 100%;
-`;
-
 const DangerFilledButton = styled.button`
   ${button.danger}
   background: ${color.danger};
@@ -575,7 +551,7 @@ const DangerFilledButton = styled.button`
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout, isGuest, claimAccount } = useAuth();
+  const { user, logout, isGuest } = useAuth();
   // A snapshot, so the row does not churn while you are looking at it - but
   // re-taken whenever the session changes. Reading it once for the lifetime
   // of the component meant a sign-out followed by a different sign-in, with
@@ -650,49 +626,11 @@ export const HomePage: React.FC = () => {
     setDeleteModal({ show: true, room });
   };
 
+  // The dialog itself lives in components/ClaimAccount, so the room page can
+  // show the same one - a guest most wants to keep their account after an
+  // evening in a room, which was the one place this could not be reached.
   const [claimOpen, setClaimOpen] = useState(false);
-  const [claiming, setClaiming] = useState(false);
-  const claimTriggerRef = useRef<HTMLElement | null>(null);
-  const claimFirstFieldRef = useRef<HTMLInputElement | null>(null);
-
   const closeClaim = useCallback(() => setClaimOpen(false), []);
-
-  const submitClaim = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    setClaiming(true);
-    try {
-      await claimAccount(
-        String(form.get('username') ?? ''),
-        String(form.get('email') ?? ''),
-        String(form.get('password') ?? ''),
-      );
-      setClaimOpen(false);
-    } catch {
-      // claimAccount has already said what went wrong; the dialog stays open
-      // so the typed values are still there to correct
-    } finally {
-      setClaiming(false);
-    }
-  };
-
-  // Same dialog manners as the delete confirmation: focus in on open,
-  // Escape closes, focus returns to whatever opened it.
-  useEffect(() => {
-    if (!claimOpen) return;
-    claimTriggerRef.current = document.activeElement as HTMLElement | null;
-    claimFirstFieldRef.current?.focus();
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeClaim();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      claimTriggerRef.current?.focus();
-      claimTriggerRef.current = null;
-    };
-  }, [claimOpen, closeClaim]);
 
   const hideDeleteModal = useCallback(() => {
     setDeleteModal({ show: false, room: null });
@@ -830,13 +768,13 @@ export const HomePage: React.FC = () => {
               POST /auth/claim updates the row in place, so the promise can
               now be kept and the button is honest. */}
           {isGuest && (
-            <ClaimButton
+            <ClaimTrigger
               type="button"
               onClick={() => setClaimOpen(true)}
               title="Guest sessions expire - keep this one, with everything in it"
             >
               Keep this account
-            </ClaimButton>
+            </ClaimTrigger>
           )}
           <SecondarySmButton type="button" onClick={logout}>
             Sign out
@@ -1070,64 +1008,7 @@ export const HomePage: React.FC = () => {
         </Section>
       </Content>
 
-      {claimOpen && (
-        <Overlay onClick={closeClaim}>
-          <ModalCard
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="claim-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ModalTitle id="claim-title">Keep this account</ModalTitle>
-            <ModalText>
-              You are {user.username}, and you stay {user.username} — the same
-              account, so the rooms you have joined and the messages you have
-              already sent stay yours. This only adds a way back in.
-            </ModalText>
-            <form onSubmit={submitClaim}>
-              <Field>
-                <FieldLabel>Name</FieldLabel>
-                <FieldInput
-                  name="username"
-                  ref={claimFirstFieldRef}
-                  defaultValue={user.username}
-                  autoComplete="username"
-                  required
-                />
-              </Field>
-              <Field>
-                <FieldLabel>Email</FieldLabel>
-                <FieldInput
-                  name="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  required
-                />
-              </Field>
-              <Field>
-                <FieldLabel>Password</FieldLabel>
-                <FieldInput
-                  name="password"
-                  type="password"
-                  minLength={8}
-                  placeholder="At least 8 characters"
-                  autoComplete="new-password"
-                  required
-                />
-              </Field>
-              <ModalButtons>
-                <SecondaryButton type="button" onClick={closeClaim}>
-                  Not now
-                </SecondaryButton>
-                <PrimaryButton type="submit" disabled={claiming}>
-                  {claiming ? 'Saving…' : 'Keep it'}
-                </PrimaryButton>
-              </ModalButtons>
-            </form>
-          </ModalCard>
-        </Overlay>
-      )}
+      {claimOpen && <ClaimAccountDialog onClose={closeClaim} />}
 
       {/* Delete Confirmation Modal */}
       {deleteModal.show && deleteModal.room && (

@@ -96,6 +96,18 @@ export const apiService = {
   claim: (username: string, email: string, password: string) =>
     api.post('/auth/claim', { username, email, password }),
 
+  /**
+   * The same outcome as claim, for someone who would rather not invent
+   * another password: attach Google to the guest row already in use.
+   *
+   * A POST that RETURNS the URL rather than a link that navigates to it -
+   * the browser cannot put a bearer token on a navigation, and putting it in
+   * the query string would write a credential into access logs and Referer
+   * headers.
+   */
+  googleLinkStart: (returnTo?: string) =>
+    api.post<{ authUrl: string }>('/auth/google/link-start', { returnTo }),
+
   // Which sign-in methods this deployment can actually complete. Asked at
   // runtime rather than baked in at build: the frontend is one bundle served
   // to every environment, and a button for a provider the API has no

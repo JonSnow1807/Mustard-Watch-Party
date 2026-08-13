@@ -14,6 +14,17 @@ export interface OAuthStatePayload {
   codeVerifier: string;
   /** where to send the browser once we are done (a path on our own origin) */
   returnTo?: string;
+  /**
+   * The guest this flow is attaching Google to, if it is a link rather than
+   * a sign-in.
+   *
+   * It lives in the SEALED cookie rather than in the query string, and it is
+   * the id the server verified from a bearer token at /link-start - not
+   * anything the browser said about itself. A caller who could nominate the
+   * account to attach a Google identity to would be able to attach theirs to
+   * someone else's.
+   */
+  linkUserId?: string;
   /** absolute ms deadline - an abandoned flow must not stay resumable */
   expiresAt: number;
 }

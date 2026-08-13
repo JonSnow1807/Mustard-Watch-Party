@@ -68,6 +68,25 @@ const EXPLANATIONS: Record<string, { title: string; body: string }> = {
     title: 'That email already has an account here',
     body: 'It was registered with a password. Sign in with that password - linking Google to an existing account is not something we do automatically, because we cannot tell from here that both are you.',
   },
+  // Attaching Google to a guest session has its own ways to fail, and none
+  // of them are "sign-in failed" - the person is already signed in. What
+  // they need is the specific next step.
+  link_provider_taken: {
+    title: 'That Google account already has an account here',
+    body: 'Sign in with it instead. Your guest session is still open in the other tab if you were in the middle of something - though signing in will replace it.',
+  },
+  link_email_taken: {
+    title: 'That email already has an account here',
+    body: 'Sign in with it instead. We do not merge two accounts automatically, because from here we cannot tell that both are you.',
+  },
+  link_not_guest: {
+    title: 'This account is already a full one',
+    body: 'Nothing to keep - you are signed in properly already.',
+  },
+  link: {
+    title: "Couldn't attach Google to this session",
+    body: 'Your guest session is untouched. Try again, or set a password instead.',
+  },
   exchange: {
     title: "Couldn't finish with Google",
     body: 'Google did not complete the exchange. Try again in a moment.',

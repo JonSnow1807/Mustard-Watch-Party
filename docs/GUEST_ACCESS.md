@@ -78,7 +78,8 @@ afterthought bolted onto a UX sweep.
 ## Keeping the account (`POST /auth/claim`)
 
 A guest session is a real row with real history hanging off it, and it expires
-in twelve hours with no password to get back in with. Claiming is the door out
+in twelve hours by default (`JWT_EXPIRES_IN`) with no password to get back in
+with. Claiming is the door out
 of that, and it is an **UPDATE, not an insert**: the row keeps its id.
 
 That is the whole design. `ChatMessage.userId` and `Participant.userId` are
@@ -133,12 +134,51 @@ tightened, because the gap between them is the interesting part:
   and de-duplication have nowhere to hang. That is a real reason it was not
   chosen, and the survey did not say it.
 
+## Claiming with Google instead of a password
+
+`POST /auth/google/link-start` — for someone who would rather not invent
+another password. Same rule underneath: the row keeps its id.
+
+Not quite the *same* outcome as `/auth/claim`, and the difference is a one-way
+door: a linked account keeps `password: null`, and there is no path to add one
+later. Google becomes the only way in. That matches how Google-created
+accounts already behave here, so it is consistent rather than surprising - but
+someone who loses access to that Google account loses the account, and no
+password reset exists to rescue them.
+
+**Why it is a POST that returns a URL** rather than a link the browser
+follows. A navigation cannot carry an `Authorization` header, and the
+alternative — the token in a query string — writes a credential into access
+logs and `Referer` headers. So the browser asks for the URL and goes there
+itself.
+
+**The id is sealed into the OAuth state cookie**, and it is the id the guard
+verified from the bearer token — never anything the caller said about
+themselves. A caller who could nominate the account would be able to attach
+their own Google identity to somebody else's.
+
+**Order of checks matters.** The provider link is examined before anything is
+written: a Google account already attached to a real account must not be
+quietly moved onto a guest row, because that is an account takeover using the
+victim's own credentials. Same for the address.
+
+Failures come back as **codes in the redirect fragment**, not sentences —
+`link_provider_taken`, `link_email_taken`, `link_not_guest`. That is the
+existing contract for this channel and it is deliberate: the API does not
+know how the frontend words things, and a code cannot leak anything about the
+account it refused. The first version of this sent the message text and had
+to be corrected.
+
 ### Still not built
 
-- **Linking Google to a guest row.** Claiming takes a password. Someone who
-  would rather use Google has to make a separate account, which is the case
-  this whole feature exists to avoid.
-- **Password strength beyond eight characters**, and `register` validates even
-  less — claim checks a name pattern, an address shape and a length; register
-  checks none of them. Fixing one door and not the other would read as though
-  the other had been considered.
+- **A full account cannot add or change a provider.** Only guests can link.
+  Doing it for a real account needs a re-authentication step that does not
+  exist here, and adding the feature without it would let a stolen token
+  attach an attacker's Google identity to someone's account.
+- **Merging two accounts.** If the Google address already has an account, the
+  answer is "sign in with that one" — we cannot tell from here that both are
+  the same person.
+- **Adding a password to a linked account.** Linking leaves `password: null`
+  with no way to set one afterwards, so Google is the only way back in and
+  there is nothing for a reset flow to reset. Anyone who wants both should
+  claim with a password instead; the two paths do not compose.
