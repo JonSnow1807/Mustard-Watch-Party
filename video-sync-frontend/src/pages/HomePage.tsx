@@ -23,6 +23,7 @@ import {
 } from '../theme';
 import { Wordmark, IconPlus, IconUsers, IconFilm, IconLock, IconX } from '../components/Icons';
 import { ClaimAccountDialog, ClaimTrigger } from '../components/ClaimAccount';
+import { AccountDialog } from '../components/AccountDialog';
 
 const MEASUREMENTS_URL =
   'https://github.com/JonSnow1807/Mustard-Watch-Party/tree/main/docs/measurements';
@@ -49,13 +50,29 @@ const TopBarRight = styled.div`
   min-width: 0;
 `;
 
-const SignedInAs = styled.span`
+// A BUTTON now, because it opens the account dialog - the first account
+// surface this app has had. Styled to read as the same quiet text it
+// always was, with just enough affordance to be discovered.
+const SignedInAs = styled.button`
   font-family: ${font.body};
   font-size: 13px;
   color: ${color.dim};
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  &:hover {
+    color: ${color.text};
+    background: rgba(255, 255, 255, 0.04);
+  }
+  &:focus-visible {
+    box-shadow: ${focusRing};
+    outline: none;
+  }
 `;
 
 const PrimaryButton = styled.button`
@@ -631,6 +648,8 @@ export const HomePage: React.FC = () => {
   // evening in a room, which was the one place this could not be reached.
   const [claimOpen, setClaimOpen] = useState(false);
   const closeClaim = useCallback(() => setClaimOpen(false), []);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const closeAccount = useCallback(() => setAccountOpen(false), []);
 
   const hideDeleteModal = useCallback(() => {
     setDeleteModal({ show: false, room: null });
@@ -758,7 +777,11 @@ export const HomePage: React.FC = () => {
       <TopBar>
         <Wordmark size={18} />
         <TopBarRight>
-          <SignedInAs>
+          <SignedInAs
+            type="button"
+            onClick={() => setAccountOpen(true)}
+            title="Account & security"
+          >
             {isGuest ? `Guest · ${user.username}` : `Signed in as ${user.username}`}
           </SignedInAs>
           {/* This used to be a plain "temporary session" label, with a
@@ -1009,6 +1032,7 @@ export const HomePage: React.FC = () => {
       </Content>
 
       {claimOpen && <ClaimAccountDialog onClose={closeClaim} />}
+      {accountOpen && <AccountDialog onClose={closeAccount} />}
 
       {/* Delete Confirmation Modal */}
       {deleteModal.show && deleteModal.room && (

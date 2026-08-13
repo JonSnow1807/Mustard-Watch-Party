@@ -78,12 +78,40 @@ const NO_TOKEN_NEEDED = [
   '/auth/google/callback',
 ];
 
+/**
+ * Read the Authorization header regardless of case or container. axios wraps
+ * headers in AxiosHeaders (case-insensitive via .get); tests and some code
+ * paths pass a plain object. Both the "is one already set" guard and the
+ * "was the stored token the one rejected" comparison have to agree with what
+ * axios will actually send, so neither may assume the exact key 'Authorization'.
+ */
+const authHeader = (
+  headers: unknown,
+): string | undefined => {
+  if (!headers) return undefined;
+  const h = headers as {
+    get?: (name: string) => unknown;
+    Authorization?: unknown;
+    authorization?: unknown;
+  };
+  if (typeof h.get === 'function') {
+    const v = h.get('Authorization');
+    return typeof v === 'string' ? v : undefined;
+  }
+  const v = h.Authorization ?? h.authorization;
+  return typeof v === 'string' ? v : undefined;
+};
+
 api.interceptors.request.use(config => {
   if (NO_TOKEN_NEEDED.some(path => config.url?.startsWith(path))) {
     return config;
   }
   const token = readStoredToken();
-  if (token) {
+  // An explicitly-set header wins: setPasswordElevated carries the
+  // five-minute elevated token, and overwriting it with the stored session
+  // here would silently un-elevate the one call that needs it. Read
+  // case-insensitively so a header set as 'authorization' is still seen.
+  if (token && !authHeader(config.headers)) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -92,11 +120,26 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   response => response,
   error => {
-    // Only a request that actually carried a token can have had it rejected.
-    // A 401 from /auth/login is bad credentials, and clearing on that would
-    // wipe a perfectly good session because someone fat-fingered a password.
-    const sentToken = Boolean(error?.config?.headers?.Authorization);
-    if (error?.response?.status === 401 && sentToken) {
+    // Clear the session ONLY when the request that was rejected actually
+    // carried the STORED session token. The earlier version cleared on any
+    // 401 that carried any token, which was three bugs in one:
+    //  - a wrong current-password on set-password (a 401 behind a perfectly
+    //    good session) wiped the session;
+    //  - set-password SUCCEEDS by revoking the stored token, so the very
+    //    next request with it 401s - a successful password change signed
+    //    the user out;
+    //  - the five-minute elevated token failing a set-password wiped the
+    //    real session it was standing in for.
+    // The rejected request carried a credential that is NOT the stored one
+    // in every one of those cases; comparing to the stored token tells the
+    // "my session died" case apart from "the thing I was proving failed".
+    const sent = authHeader(error?.config?.headers);
+    const stored = readStoredToken();
+    if (
+      error?.response?.status === 401 &&
+      stored &&
+      sent === `Bearer ${stored}`
+    ) {
       clearStoredUser();
     }
     return Promise.reject(error);
@@ -124,6 +167,39 @@ export const apiService = {
   /** Stop trusting every session this account has, anywhere. */
   logoutEverywhere: () => api.post<{ version: number }>('/auth/logout-all'),
 
+  /**
+   * Trade a live token for a fresh one. The old token is revoked in the
+   * same call, so the copy that refreshed is the copy that survives; the
+   * slide is bounded server-side by the session's birth.
+   */
+  refresh: () => api.post<{ token: string; id: string; username: string }>('/auth/refresh'),
+
+  /**
+   * Set or change the password. Password accounts send currentPassword;
+   * provider-only accounts must be holding the five-minute elevated token
+   * from the Google re-auth flow instead. Every OTHER session ends when
+   * this succeeds - the response carries the one token that survives.
+   */
+  setPassword: (newPassword: string, currentPassword?: string) =>
+    api.post('/auth/set-password', { newPassword, currentPassword }),
+
+  /**
+   * set-password using the five-minute elevated token instead of the
+   * session: the token rides Authorization for THIS call only, proving the
+   * fresh Google round trip. Passed explicitly rather than stored - an
+   * elevation that lived in localStorage would be a session by another name.
+   */
+  setPasswordElevated: (newPassword: string, elevatedToken: string) =>
+    api.post(
+      '/auth/set-password',
+      { newPassword },
+      { headers: { Authorization: `Bearer ${elevatedToken}` } },
+    ),
+
+  /** Begin the Google re-auth round trip that mints the elevated token. */
+  googleReauthStart: (returnTo?: string) =>
+    api.post<{ authUrl: string }>('/auth/google/reauth-start', { returnTo }),
+
   /** A way in for someone who followed an invite link and wants no account. */
   guest: () => api.post('/auth/guest'),
 
@@ -143,8 +219,11 @@ export const apiService = {
    * the query string would write a credential into access logs and Referer
    * headers.
    */
-  googleLinkStart: (returnTo?: string) =>
-    api.post<{ authUrl: string }>('/auth/google/link-start', { returnTo }),
+  googleLinkStart: (returnTo?: string, password?: string) =>
+    api.post<{ authUrl: string }>('/auth/google/link-start', {
+      returnTo,
+      password,
+    }),
 
   // Which sign-in methods this deployment can actually complete. Asked at
   // runtime rather than baked in at build: the frontend is one bundle served

@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Controller,
   Get,
   Post,
@@ -10,6 +11,7 @@ import {
   Res,
   UseGuards,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -17,6 +19,13 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtService } from '@nestjs/jwt';
 import { RevocationService } from './revocation.service';
 import type { TokenPayload } from './token-payload';
+
+/** ConflictException carrying a machine code, the redirect-fragment contract. */
+const ConflictExceptionWithCode = class extends ConflictException {
+  constructor(code: string, message: string) {
+    super({ code, message });
+  }
+};
 import { CurrentUser } from './current-user.decorator';
 import {
   GoogleAuthError,
@@ -288,18 +297,149 @@ export class AuthController {
    */
   @Post('google/link-start')
   @UseGuards(JwtAuthGuard)
-  linkStart(
+  async linkStart(
     @CurrentUser('userId') userId: string,
-    @Body() body: { returnTo?: string },
+    @Body() body: { returnTo?: string; password?: string },
     @Res({ passthrough: true }) res: Response,
-  ): { authUrl: string } {
+  ): Promise<{ authUrl: string }> {
+    // Which flavor of link this is decides the re-auth gate. A guest has
+    // nothing to verify - their session IS their whole identity. A full
+    // account must prove the password: without that gate, anyone holding a
+    // stolen token could attach their own Google identity and gain a
+    // permanent second door into the account.
+    // One Google identity per account. Decided BEFORE the re-auth branch,
+    // and independently of it: an account with BOTH a password and a Google
+    // link returns 'password' from reauthMethodFor, so gating the 409 on the
+    // method alone would let a password+Google account attach a SECOND
+    // Google identity - which the 'google' branch below correctly forbids
+    // but the 'password' branch would have waved through.
+    if (await this.authService.hasGoogleLink(userId)) {
+      throw new ConflictExceptionWithCode(
+        'link_provider_taken',
+        'This account already signs in with Google',
+      );
+    }
+
+    const method = await this.authService.reauthMethodFor(userId);
+    let purpose: 'link-guest' | 'link-full';
+    if (method === 'password') {
+      if (
+        !(await this.authService.verifyPassword(userId, body?.password ?? ''))
+      ) {
+        throw new UnauthorizedException(
+          'Current password required to link a sign-in method',
+        );
+      }
+      purpose = 'link-full';
+    } else if (method === 'google') {
+      // already linked; a second Google identity on one account is not a
+      // thing this supports
+      throw new ConflictExceptionWithCode(
+        'link_provider_taken',
+        'This account already signs in with Google',
+      );
+    } else {
+      purpose = 'link-guest';
+    }
+
     const { authUrl, cookie } = this.google.start(
       body?.returnTo,
       Date.now(),
       userId,
+      purpose,
     );
     res.cookie(OAUTH_COOKIE, cookie, this.cookieOptions());
     return { authUrl };
+  }
+
+  /**
+   * Prove you can still complete Google as this account's linked identity.
+   *
+   * The gate behind set-password for accounts that HAVE no password to
+   * verify: the callback checks the returning Google subject against the
+   * account's linked one and mints a five-minute elevated token. A stolen
+   * session token cannot pass this - the thief would have to complete
+   * Google's own sign-in as the victim.
+   */
+  @Post('google/reauth-start')
+  @UseGuards(JwtAuthGuard)
+  async reauthStart(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { returnTo?: string },
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ authUrl: string }> {
+    const method = await this.authService.reauthMethodFor(userId);
+    if (method !== 'google') {
+      throw new ConflictExceptionWithCode(
+        'reauth_wrong_method',
+        'This account re-authenticates with its password',
+      );
+    }
+    const { authUrl, cookie } = this.google.start(
+      body?.returnTo,
+      Date.now(),
+      userId,
+      'reauth',
+    );
+    res.cookie(OAUTH_COOKIE, cookie, this.cookieOptions());
+    return { authUrl };
+  }
+
+  /**
+   * Set or change the password. Re-auth first, always:
+   * - an account WITH a password proves the current one;
+   * - an account WITHOUT one (Google-created or Google-linked-as-guest)
+   *   presents the five-minute elevated token from /google/reauth-start.
+   * Then every other session ends - the version bump rides the same
+   * database write as the new hash - and the caller alone continues, on
+   * the fresh token this returns.
+   */
+  @Post('set-password')
+  @UseGuards(JwtAuthGuard)
+  async setPassword(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { currentPassword?: string; newPassword: string },
+    @Req() req: Request,
+  ) {
+    const method = await this.authService.reauthMethodFor(userId);
+    if (method === 'password') {
+      if (
+        !(await this.authService.verifyPassword(
+          userId,
+          body?.currentPassword ?? '',
+        ))
+      ) {
+        throw new UnauthorizedException('Current password is wrong');
+      }
+    } else if (method === 'google') {
+      const payload = this.decodeOwnToken(req);
+      if (payload?.elev !== 'reauth' || payload.sub !== userId) {
+        throw new UnauthorizedException(
+          'Confirm with Google first - this account has no password to verify',
+        );
+      }
+    } else {
+      throw new UnauthorizedException('No re-authentication method available');
+    }
+    return await this.authService.setPassword(userId, body?.newPassword ?? '');
+  }
+
+  /**
+   * Trade a live token for a fresh one - the sliding half of sessions.
+   * The old token is revoked in the same call (rotation), and the slide is
+   * bounded by the session's birth, which refreshes preserve.
+   */
+  @Post('refresh')
+  @UseGuards(JwtAuthGuard)
+  async refresh(@Req() req: Request) {
+    const payload = this.decodeOwnToken(req);
+    if (!payload) throw new UnauthorizedException('Invalid token');
+    // an elevated token is a five-minute instrument, not a session to keep
+    // alive; refusing here keeps elevation from outliving its purpose
+    if (payload.elev) {
+      throw new UnauthorizedException('Re-auth tokens cannot be refreshed');
+    }
+    return await this.authService.refreshSession(payload);
   }
 
   /** Step one: bounce to Google, carrying a sealed CSRF/PKCE cookie. */
@@ -341,7 +481,7 @@ export class AuthController {
     res.clearCookie(OAUTH_COOKIE, this.cookieOptions());
 
     try {
-      const { identity, returnTo, linkUserId } =
+      const { identity, returnTo, linkUserId, purpose } =
         await this.google.verifyCallback({
           code,
           state,
@@ -349,12 +489,38 @@ export class AuthController {
           cookie: readCookie(req.headers.cookie, OAUTH_COOKIE),
         });
 
-      // Two flows come back through this one door, and which it is was
-      // decided at /link-start by a token we verified - not by anything in
-      // the request that is arriving now.
-      const user = linkUserId
-        ? await this.authService.linkGoogleToGuest(linkUserId, identity)
-        : await this.authService.signInWithGoogle(identity);
+      // Four flows come back through this one door, and which it is was
+      // sealed at start by a token we verified then - never by anything in
+      // the request arriving now.
+      if (purpose === 'reauth' && linkUserId) {
+        // Prove the returning Google subject IS this account's linked
+        // identity - completing Google as someone else must not elevate.
+        const owned = await this.authService.googleSubjectOwner(
+          identity.subject,
+        );
+        if (owned !== linkUserId) {
+          res.redirect(
+            this.google.callbackRedirect(
+              new URLSearchParams({ error: 'reauth_mismatch' }).toString(),
+            ),
+          );
+          return;
+        }
+        // Five minutes of elevation, in the FRAGMENT under its own name -
+        // the callback page must not adopt it as a session.
+        const elev = await this.authService.mintElevatedToken(linkUserId);
+        const params = new URLSearchParams({ elev });
+        if (returnTo) params.set('to', returnTo);
+        res.redirect(this.google.callbackRedirect(params.toString()));
+        return;
+      }
+
+      const user =
+        purpose === 'link-full' && linkUserId
+          ? await this.authService.linkGoogleToFull(linkUserId, identity)
+          : linkUserId
+            ? await this.authService.linkGoogleToGuest(linkUserId, identity)
+            : await this.authService.signInWithGoogle(identity);
 
       // The token rides in the FRAGMENT, never the query string: fragments
       // are not sent to servers, do not reach access logs, and are not

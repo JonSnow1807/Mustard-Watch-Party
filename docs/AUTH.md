@@ -256,29 +256,79 @@ loop would reconnect forever with a dead token.
   first and unconditionally; if the revoke call fails, the person is still
   signed out of that machine and the token dies on its own schedule.
 
+## Sessions: sliding, bounded, and endable
+
+`POST /auth/refresh` trades a live token for a fresh one. Three rules make
+it safe where a naive slide would not be:
+
+- **Rotation.** The new token gets a new `jti` and the old one is revoked in
+  the same call. A stolen copy is now WORTH LESS than before refresh
+  existed: the first party to refresh — victim or thief — kills the other's
+  copy, and a twelve-hour theft window shrinks to the gap between
+  refreshes. This is what made the old "no lifetime extension" rule
+  obsolete: it was written when revocation did not exist.
+- **The absolute cap.** Tokens carry `sess`, the session's birth, preserved
+  verbatim across refreshes. Thirty days after first sign-in, refresh
+  refuses and the person signs in again. A cap anchored to anything
+  refreshable is not a cap; pre-`sess` tokens anchor to their own `iat`,
+  the honest floor.
+- **Elevation cannot slide.** Five-minute re-auth tokens are refused by
+  refresh outright.
+
+The client refreshes at ~90% of token life. The socket reconnects once per
+refresh (~11h) — the price of not being signed out mid-film at hour twelve.
+
+## Re-authentication: the gate in front of credential changes
+
+The scenario every rule here serves: **someone else is holding a copy of
+the token.** A bearer token alone must not be able to add a sign-in method
+or change a password, because those are exactly the moves that turn a
+stolen session into a stolen account.
+
+| account state | to link Google | to set/change password |
+|---|---|---|
+| has a password | current password | current password |
+| Google only | (already linked) | fresh Google re-auth → 5-min elevated token |
+| guest | ungated (the session IS the identity) | — (claim first) |
+
+The elevated token is minted only after the OAuth callback proves the
+returning Google subject is THIS account's linked identity
+(`reauth_mismatch` otherwise), travels in the redirect fragment under its
+own name (`elev`, never `token` — the callback page parks it in
+sessionStorage and does not adopt it as a session), and is spent by
+`POST /auth/set-password` within five minutes or not at all.
+
+**Setting or changing a password ends every other session** — the
+`tokenVersion` bump rides the same database write as the new hash, so
+there is no window where the password changed but an attacker's token
+still works. The caller alone continues, on the token the response carries.
+
 ## Known gaps
 
-- No token **refresh**. A session ends when its token expires; there is no
-  way to extend one without signing in again.
+- ~~No token refresh~~ — added (see the Sessions section above): `POST
+  /auth/refresh` slides a live session, rotating and capping it.
 - ~~`JWT_EXPIRES_IN` is dead config~~ — fixed. Tokens **default** to `12h` and
   a deployment can change that by setting the variable; it is no longer a
   fixed lifetime. `12h` is what was hardcoded while the config file
   advertised `7d` to nobody. Raising it raises how long a stolen token is
-  useful, and there is still no revocation, so it is not a free knob. The
+  useful; revocation (above) and refresh rotation both narrow that window,
+  but it is still not a free knob. The
   value is validated at boot: a plain number means seconds, durations must be
   lowercase (`12h`, `30m`), and anything else refuses to start — because
   `jsonwebtoken` reads a unitless string as *milliseconds*, so `3600` would
   otherwise mean 3.6 seconds.
-- Linking a provider to an existing account is implemented **for guests
-  only** (`POST /auth/google/link-start`). A full account cannot add or swap a
-  provider - that needs a re-authentication step this does not have, and
-  adding one without it would let a stolen token attach an attacker's Google
-  identity to somebody's account.
-- A linked account has **no password and no way to acquire one**. Google is
-  then the only way in, and losing access to that Google account loses the
-  account - there is no reset flow, because there is nothing to reset. Same
-  for accounts created through Google in the first place. Claiming with a
-  password is the alternative, and the two do not compose.
+- ~~Linking a provider is guests-only~~ — full accounts link Google now,
+  gated on the current password (see Re-authentication above). Swapping or
+  UNLINKING a provider is still not built: unlink needs "would this leave
+  the account with no way in" reasoning that deserves its own design.
+- ~~A linked account has no password and no way to acquire one~~ — closed:
+  `POST /auth/set-password` behind the Google re-auth gate. The one-way
+  door is now a door.
+- **Account merging stays unbuilt, on purpose.** Two accounts that might be
+  one person mean migrating chat/participant/room foreign keys across
+  identities we cannot verify are the same person, destructively. "Sign in
+  with the account that owns that email" costs a sign-in; a wrong merge
+  costs someone their history.
 - `isPublic` on a room is a listing flag, not access control.
 - The "is this address already taken" check is a case-insensitive `findFirst`,
   which Postgres answers with a sequential scan — the `email` index is

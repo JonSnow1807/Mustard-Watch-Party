@@ -276,20 +276,24 @@ describe('starting a link, which is a different thing from signing in', () => {
     };
   };
 
-  it('seals the id the GUARD verified, not anything the caller sent', () => {
+  it('seals the id the GUARD verified, not anything the caller sent', async () => {
     // The whole security of linking rests here: a caller who could nominate
     // the account would be able to attach their Google identity to someone
     // else's.
     const { google, start } = makeLinkGoogle();
     const controller = new AuthController(
-      {} as unknown as AuthService,
+      {
+        // a guest: no password, no provider - the ungated link path
+        hasGoogleLink: jest.fn().mockResolvedValue(false),
+        reauthMethodFor: jest.fn().mockResolvedValue(null),
+      } as unknown as AuthService,
       google,
       noRevocations(),
       jwtService,
     );
     const res = makeRes();
 
-    const out = controller.linkStart(
+    const out = await controller.linkStart(
       'user-from-token',
       { returnTo: '/room/abc' },
       res as unknown as Response,
@@ -304,14 +308,17 @@ describe('starting a link, which is a different thing from signing in', () => {
     expect(res.cookies[0].name).toBe('mw_oauth');
   });
 
-  it('returns the URL rather than redirecting to it', () => {
+  it('returns the URL rather than redirecting to it', async () => {
     // It is a POST carrying a bearer token, so the browser has to navigate
     // itself - a redirect here would be answered by fetch, not by the
     // address bar, and the flow would silently go nowhere.
     const { google } = makeLinkGoogle();
     const res = makeRes();
-    new AuthController(
-      {} as unknown as AuthService,
+    await new AuthController(
+      {
+        hasGoogleLink: jest.fn().mockResolvedValue(false),
+        reauthMethodFor: jest.fn().mockResolvedValue(null),
+      } as unknown as AuthService,
       google,
       noRevocations(),
       jwtService,
@@ -491,5 +498,219 @@ describe('signing out', () => {
     const { controller, revocations } = withRevocations();
     await expect(controller.logoutAll('u1')).resolves.toEqual({ version: 4 });
     expect(revocations.revokeAllForUser).toHaveBeenCalledWith('u1');
+  });
+});
+
+describe('the re-auth gates in front of the new routes', () => {
+  const gated = (over: Record<string, unknown> = {}) => {
+    const authService = {
+      hasGoogleLink: jest.fn().mockResolvedValue(false),
+      reauthMethodFor: jest.fn().mockResolvedValue('password'),
+      verifyPassword: jest.fn().mockResolvedValue(false),
+      setPassword: jest.fn().mockResolvedValue({ id: 'u1', token: 't' }),
+      refreshSession: jest.fn().mockResolvedValue({ id: 'u1', token: 't2' }),
+      ...over,
+    };
+    const controller = new AuthController(
+      authService as unknown as AuthService,
+      makeGoogle(false),
+      noRevocations(),
+      jwtService,
+    );
+    return { controller, authService };
+  };
+
+  const bearing = (claims: Record<string, unknown>, opts?: object) =>
+    ({
+      headers: {
+        authorization: `Bearer ${jwtService.sign(claims, opts)}`,
+      },
+    }) as Request;
+
+  it('link-start refuses a full account without the correct password', async () => {
+    // the gate this exists for: a stolen token alone must not be able to
+    // attach the thief's Google identity as a permanent second door
+    const { controller, authService } = gated();
+    const res = makeRes();
+    await expect(
+      controller.linkStart(
+        'u1',
+        { password: 'wrong' },
+        res as unknown as Response,
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(res.cookies).toHaveLength(0); // no half-started flow left behind
+    expect(authService.verifyPassword).toHaveBeenCalledWith('u1', 'wrong');
+  });
+
+  it('set-password on a password account verifies the CURRENT one first', async () => {
+    const { controller, authService } = gated();
+    await expect(
+      controller.setPassword(
+        'u1',
+        { currentPassword: 'wrong', newPassword: 'a-new-password' },
+        bearing({ sub: 'u1', name: 'ada' }),
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(authService.setPassword).not.toHaveBeenCalled();
+  });
+
+  it('set-password on a provider-only account demands a fresh elevation', async () => {
+    const { controller, authService } = gated({
+      reauthMethodFor: jest.fn().mockResolvedValue('google'),
+    });
+    // an ordinary session token - valid, unexpired, NOT elevated
+    await expect(
+      controller.setPassword(
+        'u1',
+        { newPassword: 'a-new-password' },
+        bearing({ sub: 'u1', name: 'ada', jti: 'j1' }),
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(authService.setPassword).not.toHaveBeenCalled();
+  });
+
+  it('accepts elevation only for the SAME subject', async () => {
+    // an elevated token is still scoped to who earned it: u2's fresh
+    // Google round trip must not set u1's password
+    const { controller, authService } = gated({
+      reauthMethodFor: jest.fn().mockResolvedValue('google'),
+    });
+    await expect(
+      controller.setPassword(
+        'u1',
+        { newPassword: 'a-new-password' },
+        bearing({ sub: 'u2', name: 'eve', elev: 'reauth' }),
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(authService.setPassword).not.toHaveBeenCalled();
+  });
+
+  it('elevation for the right subject opens the gate', async () => {
+    const { controller, authService } = gated({
+      reauthMethodFor: jest.fn().mockResolvedValue('google'),
+    });
+    await controller.setPassword(
+      'u1',
+      { newPassword: 'a-new-password' },
+      bearing({ sub: 'u1', name: 'ada', elev: 'reauth' }),
+    );
+    expect(authService.setPassword).toHaveBeenCalledWith(
+      'u1',
+      'a-new-password',
+    );
+  });
+
+  it('refresh refuses an elevated token - elevation must not be slidable', async () => {
+    const { controller, authService } = gated();
+    await expect(
+      controller.refresh(bearing({ sub: 'u1', name: 'ada', elev: 'reauth' })),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(authService.refreshSession).not.toHaveBeenCalled();
+  });
+
+  it('refresh hands the verified payload to the service', async () => {
+    const { controller, authService } = gated();
+    await controller.refresh(
+      bearing({ sub: 'u1', name: 'ada', jti: 'j1', sess: 123 }),
+    );
+    const [[arg]] = authService.refreshSession.mock.calls as [
+      [{ jti: string; sess: number }],
+    ];
+    expect(arg.jti).toBe('j1');
+    expect(arg.sess).toBe(123);
+  });
+});
+
+describe('the reauth callback branch - the gate with no coverage', () => {
+  // Finding 12: the owned !== linkUserId check had ZERO tests. Its failure
+  // mode is silence - a broken check mints an elevation for an account the
+  // caller does not control, and nothing would have caught it.
+  const reauthCallback = (opts: {
+    linkUserId: string;
+    returningSubject: string;
+    owner: string | null;
+  }) => {
+    const google = {
+      enabled: true,
+      assertEnabled: () => undefined,
+      verifyCallback: jest.fn().mockResolvedValue({
+        purpose: 'reauth',
+        linkUserId: opts.linkUserId,
+        identity: { subject: opts.returningSubject, email: 'a@b.co' },
+      }),
+      callbackRedirect: (f: string) =>
+        `https://mustard.watch/auth/callback#${f}`,
+      redirectUri: 'https://api.mustard.watch/api/auth/google/callback',
+    } as unknown as GoogleOAuthService;
+    const authService = {
+      googleSubjectOwner: jest.fn().mockResolvedValue(opts.owner),
+      mintElevatedToken: jest.fn().mockResolvedValue('ELEVATED'),
+    };
+    const controller = new AuthController(
+      authService as unknown as AuthService,
+      google,
+      noRevocations(),
+      jwtService,
+    );
+    return { controller, authService };
+  };
+
+  it('mints elevation only when the returning subject OWNS the account', async () => {
+    const { controller, authService } = reauthCallback({
+      linkUserId: 'u1',
+      returningSubject: 'sub-of-u1',
+      owner: 'u1',
+    });
+    const res = makeRes();
+    await controller.callback(
+      'c',
+      's',
+      undefined,
+      emptyReq,
+      res as unknown as Response,
+    );
+    expect(authService.mintElevatedToken).toHaveBeenCalledWith('u1');
+    expect(res.redirectedTo).toContain('elev=ELEVATED');
+    // never as a session token - the callback page must not adopt it
+    expect(res.redirectedTo).not.toContain('token=');
+  });
+
+  it('refuses when a DIFFERENT Google account completes the flow', async () => {
+    // the takeover this gate stops: signing in as someone else must not
+    // elevate you over the victim's account
+    const { controller, authService } = reauthCallback({
+      linkUserId: 'victim',
+      returningSubject: 'attacker-sub',
+      owner: 'attacker',
+    });
+    const res = makeRes();
+    await controller.callback(
+      'c',
+      's',
+      undefined,
+      emptyReq,
+      res as unknown as Response,
+    );
+    expect(authService.mintElevatedToken).not.toHaveBeenCalled();
+    expect(res.redirectedTo).toContain('error=reauth_mismatch');
+  });
+
+  it('refuses when the returning Google account is linked to NObody', async () => {
+    const { controller, authService } = reauthCallback({
+      linkUserId: 'u1',
+      returningSubject: 'unlinked-sub',
+      owner: null,
+    });
+    const res = makeRes();
+    await controller.callback(
+      'c',
+      's',
+      undefined,
+      emptyReq,
+      res as unknown as Response,
+    );
+    expect(authService.mintElevatedToken).not.toHaveBeenCalled();
+    expect(res.redirectedTo).toContain('error=reauth_mismatch');
   });
 });

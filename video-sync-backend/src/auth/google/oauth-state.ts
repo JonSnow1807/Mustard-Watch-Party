@@ -25,6 +25,15 @@ export interface OAuthStatePayload {
    * someone else's.
    */
   linkUserId?: string;
+  /**
+   * What the flow is FOR, sealed at start with the same authority as
+   * linkUserId. 'link-guest' rewrites the guest row; 'link-full' only adds
+   * the provider row; 'reauth' proves the person can still complete Google
+   * as this account's linked identity and mints a five-minute elevated
+   * token instead of a session. Absent = a plain sign-in. The callback
+   * dispatches on THIS, never on anything the browser says at return time.
+   */
+  purpose?: 'link-guest' | 'link-full' | 'reauth';
   /** absolute ms deadline - an abandoned flow must not stay resumable */
   expiresAt: number;
 }
