@@ -73,6 +73,18 @@ export interface BotReport {
   rejoinFailures: number;
   /** duplicate-injection mode: how many extra same-cmdId sends this bot made */
   dupControlsSent: number;
+  /** reorder-injection mode: how many swapped pairs this bot emitted */
+  reorderPairsSent: number;
+  /**
+   * The commanded position of the last seek-reason commit this bot applied.
+   *
+   * This is the reorder proof's witness: after a swapped pair (mint A then
+   * B, emit B then A), arrival-order serialization means A commits LAST, so
+   * every bot's last seek must sit at A's position. If someone "fixes" the
+   * emission order upstream, the witness lands on B and the gate names the
+   * injection as dead - an instrument that can say no.
+   */
+  lastSeekMediaTime: number | null;
   /** distinct (epoch,seq) of committed control transitions this bot saw */
   controlCommits: string[];
   handlerErrors: string[];
@@ -97,6 +109,8 @@ export class BotClient {
   private reconnects = 0;
   private rejoinFailures = 0;
   private dupControlsSent = 0;
+  private reorderPairsSent = 0;
+  private lastSeekMediaTime: number | null = null;
   /** every distinct committed CONTROL transition observed: (epoch, seq) of
    *  timelines whose reason is play/pause/seek. Snapshot commits excluded.
    *  A double-applied duplicate mints an EXTRA one of these - contiguous
@@ -191,6 +205,13 @@ export class BotClient {
 
     if (tl.reason === 'play' || tl.reason === 'pause' || tl.reason === 'seek') {
       this.controlCommits.add(`${tl.storeEpoch}:${tl.seq}`);
+    }
+    // Applied in ARRIVAL order deliberately, not isNewer order: the reorder
+    // witness asks "which seek did the store commit last", and the commit
+    // broadcast order carries that answer. A seek's mediaTime is the
+    // commanded position (restamp semantics), so this is exact.
+    if (tl.reason === 'seek' && isNewer(tl, this.timeline)) {
+      this.lastSeekMediaTime = tl.mediaTime;
     }
     if (isNewer(tl, this.timeline)) {
       this.timeline = tl;
@@ -289,6 +310,37 @@ export class BotClient {
     }
   }
 
+  /**
+   * The reorder-injection mode: TWO distinct commands, minted in the order
+   * (first, second) a user would mean them, EMITTED second-then-first.
+   *
+   * App-layer on purpose, same reasoning as the duplicate twin below: netem
+   * reorder operates on TCP segments and TCP re-sequences its own stream,
+   * so no transport toxic can make the app see B before A. The store
+   * serializes by arrival, so the swap must land the FIRST-minted command
+   * last - the fleet-wide lastSeekMediaTime witness pins exactly that, and
+   * both commands must commit (distinct cmdIds; the exact-count gate keeps
+   * holding).
+   */
+  sendIntentSwappedPair(
+    roomCode: string,
+    intent: ControlIntent,
+    firstMediaTime: number,
+    secondMediaTime: number,
+  ): void {
+    const firstId = randomUUID();
+    const secondId = randomUUID();
+    this.transport.sendControl(roomCode, intent, secondMediaTime, secondId);
+    this.transport.sendControl(roomCode, intent, firstMediaTime, firstId);
+    this.reorderPairsSent += 1;
+    if (this.cfg.duplicateControls) {
+      // chaos composes: the pair's twins ride the same dedup contract
+      this.transport.sendControl(roomCode, intent, secondMediaTime, secondId);
+      this.transport.sendControl(roomCode, intent, firstMediaTime, firstId);
+      this.dupControlsSent += 2;
+    }
+  }
+
   sendIntent(roomCode: string, intent: ControlIntent, mediaTime: number): void {
     const cmdId = randomUUID();
     this.transport.sendControl(roomCode, intent, mediaTime, cmdId);
@@ -330,6 +382,8 @@ export class BotClient {
       reconnects: this.reconnects,
       rejoinFailures: this.rejoinFailures,
       dupControlsSent: this.dupControlsSent,
+      reorderPairsSent: this.reorderPairsSent,
+      lastSeekMediaTime: this.lastSeekMediaTime,
       controlCommits: [...this.controlCommits],
       handlerErrors: this.handlerErrors,
       rejected: this.rejected,

@@ -56,6 +56,21 @@ export class SocketIOTransport implements SyncTransport {
       reconnectionAttempts: Infinity,
     });
     const socket = this.socket;
+    // Same enforcement as the real client (SocketContext): an emit that
+    // raced a dying transport sits in socket.io's sendBuffer, and the
+    // buffer flushes on reconnect BEFORE app handlers run - so the stray
+    // is dropped at the moment the death is detected, not "cleared" after
+    // it has already flushed. The bots must exercise the contract the
+    // production client actually lives under, or the fleet proves a
+    // different system than the one deployed.
+    socket.on('disconnect', () => {
+      // controls only, like the real client: a stale control re-commands
+      // the room from the past; everything else (clock pings, join-room)
+      // is harmless or idempotent late and keeps its place
+      socket.sendBuffer = socket.sendBuffer.filter(
+        (p: { data?: unknown[] }) => p?.data?.[0] !== SYNC_EVENTS.control,
+      );
+    });
     this.pending.forEach((fn) => fn(socket));
     this.pending = [];
     return new Promise((resolve, reject) => {

@@ -51,10 +51,18 @@ directory is written, so the figure is reproducible but not citable.
   is in Redis, so playback state survives with the same `storeEpoch` — no
   reset, no snap to zero.
 - **Redis restart/flush**: the store rehydrates from the debounced Postgres
-  copy — always paused (P5) — under a **fresh random `storeEpoch`**.
-  Clients treat any new epoch as newer, so they can never be stranded at a
-  high stale seq. This is also why the free-tier production Redis needs no
-  persistence: losing it is a designed-for event.
+  copy — always paused (P5) — under a **fresh `storeEpoch` minted from redis
+  TIME**, so epochs are totally ordered by birth. The wording that used to
+  live here — "random epoch, clients treat any new epoch as newer" — is the
+  exact rule `formal/SyncTimeline.tla` REFUTES (`SyncTimeline_naive.cfg`): a
+  client that accepts any different epoch can be dragged backwards by a
+  stale broadcast from the old epoch. The client rule is a total order,
+  epoch first then seq (`shared/sync-core/timeline.ts isNewer`), and it is
+  sound only because mint-time epochs are comparable at all. The
+  implementation was always the ordered one; this paragraph was written
+  before the model check and never corrected. This is also why the
+  free-tier production Redis needs no persistence: losing it is a
+  designed-for event.
 - **Redis down**: control events fail fast with a typed error (the KV
   client has no offline queue); `/health` should surface degradation. No
   silent split-brain fallback.
