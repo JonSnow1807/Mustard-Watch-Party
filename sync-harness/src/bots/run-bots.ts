@@ -25,6 +25,7 @@ interface Args {
   controller: 'reactive' | 'predictive';
   plane: 'node' | 'relay';
   dupControls: boolean;
+  reorderControls: boolean;
 }
 
 function parseArgs(): Args {
@@ -41,6 +42,8 @@ function parseArgs(): Args {
     plane: (get('--plane') ?? 'node') as 'node' | 'relay',
     // exactly-once proof mode: every control sent twice with the same cmdId
     dupControls: process.argv.includes('--dup-controls'),
+    // reordering proof mode: a seek pair minted (A,B), emitted (B,A)
+    reorderControls: process.argv.includes('--reorder-controls'),
   };
 }
 
@@ -107,6 +110,13 @@ async function main(): Promise<void> {
   // guaranteed-quiet segment - that's where the growth gate measures.
   // pause freezes at the projected position, resume continues from it
   // (P4 semantics; a resume-from-0 would be a teleport, not a resume).
+  if (args.reorderControls && args.durationS < 75) {
+    // the pair fires at t=60; a shorter run reports success without ever
+    // injecting anything, which is exactly the silent-instrument failure
+    // this session of work exists to prevent
+    console.error('[bots] --reorder-controls needs --duration >= 75');
+    process.exit(1);
+  }
   const commander = bots[0];
   const t0 = Date.now();
   const projectedNow = (): number => {
@@ -122,12 +132,35 @@ async function main(): Promise<void> {
     scriptedControls += 1;
     commander.sendIntent(room.code, intent, mediaTime);
   };
+  // The reorder pair's positions. Constants rather than projections so the
+  // witness assertion has an exact target: after the swap, the FIRST-minted
+  // seek (500) must be the store's LAST commit, fleet-wide.
+  const REORDER_FIRST = 500;
+  const REORDER_SECOND = 520;
   const events: Array<{ atS: number; run: () => void }> = [
     { atS: 5, run: () => command('play', 0) },
     { atS: 30, run: () => command('seek', 300) },
     { atS: 40, run: () => bots[Math.min(2, bots.length - 1)].scriptedStall(4000) },
     { atS: 50, run: () => command('pause', projectedNow()) },
     { atS: 55, run: () => command('play', projectedNow()) },
+    ...(args.reorderControls
+      ? [
+          {
+            atS: 60,
+            run: () => {
+              // two commands, so the ground-truth counter moves by two;
+              // the swap happens inside the pair sender
+              scriptedControls += 2;
+              commander.sendIntentSwappedPair(
+                room.code,
+                'seek',
+                REORDER_FIRST,
+                REORDER_SECOND,
+              );
+            },
+          },
+        ]
+      : []),
   ];
   for (const e of events) {
     const wait = t0 + e.atS * 1000 - Date.now();
@@ -243,6 +276,7 @@ async function main(): Promise<void> {
     // these produce ZERO extra seqs - any double-apply shows as a phantom
     // seq in the integrity counters
     dupControlsSent,
+    reorderPairsSent: reports.reduce((sum, r) => sum + r.reorderPairsSent, 0),
     scriptedControls,
     controlCommitsObserved,
     handlerErrors: handlerErrors.length,
@@ -279,6 +313,27 @@ async function main(): Promise<void> {
       failures.push(
         `${controlCommitsObserved} control commits for ${scriptedControls} commands - a command was LOST`,
       );
+    if (args.reorderControls) {
+      // The witness: the pair was minted (500, 520) and emitted (520, 500),
+      // so arrival-order serialization commits 500 LAST. Every bot's last
+      // seek must sit there. This is also the injection's own liveness
+      // check - if the swap upstream is ever "fixed" into order, the
+      // witness lands on 520 and this names the injection as dead, rather
+      // than the run silently measuring nothing.
+      const pairs = reports.reduce((sum, r) => sum + r.reorderPairsSent, 0);
+      if (pairs < 1) failures.push('reorder mode on but no pair was sent');
+      const offWitness = reports.filter(
+        (r) =>
+          r.lastSeekMediaTime === null ||
+          Math.abs(r.lastSeekMediaTime - 500) > 1,
+      );
+      if (offWitness.length > 0)
+        failures.push(
+          `${offWitness.length}/${reports.length} bots' last seek is not at the ` +
+            `first-minted position (saw ${offWitness[0].lastSeekMediaTime}) - ` +
+            'either the swap died or arrival-order serialization broke',
+        );
+    }
     if (failures.length > 0) {
       console.error('[gate] FAILED:\n  ' + failures.join('\n  '));
       process.exit(1);

@@ -1,11 +1,22 @@
-# Exactly-once: duplicate-injection proof runs
+# Exactly-once: duplicate- and reorder-injection proof runs
 
 The idempotency-key design (SYNC_DESIGN §2a, `formal/SyncExactlyOnce.tla`)
-proven end-to-end by **app-level injection**: the bot fleet's
-`--dup-controls` mode sends every scripted control **twice with the same
-`cmdId`**. Injection is the only honest way to test this — netem's
-`duplicate` toxic copies TCP segments, which TCP itself dedupes, so no
-transport toxic can ever produce an application-level duplicate.
+proven end-to-end by **app-level injection**, two modes composable in one
+run:
+
+- `--dup-controls`: every scripted control sent **twice with the same
+  `cmdId`**.
+- `--reorder-controls`: a seek pair minted **(A=500, B=520)** and emitted
+  **(B, A)**. The store serializes by arrival, so A must commit LAST — and
+  every bot's `lastSeekMediaTime` is gated to sit at A's position,
+  fleet-wide. The witness doubles as the injection's own liveness check:
+  if the swap is ever "fixed" upstream, the witness lands on B and the
+  gate names the injection as dead instead of silently measuring nothing.
+
+Injection is the only honest way to test either — netem's `duplicate` and
+`reorder` toxics operate on TCP segments, which TCP itself dedupes and
+re-sequences, so no transport toxic can ever produce an application-level
+duplicate or reordering.
 
 | run | plane | bots | injected dups | seq gaps | dups absorbed |
 |---|---|---|---|---|---|

@@ -143,6 +143,23 @@ jobs:
         # transition legal, newest entry identical to live state, drift rate 0
         run: npx tsx src/replay-check.ts --redis redis://localhost:6380 --gate
         working-directory: sync-harness
+      - name: chaos fleet - duplicated AND reordered controls (gated)
+        # The live half of the exactly-once battery. Every control is sent
+        # twice with the same cmdId, and a seek pair minted (A,B) is emitted
+        # (B,A). Injected at the APP layer because TCP toxics cannot produce
+        # either fault - TCP dedupes and re-sequences its own stream
+        # (docs/measurements/exactly-once/README.md). Gates: exact
+        # commit-count equality both directions, and a fleet-wide witness
+        # that the first-minted seek committed LAST - which fails loudly if
+        # the injection itself ever dies.
+        run: npx tsx src/bots/run-bots.ts --n 10 --duration 120 --ws http://localhost:3300 --gate --dup-controls --reorder-controls
+        working-directory: sync-harness
+      - name: replay reconciliation AFTER the chaos
+        # the strongest single assertion in the battery: with duplicates and
+        # reordering injected, every room's log still replays exactly to
+        # live state - nosnaplog's live analogue, under fault injection
+        run: npx tsx src/replay-check.ts --redis redis://localhost:6380 --gate
+        working-directory: sync-harness
       - uses: actions/upload-artifact@v4
         if: always()
         with:
