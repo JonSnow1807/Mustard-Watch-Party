@@ -243,9 +243,12 @@ loop would reconnect forever with a dead token.
   eviction, and sweeps every 30s for revocations it missed and for tokens
   that simply expired — a relay connection used to outlive its token
   indefinitely, since `exp` was never even required there. Postgres remains
-  the only durable record: if Redis flushes, the relay fails open to
-  signature-only for at most one refresh interval, the same staleness bound
-  a backend instance that missed a pub/sub message already has.
+  the only durable record. If Redis flushes, the relay falls open to
+  signature-only **until the mirror is rebuilt** — one refresh interval when
+  the next refresh succeeds, longer if Postgres or Redis stay unreachable,
+  since nothing here has a completion deadline. The bound is conditional on
+  a healthy refresh, not a hard ceiling; a backend instance that missed a
+  pub/sub message carries the same conditional bound.
 - **A token with no `jti`** — issued before this existed — cannot be revoked
   individually. `logout` reports `{revoked: false}` rather than claiming a
   success that did nothing. `logout-all` still reaches it.

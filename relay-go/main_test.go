@@ -105,22 +105,14 @@ func TestEvictRevokedMatching(t *testing.T) {
 	fresh := mk("u1", "j9", 1) // the post-logout-all session
 	other := mk("u2", "j3", 0)
 
-	// evict() panics on a nil ws, which doubles as the assertion that these
-	// conns were NOT selected: reaching evict means the test already failed.
-	victims := func(ev revocationEvent) (n int) {
-		s := &server{conns: map[*conn]struct{}{phone: {}, laptop: {}, fresh: {}, other: {}}}
-		s.mu.RLock()
-		for c := range s.conns {
-			switch {
-			case ev.Kind == "token" && ev.Jti != "" && c.id.jti == ev.Jti:
-				n++
-			case ev.Kind == "user" && ev.UserId != "" && ev.Version > 0 &&
-				c.id.sub == ev.UserId && c.id.ver < ev.Version:
-				n++
-			}
-		}
-		s.mu.RUnlock()
-		return n
+	// Calls the REAL predicate. The first version of this test copied the
+	// switch out of evictRevoked and verified the copy - a drift in the
+	// real selection would have passed unnoticed, which is the exact
+	// instrument-that-cannot-say-no failure the eviction design exists to
+	// avoid. selectRevoked is pure, so no ws teardown is involved.
+	conns := map[*conn]struct{}{phone: {}, laptop: {}, fresh: {}, other: {}}
+	victims := func(ev revocationEvent) int {
+		return len(selectRevoked(conns, ev))
 	}
 
 	if n := victims(revocationEvent{Kind: "token", Jti: "j1"}); n != 1 {

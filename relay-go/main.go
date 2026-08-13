@@ -388,8 +388,23 @@ func (s *server) broadcast(room string, frame []byte) {
 // and the session that did the signing-out must not evict itself.
 func (s *server) evictRevoked(ev revocationEvent) int {
 	s.mu.RLock()
+	victims := selectRevoked(s.conns, ev)
+	s.mu.RUnlock()
+	// outside the lock: Close can block on the peer, and the read loop's
+	// deferred cleanup needs the write lock this function would be holding
+	for _, c := range victims {
+		c.evict("session revoked")
+	}
+	return len(victims)
+}
+
+// selectRevoked names the connections a revocation event applies to. Pure
+// and extracted so the TEST exercises this exact predicate rather than a
+// copy of it - a test that re-implements the selection verifies only
+// itself, and a drift in the real switch would pass unnoticed.
+func selectRevoked(conns map[*conn]struct{}, ev revocationEvent) []*conn {
 	var victims []*conn
-	for c := range s.conns {
+	for c := range conns {
 		switch {
 		case ev.Kind == "token" && ev.Jti != "" && c.id.jti == ev.Jti:
 			victims = append(victims, c)
@@ -398,13 +413,7 @@ func (s *server) evictRevoked(ev revocationEvent) int {
 			victims = append(victims, c)
 		}
 	}
-	s.mu.RUnlock()
-	// outside the lock: Close can block on the peer, and the read loop's
-	// deferred cleanup needs the write lock this function would be holding
-	for _, c := range victims {
-		c.evict("session revoked")
-	}
-	return len(victims)
+	return victims
 }
 
 // revocationLoop is the relay's ear: pub/sub for the fast path, a periodic
@@ -524,7 +533,10 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			n := int(data[1])
-			if len(data) < 2+n {
+			// exact length, matching parseControl's posture: trailing bytes
+			// are a malformed frame, not padding - tolerating them lets two
+			// encoders disagree about where the field ends and both "work"
+			if len(data) != 2+n {
 				continue
 			}
 			room := string(data[2 : 2+n])
