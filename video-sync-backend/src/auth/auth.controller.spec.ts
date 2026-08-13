@@ -422,3 +422,74 @@ describe('what the callback tells someone when it fails', () => {
     expect(res.redirectedTo).not.toContain('detail');
   });
 });
+
+describe('signing out', () => {
+  const withRevocations = () => {
+    const revocations = {
+      isRevoked: () => null,
+      revokeToken: jest.fn().mockResolvedValue(undefined),
+      revokeAllForUser: jest.fn().mockResolvedValue(4),
+    };
+    const controller = new AuthController(
+      {} as unknown as AuthService,
+      makeGoogle(false),
+      revocations as unknown as RevocationService,
+      jwtService,
+    );
+    return { controller, revocations };
+  };
+
+  const bearing = (token: string) =>
+    ({ headers: { authorization: `Bearer ${token}` } }) as Request;
+
+  it('revokes the token the request arrived on', async () => {
+    const { controller, revocations } = withRevocations();
+    const token = jwtService.sign({ sub: 'u1', name: 'ada', jti: 'j1' });
+
+    await expect(controller.logout(bearing(token))).resolves.toEqual({
+      revoked: true,
+    });
+
+    const [jti, userId] = (
+      revocations.revokeToken.mock.calls as [string, string, Date][]
+    )[0];
+    expect(jti).toBe('j1');
+    expect(userId).toBe('u1');
+  });
+
+  it('says so honestly when the token cannot be revoked individually', async () => {
+    // Tokens issued before jti existed carry none. Reporting success would
+    // tell someone their session was ended when it was not.
+    const { controller, revocations } = withRevocations();
+    const token = jwtService.sign({ sub: 'u1', name: 'ada' });
+
+    await expect(controller.logout(bearing(token))).resolves.toEqual({
+      revoked: false,
+    });
+    expect(revocations.revokeToken).not.toHaveBeenCalled();
+  });
+
+  it('keeps the revocation record only as long as the token would have lived', async () => {
+    const { controller, revocations } = withRevocations();
+    const token = jwtService.sign(
+      { sub: 'u1', name: 'ada', jti: 'j1' },
+      { expiresIn: '1h' },
+    );
+
+    await controller.logout(bearing(token));
+
+    const [, , expiresAt] = (
+      revocations.revokeToken.mock.calls as [string, string, Date][]
+    )[0];
+    const hourAway = Date.now() + 3600_000;
+    // within a minute of an hour from now, not 1970 - the exp claim is in
+    // SECONDS and treating it as milliseconds would put it in the past
+    expect(Math.abs(expiresAt.getTime() - hourAway)).toBeLessThan(60_000);
+  });
+
+  it('signs out everywhere by bumping the version, and reports it', async () => {
+    const { controller, revocations } = withRevocations();
+    await expect(controller.logoutAll('u1')).resolves.toEqual({ version: 4 });
+    expect(revocations.revokeAllForUser).toHaveBeenCalledWith('u1');
+  });
+});

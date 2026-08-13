@@ -135,13 +135,21 @@ ok('its socket is told as well', (await allEnded) === 'signed out everywhere',
 const back = await call('/auth/login', {
   body: { username: name, password: 'a-real-password' },
 });
-ok('signing in again gives a token that WORKS', back.status < 400 &&
-   (await call('/auth/me', { method: 'GET', token: back.body?.token })).status === 200,
+const backToken = back.body?.token;
+ok('signing in again gives a token that WORKS', Boolean(backToken) &&
+   (await call('/auth/me', { method: 'GET', token: backToken })).status === 200,
    'a new token issued at the old version would be refused instantly');
 
-const backSocket = connect(back.body.token);
-ok('and it opens a socket', (await backSocket.opened) === true);
-backSocket.socket.close();
+// Guarded, because a check that throws here takes the summary and the socket
+// cleanup with it - every result above would be lost to a TypeError about
+// the one thing that failed.
+if (backToken) {
+  const backSocket = connect(backToken);
+  ok('and it opens a socket', (await backSocket.opened) === true);
+  backSocket.socket.close();
+} else {
+  ok('and it opens a socket', false, 'no token to try with');
+}
 other.socket.close();
 first.socket.close();
 

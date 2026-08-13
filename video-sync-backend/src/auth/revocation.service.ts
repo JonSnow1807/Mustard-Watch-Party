@@ -53,6 +53,20 @@ export class RevocationService implements OnModuleInit {
   /** false until the first load succeeds - see isRevoked. */
   private loaded = false;
 
+  /**
+   * Revocations recorded while a refresh was in flight.
+   *
+   * refresh() reads from Postgres and then REPLACES the snapshot. Anything
+   * revoked between the read and the replacement would be thrown away by
+   * that assignment and accepted until the next tick - which contradicts the
+   * one guarantee this service makes about its own instance, that a
+   * revocation takes effect here at once. So writes that land during a
+   * refresh are held here and merged in at the end.
+   */
+  private pendingTokens = new Set<string>();
+  private pendingVersions = new Map<string, number>();
+  private refreshing = false;
+
   constructor(
     private readonly database: DatabaseService,
     @Inject(REDIS_PUB) private readonly pub: Redis | null,
@@ -121,7 +135,7 @@ export class RevocationService implements OnModuleInit {
       create: { jti, userId, expiresAt },
       update: {},
     });
-    this.revokedTokens.add(jti);
+    this.rememberToken(jti);
     await this.announce({ kind: 'token', jti });
   }
 
@@ -132,7 +146,7 @@ export class RevocationService implements OnModuleInit {
       data: { tokenVersion: { increment: 1 } },
       select: { tokenVersion: true },
     });
-    this.userVersions.set(userId, user.tokenVersion);
+    this.rememberVersion(userId, user.tokenVersion);
     await this.announce({
       kind: 'user',
       userId,
@@ -149,6 +163,9 @@ export class RevocationService implements OnModuleInit {
    */
   @Interval(REFRESH_MS)
   async refresh(): Promise<void> {
+    this.refreshing = true;
+    this.pendingTokens.clear();
+    this.pendingVersions.clear();
     try {
       const [tokens, users] = await Promise.all([
         this.database.revokedToken.findMany({
@@ -163,8 +180,20 @@ export class RevocationService implements OnModuleInit {
         }),
       ]);
 
-      this.revokedTokens = new Set(tokens.map((t) => t.jti));
-      this.userVersions = new Map(users.map((u) => [u.id, u.tokenVersion]));
+      const nextTokens = new Set(tokens.map((t) => t.jti));
+      const nextVersions = new Map(users.map((u) => [u.id, u.tokenVersion]));
+
+      // Merge rather than replace, or a revocation that happened while these
+      // queries were in flight is silently undone. Versions take the HIGHER
+      // of the two: a stored version must never move backwards, because
+      // backwards means un-revoked.
+      for (const jti of this.pendingTokens) nextTokens.add(jti);
+      for (const [id, version] of this.pendingVersions) {
+        nextVersions.set(id, Math.max(nextVersions.get(id) ?? 0, version));
+      }
+
+      this.revokedTokens = nextTokens;
+      this.userVersions = nextVersions;
       this.loaded = true;
     } catch (err) {
       // Keep the previous snapshot rather than emptying it. An empty
@@ -175,6 +204,26 @@ export class RevocationService implements OnModuleInit {
           err instanceof Error ? err.message : 'unknown'
         }`,
       );
+    } finally {
+      this.refreshing = false;
+      this.pendingTokens.clear();
+      this.pendingVersions.clear();
+    }
+  }
+
+  /** Add to the live set, and to the pending one if a refresh could clobber it. */
+  private rememberToken(jti: string): void {
+    this.revokedTokens.add(jti);
+    if (this.refreshing) this.pendingTokens.add(jti);
+  }
+
+  /** Same, and never downwards: a lower version is an un-revocation. */
+  private rememberVersion(userId: string, version: number): void {
+    const current = this.userVersions.get(userId) ?? 0;
+    if (version > current) this.userVersions.set(userId, version);
+    if (this.refreshing) {
+      const pending = this.pendingVersions.get(userId) ?? 0;
+      if (version > pending) this.pendingVersions.set(userId, version);
     }
   }
 
@@ -232,9 +281,20 @@ export class RevocationService implements OnModuleInit {
       return;
     }
     if (event.kind === 'token' && event.jti) {
-      this.revokedTokens.add(event.jti);
-    } else if (event.kind === 'user' && event.userId) {
-      this.userVersions.set(event.userId, event.version ?? 0);
+      this.rememberToken(event.jti);
+    } else if (
+      event.kind === 'user' &&
+      event.userId &&
+      typeof event.version === 'number' &&
+      Number.isInteger(event.version) &&
+      event.version > 0
+    ) {
+      // A missing version is NOT a zero. Zero is the version every account
+      // starts at, so falling back to it would UN-revoke the user until the
+      // next refresh - the same reasoning versionOf applies to a token claim,
+      // applied to a message. announce() always sets it, so only a malformed
+      // or truncated message reaches this branch, and ignoring it is right.
+      this.rememberVersion(event.userId, event.version);
     } else {
       return;
     }

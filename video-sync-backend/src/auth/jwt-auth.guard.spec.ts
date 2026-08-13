@@ -219,9 +219,13 @@ describe('a token that is signed, unexpired, and no longer trusted', () => {
 
   it('refuses a token whose session was signed out', () => {
     const token = jwt.sign({ sub: 'u1', name: 'ada', jti: 'j1' });
+    // The exact text, not /signed out/ - which also matches the account-wide
+    // message, so a guard that reported "all sessions" for both reasons would
+    // pass this and the test below. Telling them apart is the entire point of
+    // returning a reason.
     expect(() =>
       guardRefusing('token').canActivate(ctx(bearer(token))),
-    ).toThrow(/signed out/);
+    ).toThrow('This session was signed out - sign in again');
   });
 
   it('says something different when every session was signed out', () => {
@@ -229,7 +233,7 @@ describe('a token that is signed, unexpired, and no longer trusted', () => {
     // somebody else responding to a compromise.
     const token = jwt.sign({ sub: 'u1', name: 'ada', jti: 'j1' });
     expect(() => guardRefusing('user').canActivate(ctx(bearer(token)))).toThrow(
-      /All sessions/,
+      'All sessions were signed out - sign in again',
     );
   });
 

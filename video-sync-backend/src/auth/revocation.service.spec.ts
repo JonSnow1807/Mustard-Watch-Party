@@ -182,3 +182,75 @@ describe('the sweep', () => {
     await expect(s.sweep()).resolves.toBe(0);
   });
 });
+
+describe('a revocation that lands while a refresh is in flight', () => {
+  it('survives the refresh instead of being thrown away', async () => {
+    // refresh() reads from Postgres and then replaces the snapshot. Anything
+    // revoked between the read and the replacement used to be discarded by
+    // that assignment and accepted until the next tick - which contradicts
+    // the one guarantee this makes about its own instance.
+    const db = makeDb();
+    const s = await service(db);
+
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    db.revokedToken.findMany.mockImplementation(async () => {
+      await held; // the read has happened; the assignment has not
+      return [];
+    });
+
+    const refreshing = s.refresh();
+    await s.revokeToken('j-late', 'u1', new Date(Date.now() + 3600_000));
+    release();
+    await refreshing;
+
+    expect(s.isRevoked(token({ jti: 'j-late' }))).toBe('token');
+  });
+
+  it('keeps the higher version rather than the one the query returned', async () => {
+    const db = makeDb();
+    const s = await service(db);
+
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    db.user.findMany.mockImplementation(async () => {
+      await held;
+      return [{ id: 'u1', tokenVersion: 0 }];
+    });
+
+    const refreshing = s.refresh();
+    db.user.update.mockResolvedValue({ tokenVersion: 5 });
+    await s.revokeAllForUser('u1');
+    release();
+    await refreshing;
+
+    expect(s.isRevoked(token({ ver: 4 }))).toBe('user');
+  });
+});
+
+describe('a malformed announcement from another instance', () => {
+  const applyEvent = (s: RevocationService, raw: string) =>
+    (s as unknown as { applyEvent(r: string): void }).applyEvent(raw);
+
+  it('does not un-revoke a user by omitting the version', async () => {
+    // 0 is the version every account starts at, so falling back to it turns
+    // a truncated message into an un-revocation.
+    const s = await service(makeDb([], [{ id: 'u1', tokenVersion: 3 }]));
+    expect(s.isRevoked(token({ ver: 1 }))).toBe('user');
+
+    applyEvent(s, JSON.stringify({ kind: 'user', userId: 'u1' }));
+    expect(s.isRevoked(token({ ver: 1 }))).toBe('user');
+  });
+
+  it('never moves a stored version backwards', async () => {
+    const s = await service(makeDb([], [{ id: 'u1', tokenVersion: 3 }]));
+    applyEvent(s, JSON.stringify({ kind: 'user', userId: 'u1', version: 1 }));
+    expect(s.isRevoked(token({ ver: 2 }))).toBe('user');
+  });
+
+  it('ignores nonsense without throwing', async () => {
+    const s = await service(makeDb());
+    expect(() => applyEvent(s, 'not json')).not.toThrow();
+    expect(() => applyEvent(s, JSON.stringify({ kind: 'wat' }))).not.toThrow();
+  });
+});

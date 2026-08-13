@@ -207,8 +207,9 @@ they answer different questions:
 **The snapshot, and why the guard still does no IO.** Both planes check
 revocation on every request and every handshake, and both were built to do no
 database lookup at all. So `RevocationService` holds an in-memory snapshot —
-the jtis revoked in the last twelve hours, and the users who have ever revoked
-everything. Both sets are small by construction; for most deployments the
+each revoked `jti` until the token it refuses would have expired anyway, and
+the users who have ever revoked everything. (Twelve hours is only the default
+lifetime; `JWT_EXPIRES_IN` moves it, and the retention moves with it.) Both sets are small by construction; for most deployments the
 second is empty. The check is a `Set.has` and a `Map.get`.
 
 **Postgres is the truth, Redis is only the news.** Revocation that forgets on
