@@ -13,3 +13,7 @@ export const isUniqueViolation = (err: unknown, field: string): boolean =>
   ((err.meta?.target as string[] | undefined) ?? []).some((t) =>
     t.includes(field),
   );
+
+/** True when a write failed because the target row does not exist (P2025). */
+export const isNotFound = (err: unknown): boolean =>
+  err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025';

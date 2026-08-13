@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from '@emotion/styled';
 import { useAuth } from '../contexts/AuthContext';
+import { safeReturnTo } from '../services/return-to';
 import { color, font, button, card } from '../theme';
 import { Wordmark } from '../components/Icons';
 
@@ -129,7 +130,10 @@ export const AuthCallbackPage: React.FC = () => {
     if (elev) {
       sessionStorage.setItem('mw_elevated', elev);
       window.history.replaceState(null, '', window.location.pathname);
-      navigate(to && to.startsWith('/') ? to : '/', { replace: true });
+      // safeReturnTo, not a bare startsWith('/') - '//evil.example' passes
+      // the loose check and leaves this origin. The same helper guards the
+      // sign-in branch; the reauth branch must not be the weak door.
+      navigate(safeReturnTo(to) ?? '/', { replace: true });
       return;
     }
 
@@ -146,9 +150,7 @@ export const AuthCallbackPage: React.FC = () => {
       .then(() => {
         // `to` came back sealed in a server-side cookie, and the server
         // already refused anything that was not a path on this site.
-        navigate(to && to.startsWith('/') && !to.startsWith('//') ? to : '/', {
-          replace: true,
-        });
+        navigate(safeReturnTo(to) ?? '/', { replace: true });
       })
       .catch(() => setFailure(fallback));
   }, [navigate, signInWithToken]);

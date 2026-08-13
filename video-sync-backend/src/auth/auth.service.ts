@@ -15,7 +15,7 @@ import { GoogleAuthError, GoogleIdentity } from './google/google-oauth.service';
 import { usernameBase, usernameCandidates } from './google/username';
 import { versionOf } from './token-payload';
 import { RevocationService } from './revocation.service';
-import { isUniqueViolation } from './unique-violation';
+import { isNotFound, isUniqueViolation } from './unique-violation';
 
 const GOOGLE = 'google';
 
@@ -323,9 +323,23 @@ export class AuthService {
         new Date((payload.exp ?? nowS + 43200) * 1000),
       );
       if (!won) {
-        await this.revocations.revokeAllForUser(userId);
+        // Lost the CREATE race for this jti. The review that added this
+        // guard treated that as compromise and burned the whole family -
+        // but this app stores one token per browser, shared across tabs, so
+        // two tabs refreshing the same token at once is ordinary use, not
+        // theft, and burning the family signed people out everywhere for
+        // opening a second tab.
+        //
+        // So the loser simply fails its own refresh: the winner already
+        // minted the one new token, the loser's tab adopts it through the
+        // storage listener, and no session but this redundant call ends.
+        // The theft this still stops is the case that matters and is NOT a
+        // race: a token reused AFTER its rotation was recorded is caught by
+        // the durable-jti check above, because the winning rotation revoked
+        // that jti. Concurrent reuse is indistinguishable from a second tab
+        // and is not worth ending every session over.
         throw new UnauthorizedException(
-          'This session was refreshed from another place - sign in again',
+          'This session was just refreshed elsewhere - reload',
         );
       }
     }
@@ -471,11 +485,25 @@ export class AuthService {
       throw new BadRequestException('Passwords are at least 8 characters');
     }
     const hashed = await bcrypt.hash(newPassword, 10);
-    const user = await this.database.user.update({
-      where: { id: userId },
-      data: { password: hashed, tokenVersion: { increment: 1 } },
-      select: { id: true, username: true, email: true, tokenVersion: true },
-    });
+    let user: {
+      id: string;
+      username: string;
+      email: string;
+      tokenVersion: number;
+    };
+    try {
+      user = await this.database.user.update({
+        where: { id: userId },
+        data: { password: hashed, tokenVersion: { increment: 1 } },
+        select: { id: true, username: true, email: true, tokenVersion: true },
+      });
+    } catch (err) {
+      // A valid token over a row that has since been deleted. Every other
+      // "no such session" path answers 401; a 500 here would be the odd one
+      // out and would leak that the account existed.
+      if (isNotFound(err)) throw new UnauthorizedException('No such session');
+      throw err;
+    }
     // the version moved in the SAME write as the password; announce it so
     // live sockets close and other instances hear (this also refreshes the
     // in-memory snapshot on this instance)

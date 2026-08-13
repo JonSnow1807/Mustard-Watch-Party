@@ -78,6 +78,30 @@ const NO_TOKEN_NEEDED = [
   '/auth/google/callback',
 ];
 
+/**
+ * Read the Authorization header regardless of case or container. axios wraps
+ * headers in AxiosHeaders (case-insensitive via .get); tests and some code
+ * paths pass a plain object. Both the "is one already set" guard and the
+ * "was the stored token the one rejected" comparison have to agree with what
+ * axios will actually send, so neither may assume the exact key 'Authorization'.
+ */
+const authHeader = (
+  headers: unknown,
+): string | undefined => {
+  if (!headers) return undefined;
+  const h = headers as {
+    get?: (name: string) => unknown;
+    Authorization?: unknown;
+    authorization?: unknown;
+  };
+  if (typeof h.get === 'function') {
+    const v = h.get('Authorization');
+    return typeof v === 'string' ? v : undefined;
+  }
+  const v = h.Authorization ?? h.authorization;
+  return typeof v === 'string' ? v : undefined;
+};
+
 api.interceptors.request.use(config => {
   if (NO_TOKEN_NEEDED.some(path => config.url?.startsWith(path))) {
     return config;
@@ -85,8 +109,9 @@ api.interceptors.request.use(config => {
   const token = readStoredToken();
   // An explicitly-set header wins: setPasswordElevated carries the
   // five-minute elevated token, and overwriting it with the stored session
-  // here would silently un-elevate the one call that needs it.
-  if (token && !config.headers.Authorization) {
+  // here would silently un-elevate the one call that needs it. Read
+  // case-insensitively so a header set as 'authorization' is still seen.
+  if (token && !authHeader(config.headers)) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -108,7 +133,7 @@ api.interceptors.response.use(
     // The rejected request carried a credential that is NOT the stored one
     // in every one of those cases; comparing to the stored token tells the
     // "my session died" case apart from "the thing I was proving failed".
-    const sent = error?.config?.headers?.Authorization;
+    const sent = authHeader(error?.config?.headers);
     const stored = readStoredToken();
     if (
       error?.response?.status === 401 &&

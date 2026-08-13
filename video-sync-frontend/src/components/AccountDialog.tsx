@@ -244,10 +244,17 @@ export const AccountDialog: React.FC<{ onClose: () => void }> = ({
       } catch (err: unknown) {
         const status = (err as { response?: { status?: number } })?.response
           ?.status;
+        if (status === 401 && elevated) {
+          // the five-minute elevation is spent or expired; drop it so the
+          // UI returns to "Confirm with Google" instead of leaving a dead
+          // password form the person cannot escape without closing the tab
+          sessionStorage.removeItem('mw_elevated');
+          setElevated(null);
+        }
         toast.error(
           status === 401
             ? elevated
-              ? 'The Google confirmation expired - try again'
+              ? 'The Google confirmation expired - confirm again'
               : 'The current password is wrong'
             : status === 400
               ? 'Passwords are at least 8 characters'

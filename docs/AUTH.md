@@ -305,13 +305,14 @@ still works. The caller alone continues, on the token the response carries.
 
 ## Known gaps
 
-- No token **refresh**. A session ends when its token expires; there is no
-  way to extend one without signing in again.
+- ~~No token refresh~~ — added (see the Sessions section above): `POST
+  /auth/refresh` slides a live session, rotating and capping it.
 - ~~`JWT_EXPIRES_IN` is dead config~~ — fixed. Tokens **default** to `12h` and
   a deployment can change that by setting the variable; it is no longer a
   fixed lifetime. `12h` is what was hardcoded while the config file
   advertised `7d` to nobody. Raising it raises how long a stolen token is
-  useful, and there is still no revocation, so it is not a free knob. The
+  useful; revocation (above) and refresh rotation both narrow that window,
+  but it is still not a free knob. The
   value is validated at boot: a plain number means seconds, durations must be
   lowercase (`12h`, `30m`), and anything else refuses to start — because
   `jsonwebtoken` reads a unitless string as *milliseconds*, so `3600` would

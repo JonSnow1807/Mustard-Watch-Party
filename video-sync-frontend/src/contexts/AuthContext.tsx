@@ -182,9 +182,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
     const stored = localStorage.getItem('user');
     if (stored) {
-      const parsed = JSON.parse(stored) as { id?: string };
-      if (parsed.id === id) {
-        localStorage.setItem('user', JSON.stringify({ ...parsed, token }));
+      try {
+        const parsed = JSON.parse(stored) as { id?: string };
+        if (parsed.id === id) {
+          localStorage.setItem('user', JSON.stringify({ ...parsed, token }));
+        }
+      } catch {
+        // a corrupt or half-written entry is not worth throwing out of a
+        // refresh handler or the password-change path; leave storage alone
       }
     }
   }, []);

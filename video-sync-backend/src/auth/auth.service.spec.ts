@@ -835,6 +835,22 @@ describe('setting a password', () => {
     ).rejects.toMatchObject({ status: 400 });
     expect(db.user.update).not.toHaveBeenCalled();
   });
+
+  it('answers a deleted account with 401, not a 500', async () => {
+    // a valid token over a since-deleted row: P2025 on update. Every other
+    // no-such-session path is 401; a 500 here would be the odd one out and
+    // would leak that the account had existed.
+    const db = makeDb();
+    db.user.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Record not found', {
+        code: 'P2025',
+        clientVersion: 'test',
+      }),
+    );
+    await expect(
+      serviceWith(db).setPassword('u1', 'a-real-password'),
+    ).rejects.toMatchObject({ status: 401 });
+  });
 });
 
 describe('which re-auth gate an account needs', () => {
@@ -918,17 +934,20 @@ describe('refresh must not launder a revoked token back to life', () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it('treats a lost rotation race as compromise - revokes the whole family', async () => {
-    // two copies of one token refresh at once; the loser must not merely
-    // fail, it must burn every session including the winner's fresh token
+  it('401s a lost rotation race without burning the family - multi-tab is not theft', async () => {
+    // Two tabs share one token here, so a concurrent refresh of the same jti
+    // is ordinary use. The loser fails its own call; it must NOT sign every
+    // session out. Sequential reuse (a jti presented after its rotation was
+    // recorded) is the theft this still catches - via isJtiRevokedDurable,
+    // not via this race.
     const { service, revocations } = setup(0);
     (revocations.claimRevocation as jest.Mock).mockResolvedValue(false);
     await expect(
       service.refreshSession({ sub: 'u1', jti: 'j1', ver: 0, sess: nowS() }),
     ).rejects.toMatchObject({ status: 401 });
-    expect((revocations.revokeAllForUser as jest.Mock).mock.calls).toEqual([
-      ['u1'],
-    ]);
+    expect((revocations.revokeAllForUser as jest.Mock).mock.calls).toHaveLength(
+      0,
+    );
   });
 
   it('the happy path: claims the old jti, mints at the current version', async () => {

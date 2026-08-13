@@ -111,11 +111,16 @@ const l1 = (await call('/auth/register', {
   body: { username: 'launder' + rnd(), email: `l${rnd()}@e.com`, password: 'a-real-password' },
 })).body;
 const l2 = (await call('/auth/login', {
-  body: { username: decode(l1.token).name ?? '', password: 'a-real-password' },
-})).body || l1;
+  body: { username: decode(l1.token).name, password: 'a-real-password' },
+})).body;
+// The check is vacuous if l2 has no token: refresh with undefined sends no
+// Authorization header, the guard 401s, and the assertion passes having
+// laundered nothing. Assert the second session exists first.
+ok('SETUP: a second session to launder exists', Boolean(l2?.token),
+  `login status body: ${JSON.stringify(l2)?.slice(0, 80)}`);
 // use l1 to sign out everywhere, then try to REFRESH l2 (older version)
 await call('/auth/logout-all', { token: l1.token });
-const laundered = await call('/auth/refresh', { token: l2.token });
+const laundered = await call('/auth/refresh', { token: l2?.token });
 ok('a token from before logout-all cannot refresh itself back to life',
   laundered.status === 401, `status ${laundered.status}`);
 
