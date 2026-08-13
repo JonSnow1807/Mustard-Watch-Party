@@ -233,11 +233,22 @@ loop would reconnect forever with a dead token.
 
 **What is deliberately not covered**
 
-- **`relay-go` does not check revocation.** It verifies the signature and
-  nothing else, so a revoked token still satisfies the relay until it expires.
-  The relay carries timing traffic for a room the holder was already in;
-  closing that hole means giving the relay a view of the snapshot, which it
-  has no database or Redis connection for today.
+- ~~`relay-go` does not check revocation~~ — closed, and the reason it was
+  ever listed as unclosable was false: this doc claimed the relay "has no
+  database or Redis connection", but the relay executes the shared Lua
+  against the **same Redis** as everything else (docs/RELAY.md). The backend
+  now mirrors the revocation snapshot into Redis (`revoked:jti`,
+  `revoked:userver`, rebuilt atomically on every refresh); the relay checks
+  the mirror at accept, subscribes to `mustard:revocations` for immediate
+  eviction, and sweeps every 30s for revocations it missed and for tokens
+  that simply expired — a relay connection used to outlive its token
+  indefinitely, since `exp` was never even required there. Postgres remains
+  the only durable record. If Redis flushes, the relay falls open to
+  signature-only **until the mirror is rebuilt** — one refresh interval when
+  the next refresh succeeds, longer if Postgres or Redis stay unreachable,
+  since nothing here has a completion deadline. The bound is conditional on
+  a healthy refresh, not a hard ceiling; a backend instance that missed a
+  pub/sub message carries the same conditional bound.
 - **A token with no `jti`** — issued before this existed — cannot be revoked
   individually. `logout` reports `{revoked: false}` rather than claiming a
   success that did nothing. `logout-all` still reaches it.

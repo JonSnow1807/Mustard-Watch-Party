@@ -81,7 +81,19 @@ discipline of proving the protocol implementation-independent.
 | S→C | 0x06 JoinAck | Timeline payload |
 | S→C | 0x07 Rejected | `reason u8` |
 
-Auth: the same JWT, via `?token=` at upgrade. Scope honesty: no Postgres —
+Auth: the same JWT, via `?token=` at upgrade, with `exp` REQUIRED
+(golang-jwt validates expiry only when present, so a token minted without
+one never expired here) and a subject required, matching the Node socket
+plane's refusal of subject-less tokens. Revocation: the relay reads the
+backend's Redis mirror (`revoked:jti` set, `revoked:userver` hash) at
+accept, subscribes to `mustard:revocations` to close affected connections
+within a round trip, and a 30s sweep catches missed events and expired
+tokens. Eviction closes the WEBSOCKET only — `c.send` is owned by the
+handler's defer, and closing it from outside races `trySend` into a panic
+that would take every room down with it. Room names get the same
+separator-free charset as cmdId now: they are spliced into three Redis key
+shapes, and a room containing `:` addressed someone else's keyspace.
+Scope honesty: no Postgres —
 any authenticated user may control (authorization was proven on the Node
 plane; this plane measures transport and runtime); single instance,
 in-process fanout; the 10s snapshot sweep runs with identical semantics.

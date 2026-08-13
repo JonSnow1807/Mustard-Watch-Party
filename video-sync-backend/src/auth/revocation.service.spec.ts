@@ -17,10 +17,41 @@ const makeDb = (
   },
 });
 
-const service = async (db: ReturnType<typeof makeDb>) => {
-  const s = new RevocationService(db as unknown as DatabaseService, null, null);
+const service = async (db: ReturnType<typeof makeDb>, kv: unknown = null) => {
+  const s = new RevocationService(
+    db as unknown as DatabaseService,
+    null,
+    null,
+    kv as never,
+  );
   await s.refresh();
   return s;
+};
+
+/** An ioredis double that records what the mirror writes. */
+const makeKv = () => {
+  const calls: unknown[][] = [];
+  const record =
+    (name: string) =>
+    (...args: unknown[]) => {
+      calls.push([name, ...args]);
+      return kv; // multi chains
+    };
+  const kv: Record<string, unknown> = {
+    calls,
+    multi: () => kv,
+    del: record('del'),
+    sadd: record('sadd'),
+    hset: record('hset'),
+    rename: record('rename'),
+    exec: () => {
+      calls.push(['exec']);
+      return Promise.resolve([]);
+    },
+  };
+  return kv as unknown as {
+    calls: unknown[][];
+  };
 };
 
 const token = (over: Partial<TokenPayload> = {}): TokenPayload => ({
@@ -79,6 +110,7 @@ describe('what the snapshot refuses', () => {
     // retries.
     const s = new RevocationService(
       makeDb() as unknown as DatabaseService,
+      null,
       null,
       null,
     );
@@ -283,5 +315,71 @@ describe('a malformed announcement from another instance', () => {
     const s = await service(makeDb());
     expect(() => applyEvent(s, 'not json')).not.toThrow();
     expect(() => applyEvent(s, JSON.stringify({ kind: 'wat' }))).not.toThrow();
+  });
+});
+
+describe('the Redis mirror, which is how the relay learns', () => {
+  it('rebuilds under temp keys and swaps with RENAME, never in place', async () => {
+    // A reader mid-rebuild must not see a half-written set: a relay that
+    // reads between DEL and SADD would briefly trust revoked tokens.
+    const kv = makeKv();
+    await service(makeDb([{ jti: 'j1' }], [{ id: 'u1', tokenVersion: 2 }]), kv);
+
+    expect(kv.calls).toEqual([
+      ['del', 'revoked:jti:tmp', 'revoked:userver:tmp'],
+      ['sadd', 'revoked:jti:tmp', 'j1'],
+      ['rename', 'revoked:jti:tmp', 'revoked:jti'],
+      ['hset', 'revoked:userver:tmp', 'u1', '2'],
+      ['rename', 'revoked:userver:tmp', 'revoked:userver'],
+      ['exec'],
+    ]);
+  });
+
+  it('DELs the live keys when nothing is revoked - RENAME of nothing throws', async () => {
+    const kv = makeKv();
+    await service(makeDb(), kv);
+    expect(kv.calls).toEqual([
+      ['del', 'revoked:jti:tmp', 'revoked:userver:tmp'],
+      ['del', 'revoked:jti'],
+      ['del', 'revoked:userver'],
+      ['exec'],
+    ]);
+  });
+
+  it('mirrors a single revocation immediately, not on the next refresh', async () => {
+    // The pub/sub message and the mirror write travel together: a relay
+    // that misses the message still reads the SADD on its next poll, and
+    // one that gets the message can trust the mirror is already updated.
+    const kv = makeKv();
+    const s = await service(makeDb(), kv);
+    kv.calls.length = 0;
+
+    await s.revokeToken('j9', 'u1', new Date(Date.now() + 3600_000));
+    expect(kv.calls).toContainEqual(['sadd', 'revoked:jti', 'j9']);
+
+    await s.revokeAllForUser('u1');
+    expect(kv.calls).toContainEqual(['hset', 'revoked:userver', 'u1', '1']);
+  });
+
+  it('works with no Redis at all - the mirror is optional, the truth is not', async () => {
+    const s = await service(makeDb());
+    await expect(
+      s.revokeToken('j1', 'u1', new Date(Date.now() + 1000)),
+    ).resolves.toBeUndefined();
+  });
+
+  it('a mirror failure does not fail the revocation', async () => {
+    // The revocation is real once Postgres has it; the mirror is a cache.
+    // Refusing to sign someone out because a cache write failed would be
+    // backwards.
+    const kv = makeKv();
+    (kv as unknown as { sadd: () => never }).sadd = () => {
+      throw new Error('redis down');
+    };
+    const s = await service(makeDb(), kv);
+    await expect(
+      s.revokeToken('j1', 'u1', new Date(Date.now() + 1000)),
+    ).resolves.toBeUndefined();
+    expect(s.isRevoked(token({ jti: 'j1' }))).toBe('token');
   });
 });
