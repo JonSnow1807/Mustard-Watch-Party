@@ -22,6 +22,7 @@ duplicate or reordering.
 |---|---|---|---|---|---|
 | `node-25bots-dup-injection.json` | node / 3-instance lab / nginx | 25 | 4 | **0** | 4 |
 | `relay-5bots-dup-injection.json` | relay-go / raw-WS binary | 5 | 4 | **0** | 4 |
+| `node-10bots-dup-reorder-chaos.json` | node / single instance | 10 | 6 | **0** | 6 + 1 swapped pair |
 
 What "absorbed" means, per plane:
 
@@ -37,7 +38,16 @@ What "absorbed" means, per plane:
   that otherwise produces none), through the extended binary control frame
   — same Lua, same dedup, cross-language.
 
-Both summaries carry `gitSha` (clean — the stamp appends `-dirty` when the
+The chaos run composes both modes: every control's same-`cmdId` twin AND a
+swapped seek pair in one fleet. Its gates: exact commit-count equality both
+directions (6 commands, 6 commits - the pair's members each committed once,
+their twins never), and the fleet-wide witness that the FIRST-minted seek
+committed last (every bot's `lastSeekMediaTime` at 500). `replay-check`
+ran immediately after and PASSED: with duplicates and reordering injected,
+every room's log still replays exactly to live state. Nightly now runs this
+same chaos fleet and post-chaos reconciliation on every build.
+
+All summaries carry `gitSha` (clean — the stamp appends `-dirty` when the
 tree does not match) and hardware. A failed double-apply would surface as a
 phantom seq: a commit consumed by the duplicate that the room's clients
 observe as a gap. Before this design, the ioredis resend path produced

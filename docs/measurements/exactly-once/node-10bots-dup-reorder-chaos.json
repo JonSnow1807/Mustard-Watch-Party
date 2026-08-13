@@ -1,0 +1,28 @@
+{
+  "runId": "bots-msrtzmk8",
+  "gitSha": "059fc3c8f6cfad5f94d186a9a9ab206bf1d850da",
+  "hardware": "10 cores (Apple M2 Pro)",
+  "controller": "reactive",
+  "plane": "node",
+  "n": 10,
+  "durationS": 120,
+  "steadySamples": 3327,
+  "driftMs": {
+    "p50": 75.08657532385143,
+    "p95": 113.56394670117353,
+    "p99": 299.72561519861074
+  },
+  "slopeMsPerMin": -5.107583223298207,
+  "thetaErrorP95Ms": 2.3714599609375,
+  "seqGaps": 0,
+  "seqReorders": 0,
+  "seqDuplicates": 6,
+  "reconnects": 0,
+  "rejoinFailures": 0,
+  "dupControlsSent": 6,
+  "reorderPairsSent": 1,
+  "scriptedControls": 6,
+  "controlCommitsObserved": 6,
+  "handlerErrors": 0,
+  "rejectedControls": 0
+}
