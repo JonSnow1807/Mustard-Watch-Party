@@ -40,16 +40,16 @@ measurable on one machine.
 Same machine, same load client, same Redis, one relay under test at a time.
 Committed artifacts: `docs/measurements/relay-load/loadtest-*.json`.
 
-Committed run `fc6e0b9` (clean tree), the numbers cited here:
+All four tables are the committed run `bf9c5bf` (clean tree).
 
 **1,000 connections**
 
 | | RSS / conn | RTT p50 / p95 / p99.9 / max |
 |---|---|---|
-| relay-go | 43 KB | 13 / 22 / 24 / 24 ms |
-| relay-rs | 16 KB | 11 / 17 / 23 / 23 ms |
+| relay-go | 55.7 KB | 13 / 21 / 25 / 26 ms |
+| relay-rs | 15.6 KB | 10 / 19 / 21 / 21 ms |
 
-**10,000 connections** (committed run `bf9c5bf`)
+**10,000 connections**
 
 | | RSS / conn | RTT p50 / p95 / p99.9 / max | CPU% |
 |---|---|---|---|
@@ -66,29 +66,31 @@ run to run. See the honesty note.
 
 ### What the numbers say
 
-1. **Memory: ~3× at scale, and rock-steady.** Go held ~49 KB per connection,
-   Rust ~15 KB — the most consistent result across every run. At 10k that is
-   ~490 MB versus ~150 MB; extrapolated to 100k it is roughly 4.9 GB versus
-   1.5 GB, the difference between fitting on one box and not. Go's
-   goroutine-per-connection stack plus GC headroom is the cost; Rust's
-   per-task future is smaller and there is no GC headroom.
+1. **Memory: ~3× at scale, and rock-steady — the clean result.** Go held
+   ~40 KB per connection at 10k, Rust ~15 KB, and this ratio was the most
+   consistent finding across every run. At 10k that is ~400 MB versus ~150 MB;
+   extrapolated to 100k it is roughly 4 GB versus 1.5 GB, the difference
+   between fitting on one box and not. Go's goroutine-per-connection stack
+   plus GC headroom is the cost; Rust's per-task future is smaller and there
+   is no GC headroom.
 
-2. **Tail latency is where Rust separates, and its VARIANCE is the GC story.**
-   At 10k the median gap is modest (45 vs 63 ms), but the tail is not, and the
-   tail's *instability* is the tell. Across runs, Rust's P99.9 held near
-   167–175 ms; Go's ranged from 238 ms (this committed run) to 390 ms and a
-   545 ms worst-case (an earlier run). Rust's tail tracks its median run to
-   run; Go's does not, because it is set by when the garbage collector happens
-   to stop the world — and at 10k connections a multi-millisecond pause lands
-   on someone. A GC-free runtime does not have that failure mode. This is
-   exactly the advantage the drift measurement (which tied) was structurally
-   blind to.
+2. **Latency: a modest, consistent median/p95 edge; the extreme tail is
+   inconclusive on this hardware.** Rust's median and p95 were steadily a bit
+   lower (50/155 vs 64/193 ms at 10k, similarly at 1k). The p99.9 is where an
+   earlier write-up of this study overclaimed: one run had Go at 390 ms with a
+   545 ms max against Rust's 175 ms, and that got framed as a clean GC-pause
+   signature. Two further runs did not hold it — Go 238 and 252 ms, Rust 167
+   and **270** ms, i.e. one run put Rust's p99.9 *above* Go's. On a single box
+   with the load client contending with both servers for ten cores, the p99.9
+   carries too much scheduling and client-contention noise to attribute to
+   GC. A GC-free runtime avoiding stop-the-world pauses is a real hypothesis,
+   but **this harness on this machine did not measure it** — isolating it
+   needs the client and servers on separate Linux hosts.
 
-3. **CPU: the committed 10k run recorded 9.2% for Go and 1.6% for Rust** —
-   Rust at roughly a sixth of Go's, ~83% lower. Treat the exact figure as
-   indicative (`ps %cpu` is a coarse instantaneous snapshot, not integrated
-   over the run), but the direction agrees decisively with the memory and
-   tail results.
+3. **CPU: ~a fifth.** The committed 10k run recorded 9.2% for Go and 1.6% for
+   Rust. Treat the exact figure as indicative (`ps %cpu` is a coarse
+   instantaneous snapshot), but the direction agrees with the memory result —
+   the two steady, reproducible wins.
 
 ### Honesty about the measurement
 
