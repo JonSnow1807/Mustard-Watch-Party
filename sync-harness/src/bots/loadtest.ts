@@ -66,6 +66,9 @@ const mintToken = async (apiUrl: string): Promise<string> => {
       email: `load-${rnd}@example.com`,
       password: 'a-real-password',
     }),
+    // a load harness must not hang forever on a wedged backend before it even
+    // starts; fail fast so the operator sees it rather than a silent stall
+    signal: AbortSignal.timeout(10_000),
   });
   const body = (await r.json()) as { token?: string };
   if (!body.token) throw new Error(`no token from ${apiUrl}/auth/register: ${JSON.stringify(body)}`);
@@ -99,15 +102,28 @@ const pingFrame = (id: number): Buffer => {
 
 async function main() {
   const args = parse();
+  // Validate before spending a minute on a run whose result would be
+  // meaningless: a non-positive n measures nothing, and a bad pid makes every
+  // memory sample throw or read zero.
+  if (!Number.isInteger(args.n) || args.n <= 0) {
+    throw new Error(`--n must be a positive integer, got ${args.n}`);
+  }
+  if (!Number.isInteger(args.holdS) || args.holdS <= 0) {
+    throw new Error(`--hold must be a positive integer, got ${args.holdS}`);
+  }
+  if (args.serverPid !== null && !Number.isInteger(args.serverPid)) {
+    throw new Error(`--server-pid must be an integer, got ${args.serverPid}`);
+  }
   const token = await mintToken(args.apiUrl);
   const wsBase = args.wsUrl.replace(/^http/, 'ws');
 
   const sockets: WebSocket[] = [];
   const rtts: number[] = [];
-  const pending = new Map<number, number>(); // echo id -> send time
   let nextId = 1;
   let connectErrors = 0;
-  let connected = 0;
+  let opened = 0; // cumulative successful opens
+  let closed = 0; // post-open closes
+  let unansweredPings = 0;
 
   const baseline = args.serverPid ? sample(args.serverPid) : null;
 
@@ -120,28 +136,47 @@ async function main() {
       perMessageDeflate: false,
     });
     ws.binaryType = 'nodebuffer';
+    // one outstanding ping per socket: the timer only sends when this is null,
+    // and a pong (or the next tick finding it still set) resolves it. Bounds
+    // client memory regardless of --hold, and stops a stalled relay from
+    // inflating client state and thereby altering the load being measured.
+    let outstanding: { id: number; sentAt: number } | null = null;
     ws.on('open', () => {
-      connected++;
+      opened++;
+      (ws as unknown as { _opened?: boolean })._opened = true;
+    });
+    ws.on('close', () => {
+      // only count a close of a socket that had opened, so the denominator
+      // reflects connections that actually existed
+      if ((ws as unknown as { _opened?: boolean })._opened) closed++;
     });
     ws.on('message', (data: Buffer) => {
       if (data.length >= 9 && data.readUInt8(0) === 0x02) {
         const id = data.readDoubleLE(1);
-        const sent = pending.get(id);
-        if (sent !== undefined) {
-          rtts.push(Date.now() - sent);
-          pending.delete(id);
+        if (outstanding && outstanding.id === id) {
+          rtts.push(Date.now() - outstanding.sentAt);
+          outstanding = null;
         }
       }
     });
     ws.on('error', () => {
       connectErrors++;
     });
+    (ws as unknown as { _ping: () => void })._ping = () => {
+      if (outstanding) {
+        // the previous ping never came back: count it dropped, don't stack
+        unansweredPings++;
+      }
+      const id = nextId++;
+      outstanding = { id, sentAt: Date.now() };
+      ws.send(pingFrame(id));
+    };
     sockets.push(ws);
     if (i % 50 === 49) await sleep(10);
   }
 
   // wait for the fleet to finish connecting (or give up after a bound)
-  for (let w = 0; w < 200 && connected + connectErrors < args.n; w++) {
+  for (let w = 0; w < 200 && opened + connectErrors < args.n; w++) {
     await sleep(100);
   }
   const acceptMs = Date.now() - openStart;
@@ -151,9 +186,7 @@ async function main() {
   const pingTimer = setInterval(() => {
     for (const ws of sockets) {
       if (ws.readyState === WebSocket.OPEN) {
-        const id = nextId++;
-        pending.set(id, Date.now());
-        ws.send(pingFrame(id));
+        (ws as unknown as { _ping: () => void })._ping();
       }
     }
   }, 1000);
@@ -162,6 +195,10 @@ async function main() {
   // ping load is steady - the honest "cost at N connections" moment.
   await sleep((args.holdS / 2) * 1000);
   const mid = args.serverPid ? sample(args.serverPid) : null;
+  // active at the sample instant: opens minus post-open closes. Dividing RSS
+  // growth by the count that ACTUALLY held a socket, not the cumulative
+  // opens, so a relay that drops clients cannot look cheaper than it is.
+  const activeConnections = opened - closed;
   await sleep((args.holdS / 2) * 1000);
 
   clearInterval(pingTimer);
@@ -169,8 +206,8 @@ async function main() {
 
   rtts.sort((a, b) => a - b);
   const rssPerConnKb =
-    baseline && mid && connected > 0
-      ? (mid.rssKb - baseline.rssKb) / connected
+    baseline && mid && activeConnections > 0
+      ? (mid.rssKb - baseline.rssKb) / activeConnections
       : null;
 
   const result = {
@@ -178,10 +215,13 @@ async function main() {
     plane: args.plane,
     ws: args.wsUrl,
     requested: args.n,
-    connected,
+    opened,
+    closedAfterOpen: closed,
+    activeConnections,
     connectErrors,
+    unansweredPings,
     acceptMs,
-    acceptPerSec: connected > 0 ? Math.round((connected / acceptMs) * 1000) : 0,
+    acceptPerSec: opened > 0 ? Math.round((opened / acceptMs) * 1000) : 0,
     pings: rtts.length,
     rttP50: percentile(rtts, 50),
     rttP95: percentile(rtts, 95),

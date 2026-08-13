@@ -307,14 +307,25 @@ impl Server {
             .hgetall::<_, HashMap<String, String>>(REVOKED_USERVER_KEY)
             .await;
 
+        // Merge + replace UNDER the live write lock. That lock is the
+        // serialization point against remember_*, which also holds it across
+        // its live-and-pending writes. A first version pending-buffered but
+        // still lost a revocation to one interleaving: remember wrote live,
+        // then refresh replaced live wholesale, and remember's pending insert
+        // arrived after the merge had already read pending. Holding the live
+        // lock across (read pending -> replace) here, and across (insert live
+        // -> insert pending) there, closes it in both orders. The async Redis
+        // reads above already happened without any lock held.
         if let Ok(jtis) = jtis {
+            let mut live = self.revoked_jti.write().unwrap();
             let mut next: HashSet<String> = jtis.into_iter().collect();
             for j in self.pending_jti.read().unwrap().iter() {
                 next.insert(j.clone()); // union: never drop a mid-refresh revoke
             }
-            *self.revoked_jti.write().unwrap() = next;
+            *live = next;
         }
         if let Ok(pairs) = pairs {
+            let mut live = self.user_versions.write().unwrap();
             let mut next: HashMap<String, i64> = pairs
                 .into_iter()
                 .filter_map(|(k, v)| v.parse::<i64>().ok().map(|n| (k, n)))
@@ -324,7 +335,7 @@ impl Server {
                 let cur = next.get(id).copied().unwrap_or(0);
                 next.insert(id.clone(), cur.max(v));
             }
-            *self.user_versions.write().unwrap() = next;
+            *live = next;
         }
 
         self.refreshing.store(false, Ordering::SeqCst);
@@ -332,22 +343,25 @@ impl Server {
         self.pending_versions.write().unwrap().clear();
     }
 
-    /// Record a revoked jti into the snapshot, and into the pending buffer if a
-    /// refresh could otherwise clobber it.
+    /// Record a revoked jti. The pending insert happens WHILE the live lock is
+    /// held, so it cannot land between refresh's read-of-pending and its
+    /// replacement: either remember runs first (refresh then sees jti in
+    /// pending and merges it) or refresh runs first (remember's live insert
+    /// survives the replacement, since it is already done).
     fn remember_jti(&self, jti: &str) {
-        self.revoked_jti.write().unwrap().insert(jti.to_string());
+        let mut live = self.revoked_jti.write().unwrap();
+        live.insert(jti.to_string());
         if self.refreshing.load(Ordering::SeqCst) {
             self.pending_jti.write().unwrap().insert(jti.to_string());
         }
     }
 
-    /// Same for a user version, and never downward.
+    /// Same for a user version, and never downward. Both writes under the live
+    /// lock, same reason as remember_jti.
     fn remember_version(&self, user: &str, v: i64) {
-        {
-            let mut m = self.user_versions.write().unwrap();
-            if v > m.get(user).copied().unwrap_or(0) {
-                m.insert(user.to_string(), v);
-            }
+        let mut live = self.user_versions.write().unwrap();
+        if v > live.get(user).copied().unwrap_or(0) {
+            live.insert(user.to_string(), v);
         }
         if self.refreshing.load(Ordering::SeqCst) {
             let mut p = self.pending_versions.write().unwrap();
@@ -447,48 +461,82 @@ async fn evict_revoked(server: &Arc<Server>, ev: &RevocationEvent) -> usize {
     closed
 }
 
-async fn revocation_loop(server: Arc<Server>, redis_url: String) {
-    // pub/sub needs its own connection (a subscribed connection cannot run
-    // ordinary commands).
-    if let Ok(client) = redis::Client::open(redis_url) {
-        if let Ok(mut pubsub_conn) = client.get_async_pubsub().await {
-            if pubsub_conn.subscribe(REVOCATION_CHANNEL).await.is_ok() {
-                let srv = server.clone();
-                tokio::spawn(async move {
-                    let mut stream = pubsub_conn.on_message();
-                    while let Some(msg) = stream.next().await {
-                        let payload: String = match msg.get_payload() {
-                            Ok(p) => p,
-                            Err(_) => continue,
-                        };
-                        if let Ok(ev) = serde_json::from_str::<RevocationEvent>(&payload) {
-                            // update the snapshot first, so a token revoked a
-                            // moment ago is refused at accept even before the
-                            // next timed refresh; then close live connections.
-                            match ev.kind.as_str() {
-                                "token" => {
-                                    if let Some(jti) = &ev.jti {
-                                        srv.remember_jti(jti);
-                                    }
-                                }
-                                "user" => {
-                                    if let (Some(uid), Some(v)) = (&ev.user_id, ev.version) {
-                                        if v > 0 {
-                                            srv.remember_version(uid, v);
-                                        }
-                                    }
-                                }
-                                _ => {}
-                            }
-                            let n = evict_revoked(&srv, &ev).await;
-                            if n > 0 {
-                                println!("revocation: closed {n} connection(s)");
-                            }
-                        }
-                    }
-                });
+/// Apply one revocation message to the snapshot and evict matching sockets.
+async fn apply_revocation_message(server: &Arc<Server>, payload: &str) {
+    let ev = match serde_json::from_str::<RevocationEvent>(payload) {
+        Ok(ev) => ev,
+        Err(_) => return,
+    };
+    // snapshot first, so a token revoked a moment ago is refused at accept
+    // before the next timed refresh; then close live connections.
+    match ev.kind.as_str() {
+        "token" => {
+            if let Some(jti) = &ev.jti {
+                server.remember_jti(jti);
             }
         }
+        "user" => {
+            if let (Some(uid), Some(v)) = (&ev.user_id, ev.version) {
+                if v > 0 {
+                    server.remember_version(uid, v);
+                }
+            }
+        }
+        _ => {}
+    }
+    let n = evict_revoked(server, &ev).await;
+    if n > 0 {
+        println!("revocation: closed {n} connection(s)");
+    }
+}
+
+/// Subscribe to the revocation channel and consume it until the stream ends,
+/// which redis-rs signals on a dropped connection. Returns so the caller can
+/// reconnect. Failures are LOGGED rather than silently swallowed - a dead
+/// pub/sub subscription degrades revocation to the 30s snapshot refresh, which
+/// is a real latency change worth a log line.
+async fn consume_revocations(server: &Arc<Server>, redis_url: &str) {
+    let client = match redis::Client::open(redis_url) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("revocation pub/sub: client open failed: {e}");
+            return;
+        }
+    };
+    let mut pubsub = match client.get_async_pubsub().await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("revocation pub/sub: connect failed: {e}");
+            return;
+        }
+    };
+    if let Err(e) = pubsub.subscribe(REVOCATION_CHANNEL).await {
+        eprintln!("revocation pub/sub: subscribe failed: {e}");
+        return;
+    }
+    let mut stream = pubsub.on_message();
+    while let Some(msg) = stream.next().await {
+        if let Ok(payload) = msg.get_payload::<String>() {
+            apply_revocation_message(server, &payload).await;
+        }
+    }
+    eprintln!("revocation pub/sub: stream ended (connection dropped)");
+}
+
+async fn revocation_loop(server: Arc<Server>, redis_url: String) {
+    // Reconnecting pub/sub: on a dropped connection the stream ends, and this
+    // re-subscribes after a short backoff. The 30s snapshot refresh below is
+    // the floor if pub/sub is down entirely, so revocation stays correct -
+    // just slower - across a Redis blip.
+    {
+        let srv = server.clone();
+        let url = redis_url.clone();
+        tokio::spawn(async move {
+            loop {
+                consume_revocations(&srv, &url).await;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        });
     }
 
     // the periodic floor: refreshes the snapshot (catching missed pub/sub

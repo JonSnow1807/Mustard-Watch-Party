@@ -74,9 +74,11 @@ Committed run `fc6e0b9` (clean tree), the numbers cited here:
    exactly the advantage the drift measurement (which tied) was structurally
    blind to.
 
-3. **CPU: roughly half.** Under the same 10k-ping load, Rust used about half
-   the CPU. Treat this as indicative — `ps %cpu` is a coarse snapshot — but
-   the direction agrees with the memory and tail results.
+3. **CPU: the committed 10k run recorded 9.2% for Go and 1.6% for Rust** —
+   Rust at roughly a sixth of Go's, ~83% lower. Treat the exact figure as
+   indicative (`ps %cpu` is a coarse instantaneous snapshot, not integrated
+   over the run), but the direction agrees decisively with the memory and
+   tail results.
 
 ### Honesty about the measurement
 
@@ -115,7 +117,7 @@ its place as a conformance target, which is where it is.
 
 ## Running it
 
-```
+```bash
 cargo build --release
 ./target/release/relay-rs -addr :3510 -redis redis://localhost:6380 \
     -jwt-secret <secret> -lua-dir ../video-sync-backend/src/sync/lua

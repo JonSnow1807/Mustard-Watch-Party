@@ -63,6 +63,15 @@ const opened = await new Promise((r) => {
   setTimeout(() => r('timeout'), 4000);
 });
 ok('SETUP: attacker connects and joins', opened === true);
+if (opened !== true) {
+  // nothing below can mean anything without a live attacker socket, and the
+  // asserts would fire against a dead connection and mislead
+  await redis.del('revoked:jti', 'revoked:userver');
+  redis.disconnect();
+  try { attacker.terminate(); } catch { /* never opened */ }
+  console.log('\n1 FAILED (attacker did not connect)');
+  process.exit(1);
+}
 // join the room
 const joinFrame = Buffer.alloc(2 + Buffer.from(room).length);
 joinFrame.writeUInt8(0x05, 0);
