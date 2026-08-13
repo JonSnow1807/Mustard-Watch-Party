@@ -36,7 +36,7 @@ at 1,000 and 10,000 concurrent connections.
 ### Results
 
 Same machine, same load client, same Redis, one relay under test at a time.
-Numbers are the committed artifacts in `sync-harness/runs/loadtest-*.json`.
+Committed artifacts: `docs/measurements/relay-load/loadtest-*.json`.
 
 Committed run `fc6e0b9` (clean tree), the numbers cited here:
 
@@ -56,10 +56,11 @@ Committed run `fc6e0b9` (clean tree), the numbers cited here:
 
 ### What the numbers say
 
-1. **Memory: ~3× at scale.** Go held ~45 KB per connection, Rust ~14 KB. At
-   10k that is 448 MB versus 143 MB; extrapolated to 100k it is roughly
-   4.5 GB versus 1.4 GB — the difference between fitting on one box and not.
-   Go's goroutine-per-connection stack plus GC headroom is the cost; Rust's
+1. **Memory: ~3× at scale, and rock-steady.** Go held ~49 KB per connection,
+   Rust ~15 KB — the most consistent result across every run. At 10k that is
+   ~490 MB versus ~150 MB; extrapolated to 100k it is roughly 4.9 GB versus
+   1.5 GB, the difference between fitting on one box and not. Go's
+   goroutine-per-connection stack plus GC headroom is the cost; Rust's
    per-task future is smaller and there is no GC headroom.
 
 2. **Tail latency is where Rust separates, and its VARIANCE is the GC story.**
