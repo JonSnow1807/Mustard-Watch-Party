@@ -119,6 +119,16 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
     socketInstance.on('disconnect', () => {
       console.log('Disconnected from server');
+      // Enforce the no-buffering contract the dedup TTL's soundness rests
+      // on (docs/SYNC_DESIGN.md, formal/SyncExactlyOnce.tla RetryWindow):
+      // an emit that raced a dying transport - connected still true, socket
+      // half-open - sits in socket.io's sendBuffer, and socket.io flushes
+      // that buffer on reconnect BEFORE app-level connect handlers run, so
+      // clearing on reconnect is too late. Cleared here, at the moment the
+      // death is detected, the stray is dropped instead of arriving
+      // arbitrarily late. A dropped gesture stays dropped; the user clicks
+      // again - the invariant sendIntent already documents.
+      socketInstance.sendBuffer = [];
       setConnected(false);
       // Only claim to be reconnecting once there is something to reconnect
       // TO. No toast: socket.io retries by itself, the status chip carries
