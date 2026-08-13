@@ -16,7 +16,7 @@
 //! taken two different ways.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock as StdRwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -26,7 +26,7 @@ use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::Deserialize;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{mpsc, Mutex, Notify, RwLock};
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -63,7 +63,11 @@ fn reason_code(reason: &str) -> u8 {
         "join" => 3,
         "snapshot" => 4,
         "succession" => 5,
-        _ => 3, // unknown reasons map to "join", as the Go map's zero-ish default
+        // relay-go does `reasonCodes[t.Reason]`, and a Go map returns the
+        // uint8 ZERO for a missing key - which is 0, not 3. A real reason like
+        // "set-video" is absent from the map on BOTH planes, so both must emit
+        // 0 for it or the wire byte at offset 30 diverges on identical state.
+        _ => 0,
     }
 }
 
@@ -215,7 +219,12 @@ struct RevocationEvent {
 
 // ---- server state ----
 
-type Tx = mpsc::UnboundedSender<Message>;
+/// Bounded, like relay-go's 256-slot channel: a slow or dead reader must
+/// not let the room's traffic pile up without limit in this connection's
+/// queue. A full queue drops (broadcast) or disconnects (direct replies),
+/// never grows.
+const SEND_BUFFER: usize = 256;
+type Tx = mpsc::Sender<Message>;
 
 /// One connected client. `tx` is the write half; the read task owns the socket.
 struct Conn {
@@ -223,6 +232,11 @@ struct Conn {
     tx: Tx,
     room: Mutex<Option<String>>,
     identity: Identity,
+    /// Fired by eviction to end the READ loop. relay-go's evict closes the
+    /// socket, which stops the reader; enqueuing a Close frame does not, so a
+    /// revoked client that ignores the Close could keep sending Control frames
+    /// and mutating Redis. This signal makes the read loop break deterministically.
+    close_signal: Arc<Notify>,
 }
 
 struct Server {
@@ -244,6 +258,14 @@ struct Server {
     /// hot-path cache, refreshed on a timer and updated by pub/sub.
     revoked_jti: StdRwLock<HashSet<String>>,
     user_versions: StdRwLock<HashMap<String, i64>>,
+    /// Revocations that pub/sub delivered WHILE a refresh was in flight. A
+    /// refresh reads Redis then replaces the snapshot; anything revoked
+    /// between the read and the replace would be lost. This is the identical
+    /// bug the Node RevocationService had and fixed - carried here by porting
+    /// the pre-fix design, and now fixed the same way.
+    refreshing: AtomicBool,
+    pending_jti: StdRwLock<HashSet<String>>,
+    pending_versions: StdRwLock<HashMap<String, i64>>,
 }
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -271,19 +293,67 @@ impl Server {
     /// flight. Fails soft: on a Redis error the previous snapshot stands,
     /// which is stale rather than wrong.
     async fn refresh_snapshot(&self) {
+        // Mark a refresh in flight so the pub/sub handler tees concurrent
+        // revocations into the pending buffers; merge them at the end so a
+        // revocation that landed mid-refresh is not overwritten by the stale
+        // read. Exactly the Node RevocationService fix, ported.
+        self.refreshing.store(true, Ordering::SeqCst);
+        self.pending_jti.write().unwrap().clear();
+        self.pending_versions.write().unwrap().clear();
+
         let mut r = self.redis.clone();
-        if let Ok(jtis) = r.smembers::<_, Vec<String>>(REVOKED_JTI_KEY).await {
-            *self.revoked_jti.write().unwrap() = jtis.into_iter().collect();
-        }
-        if let Ok(pairs) = r
+        let jtis = r.smembers::<_, Vec<String>>(REVOKED_JTI_KEY).await;
+        let pairs = r
             .hgetall::<_, HashMap<String, String>>(REVOKED_USERVER_KEY)
-            .await
-        {
-            let parsed = pairs
+            .await;
+
+        if let Ok(jtis) = jtis {
+            let mut next: HashSet<String> = jtis.into_iter().collect();
+            for j in self.pending_jti.read().unwrap().iter() {
+                next.insert(j.clone()); // union: never drop a mid-refresh revoke
+            }
+            *self.revoked_jti.write().unwrap() = next;
+        }
+        if let Ok(pairs) = pairs {
+            let mut next: HashMap<String, i64> = pairs
                 .into_iter()
                 .filter_map(|(k, v)| v.parse::<i64>().ok().map(|n| (k, n)))
                 .collect();
-            *self.user_versions.write().unwrap() = parsed;
+            for (id, &v) in self.pending_versions.read().unwrap().iter() {
+                // the HIGHER: a version must never move backwards.
+                let cur = next.get(id).copied().unwrap_or(0);
+                next.insert(id.clone(), cur.max(v));
+            }
+            *self.user_versions.write().unwrap() = next;
+        }
+
+        self.refreshing.store(false, Ordering::SeqCst);
+        self.pending_jti.write().unwrap().clear();
+        self.pending_versions.write().unwrap().clear();
+    }
+
+    /// Record a revoked jti into the snapshot, and into the pending buffer if a
+    /// refresh could otherwise clobber it.
+    fn remember_jti(&self, jti: &str) {
+        self.revoked_jti.write().unwrap().insert(jti.to_string());
+        if self.refreshing.load(Ordering::SeqCst) {
+            self.pending_jti.write().unwrap().insert(jti.to_string());
+        }
+    }
+
+    /// Same for a user version, and never downward.
+    fn remember_version(&self, user: &str, v: i64) {
+        {
+            let mut m = self.user_versions.write().unwrap();
+            if v > m.get(user).copied().unwrap_or(0) {
+                m.insert(user.to_string(), v);
+            }
+        }
+        if self.refreshing.load(Ordering::SeqCst) {
+            let mut p = self.pending_versions.write().unwrap();
+            if v > p.get(user).copied().unwrap_or(0) {
+                p.insert(user.to_string(), v);
+            }
         }
     }
 
@@ -322,10 +392,10 @@ impl Server {
         let rooms = self.rooms.read().await;
         if let Some(m) = rooms.get(room) {
             for peer in m.values() {
-                // trySend semantics: an unbounded channel never blocks, and a
-                // send to a gone receiver just errors and is dropped — the 10s
-                // sweep repairs a missed frame, exactly as in relay-go.
-                let _ = peer.tx.send(Message::Binary(frame.clone()));
+                // try_send: a full buffer (slow reader) or gone receiver drops
+                // the frame rather than blocking or growing - the 10s sweep
+                // repairs it, exactly as relay-go's trySend does on broadcast.
+                let _ = peer.tx.try_send(Message::Binary(frame.clone()));
             }
         }
     }
@@ -335,7 +405,13 @@ impl Server {
     /// or sending Close makes the write half finish, which ends the read task.
     /// This mirrors relay-go's "close the ws, never the send channel" rule.
     fn evict(conn: &Conn) {
-        let _ = conn.tx.send(Message::Close(None));
+        // Two half-measures that together are whole: the Close frame is the
+        // graceful goodbye the client sees, and the notify ends the READ loop
+        // even if the client ignores the Close - so a revoked client cannot
+        // keep sending frames, and the Conn is removed from the maps
+        // deterministically rather than leaking until the client chooses to go.
+        let _ = conn.tx.try_send(Message::Close(None));
+        conn.close_signal.notify_one();
     }
 }
 
@@ -392,17 +468,13 @@ async fn revocation_loop(server: Arc<Server>, redis_url: String) {
                             match ev.kind.as_str() {
                                 "token" => {
                                     if let Some(jti) = &ev.jti {
-                                        srv.revoked_jti.write().unwrap().insert(jti.clone());
+                                        srv.remember_jti(jti);
                                     }
                                 }
                                 "user" => {
                                     if let (Some(uid), Some(v)) = (&ev.user_id, ev.version) {
                                         if v > 0 {
-                                            let mut m = srv.user_versions.write().unwrap();
-                                            let cur = m.get(uid).copied().unwrap_or(0);
-                                            if v > cur {
-                                                m.insert(uid.clone(), v);
-                                            }
+                                            srv.remember_version(uid, v);
                                         }
                                     }
                                 }
@@ -510,14 +582,16 @@ async fn handle(server: Arc<Server>, stream: TcpStream) {
     };
 
     let (mut write, mut read) = ws.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let (tx, mut rx) = mpsc::channel::<Message>(SEND_BUFFER);
 
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let close_signal = Arc::new(Notify::new());
     let conn = Arc::new(Conn {
         id,
         tx: tx.clone(),
         room: Mutex::new(None),
         identity,
+        close_signal: close_signal.clone(),
     });
     server.conns.write().await.insert(id, conn.clone());
 
@@ -536,8 +610,17 @@ async fn handle(server: Arc<Server>, stream: TcpStream) {
         let _ = write.close().await;
     });
 
-    // read loop
-    while let Some(Ok(msg)) = read.next().await {
+    // read loop. select! so eviction (close_signal) ends it even when the
+    // client ignores the Close frame - egress alone is not revocation.
+    loop {
+        let msg = tokio::select! {
+            biased;
+            _ = close_signal.notified() => break,
+            m = read.next() => match m {
+                Some(Ok(m)) => m,
+                _ => break,
+            },
+        };
         let data = match msg {
             Message::Binary(b) => b,
             Message::Close(_) => break,
@@ -545,6 +628,13 @@ async fn handle(server: Arc<Server>, stream: TcpStream) {
         };
         if data.is_empty() {
             continue;
+        }
+        // INGRESS revocation gate: a token revoked or expired since accept must
+        // not keep driving the room in the window before the sweep evicts it.
+        // The snapshot check is synchronous and cheap.
+        let now = (now_ms() / 1000.0) as i64;
+        if conn.identity.exp <= now || server.revoked(&conn.identity) {
+            break;
         }
         match data[0] {
             0x01 => {
@@ -557,7 +647,9 @@ async fn handle(server: Arc<Server>, stream: TcpStream) {
                 pong[1..9].copy_from_slice(&data[1..9]);
                 pong[9..17].copy_from_slice(&now_ms().to_bits().to_le_bytes());
                 pong[17..25].copy_from_slice(&now_ms().to_bits().to_le_bytes());
-                if tx.send(Message::Binary(pong)).is_err() {
+                // try_send, not await: a full buffer means a slow reader, and
+                // relay-go disconnects it here rather than blocking the loop.
+                if tx.try_send(Message::Binary(pong)).is_err() {
                     break;
                 }
             }
@@ -587,7 +679,7 @@ async fn handle(server: Arc<Server>, stream: TcpStream) {
                 if let Ok(raw) = res {
                     if let Ok(tl) = serde_json::from_str::<LuaTimeline>(&raw) {
                         if tx
-                            .send(Message::Binary(encode_timeline(0x06, &tl)))
+                            .try_send(Message::Binary(encode_timeline(0x06, &tl)))
                             .is_err()
                         {
                             break;
@@ -619,7 +711,7 @@ async fn handle(server: Arc<Server>, stream: TcpStream) {
                         if let Ok(tl) = serde_json::from_str::<LuaTimeline>(&raw) {
                             if tl.dup {
                                 if tx
-                                    .send(Message::Binary(encode_timeline(0x04, &tl)))
+                                    .try_send(Message::Binary(encode_timeline(0x04, &tl)))
                                     .is_err()
                                 {
                                     break;
@@ -630,7 +722,7 @@ async fn handle(server: Arc<Server>, stream: TcpStream) {
                         }
                     }
                     Err(_) => {
-                        if tx.send(Message::Binary(vec![0x07, 0])).is_err() {
+                        if tx.try_send(Message::Binary(vec![0x07, 0])).is_err() {
                             break;
                         }
                     }
@@ -763,6 +855,9 @@ async fn main() {
         conns: RwLock::new(HashMap::new()),
         revoked_jti: StdRwLock::new(HashSet::new()),
         user_versions: StdRwLock::new(HashMap::new()),
+        refreshing: AtomicBool::new(false),
+        pending_jti: StdRwLock::new(HashSet::new()),
+        pending_versions: StdRwLock::new(HashMap::new()),
     });
 
     // load the revocation snapshot before we accept anything, so the very
@@ -888,6 +983,17 @@ mod tests {
             .ver,
             0
         );
+    }
+
+    #[test]
+    fn unknown_reason_encodes_as_zero_matching_the_go_map_default() {
+        // relay-go's reasonCodes[missing] is the Go zero value 0, not 3. A
+        // real reason like "set-video" is absent from both maps, so both must
+        // emit 0 or byte[30] diverges on identical room state.
+        assert_eq!(reason_code("set-video"), 0);
+        assert_eq!(reason_code(""), 0);
+        assert_eq!(reason_code("play"), 0);
+        assert_eq!(reason_code("succession"), 5);
     }
 
     #[test]
