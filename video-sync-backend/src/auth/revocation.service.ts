@@ -162,7 +162,26 @@ export class RevocationService implements OnModuleInit {
    * never had Redis, converges here within REFRESH_MS.
    */
   @Interval(REFRESH_MS)
-  async refresh(): Promise<void> {
+  refresh(): Promise<void> {
+    // One at a time. The pending buffers and the `refreshing` flag are shared
+    // state, so two overlapping refreshes clear each other's buffers and the
+    // first to finish turns the flag off for the one still running - which
+    // puts back exactly the dropped-revocation bug the buffers were added to
+    // fix. A slow query and a 30s timer is all it takes to overlap.
+    //
+    // A caller who arrives mid-refresh JOINS the running one rather than
+    // starting a second: they want a fresh snapshot, and the one in flight
+    // will be that.
+    if (this.inFlight) return this.inFlight;
+    this.inFlight = this.reload().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
+
+  private inFlight: Promise<void> | null = null;
+
+  private async reload(): Promise<void> {
     this.refreshing = true;
     this.pendingTokens.clear();
     this.pendingVersions.clear();

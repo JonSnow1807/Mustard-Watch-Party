@@ -228,6 +228,37 @@ describe('a revocation that lands while a refresh is in flight', () => {
   });
 });
 
+describe('two refreshes overlapping', () => {
+  it("does not let the second one drop the first one's revocations", async () => {
+    // The pending buffers and the refreshing flag are shared state. Two
+    // overlapping refreshes clear each other's buffers, and the first to
+    // finish turns the flag off for the one still running - which puts back
+    // exactly the dropped-revocation bug the buffers exist to prevent. A
+    // slow query and a 30s timer is all it takes.
+    const db = makeDb();
+    const s = await service(db);
+
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let calls = 0;
+    db.revokedToken.findMany.mockImplementation(async () => {
+      calls++;
+      await held;
+      return [];
+    });
+
+    const first = s.refresh();
+    const second = s.refresh(); // arrives while the first is still reading
+    await s.revokeToken('j-late', 'u1', new Date(Date.now() + 3600_000));
+    release();
+    await Promise.all([first, second]);
+
+    expect(s.isRevoked(token({ jti: 'j-late' }))).toBe('token');
+    // and the second call joined the first rather than starting its own
+    expect(calls).toBe(1);
+  });
+});
+
 describe('a malformed announcement from another instance', () => {
   const applyEvent = (s: RevocationService, raw: string) =>
     (s as unknown as { applyEvent(r: string): void }).applyEvent(raw);
