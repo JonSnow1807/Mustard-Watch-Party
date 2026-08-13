@@ -165,7 +165,11 @@ export class GoogleOAuthService {
    * cookie IS the session for this flow, which is what lets any instance
    * behind the load balancer finish a flow another instance started.
    */
-  start(returnTo: string | undefined, now: number = Date.now()) {
+  start(
+    returnTo: string | undefined,
+    now: number = Date.now(),
+    linkUserId?: string,
+  ) {
     this.assertEnabled();
 
     const state = randomToken();
@@ -178,6 +182,7 @@ export class GoogleOAuthService {
       state,
       codeVerifier,
       returnTo: safeReturnTo(returnTo),
+      linkUserId,
       expiresAt: now + FLOW_TTL_MS,
     };
 
@@ -208,7 +213,12 @@ export class GoogleOAuthService {
     error?: string;
     cookie?: string;
     now?: number;
-  }): Promise<{ identity: GoogleIdentity; returnTo?: string }> {
+  }): Promise<{
+    identity: GoogleIdentity;
+    returnTo?: string;
+    /** set when this flow is attaching Google to a guest, not signing in */
+    linkUserId?: string;
+  }> {
     this.assertEnabled();
 
     if (params.error) throw new GoogleAuthError('denied');
@@ -276,6 +286,7 @@ export class GoogleOAuthService {
         name: payload.name,
       },
       returnTo: opened.returnTo,
+      linkUserId: opened.linkUserId,
     };
   }
 
