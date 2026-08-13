@@ -307,6 +307,19 @@ export class AuthController {
     // account must prove the password: without that gate, anyone holding a
     // stolen token could attach their own Google identity and gain a
     // permanent second door into the account.
+    // One Google identity per account. Decided BEFORE the re-auth branch,
+    // and independently of it: an account with BOTH a password and a Google
+    // link returns 'password' from reauthMethodFor, so gating the 409 on the
+    // method alone would let a password+Google account attach a SECOND
+    // Google identity - which the 'google' branch below correctly forbids
+    // but the 'password' branch would have waved through.
+    if (await this.authService.hasGoogleLink(userId)) {
+      throw new ConflictExceptionWithCode(
+        'link_provider_taken',
+        'This account already signs in with Google',
+      );
+    }
+
     const method = await this.authService.reauthMethodFor(userId);
     let purpose: 'link-guest' | 'link-full';
     if (method === 'password') {

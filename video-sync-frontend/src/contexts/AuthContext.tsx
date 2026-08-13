@@ -37,6 +37,8 @@ interface AuthContextType {
     email: string,
     password: string,
   ) => Promise<void>;
+  /** Adopt a token minted for the current account (refresh / password change). */
+  adoptToken: (token: string, id: string) => void;
   /** Sign in with no account at all; see docs/GUEST_ACCESS.md. */
   continueAsGuest: () => Promise<void>;
   /** True when this session has no password and no provider behind it. */
@@ -170,6 +172,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   /**
+   * Adopt a token minted for the SAME account - a refresh, or the survivor
+   * a password change hands back. Guarded by id: an in-flight response must
+   * never be merged onto a different user who signed in meanwhile.
+   */
+  const adoptToken = useCallback((token: string, id: string) => {
+    setUser((current) =>
+      current && current.id === id ? { ...current, token } : current,
+    );
+    const stored = localStorage.getItem('user');
+    if (stored) {
+      const parsed = JSON.parse(stored) as { id?: string };
+      if (parsed.id === id) {
+        localStorage.setItem('user', JSON.stringify({ ...parsed, token }));
+      }
+    }
+  }, []);
+
+  // Cross-tab convergence: when one tab rotates or changes the password, the
+  // stored token changes under every other tab, which is still holding the
+  // now-revoked one in memory. Adopt the new one; a cleared key means a
+  // sign-out happened somewhere and this tab follows.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== 'user') return;
+      if (!e.newValue) {
+        setUser(null);
+        return;
+      }
+      try {
+        const next = JSON.parse(e.newValue) as User;
+        setUser((current) =>
+          !current || current.id === next.id ? next : current,
+        );
+      } catch {
+        // a malformed write is not a reason to tear down a good session
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  /**
    * Keep the session fresh without keeping it forever.
    *
    * Scheduled at ~90% of the token's remaining life (decoded locally - the
@@ -206,24 +250,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       apiService
         .refresh()
         .then(({ data }) => {
-          setUser((current) =>
-            current ? { ...current, token: data.token } : current,
-          );
-          const stored = localStorage.getItem('user');
-          if (stored) {
-            localStorage.setItem(
-              'user',
-              JSON.stringify({
-                ...(JSON.parse(stored) as object),
-                token: data.token,
-              }),
-            );
-          }
+          // by id: the session may have changed under us while the refresh
+          // was in flight
+          adoptToken(data.token, data.id);
         })
         .catch(() => undefined);
     }, delay);
     return () => clearTimeout(timer);
-  }, [user?.token]);
+  }, [user?.token, adoptToken]);
 
   const claimAccount = useCallback(
     async (username: string, email: string, password: string) => {
@@ -288,6 +322,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signInWithToken,
     continueAsGuest,
     claimAccount,
+    adoptToken,
     // the synthetic address the server mints is the only marker the client
     // gets, and it is one no real account can have: .invalid is reserved
     isGuest: Boolean(user?.email?.endsWith('@guest.invalid')),

@@ -54,6 +54,11 @@ const makeRevocations = () =>
   ({
     revokeToken: jest.fn().mockResolvedValue(undefined),
     noteVersionBumped: jest.fn().mockResolvedValue(undefined),
+    revokeAllForUser: jest.fn().mockResolvedValue(1),
+    // claimRevocation defaults to WON (this is the true rotation); tests
+    // that model a race override it to false
+    claimRevocation: jest.fn().mockResolvedValue(true),
+    isJtiRevokedDurable: jest.fn().mockResolvedValue(false),
   }) as unknown as import('./revocation.service').RevocationService;
 
 const serviceWith = (
@@ -684,7 +689,7 @@ describe('refreshing a session', () => {
     const decoded = claims(out.token);
     expect(decoded.jti).not.toBe('j-old');
     expect(decoded.ver).toBe(2);
-    const [jti, userId] = (revocations.revokeToken as jest.Mock).mock
+    const [jti, userId] = (revocations.claimRevocation as jest.Mock).mock
       .calls[0] as [string, string];
     expect(jti).toBe('j-old');
     expect(userId).toBe('u1');
@@ -696,6 +701,7 @@ describe('refreshing a session', () => {
     const out = await service.refreshSession({
       sub: 'u1',
       jti: 'j1',
+      ver: 2,
       sess: birth,
     });
     expect(claims(out.token).sess).toBe(birth);
@@ -725,11 +731,23 @@ describe('refreshing a session', () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it('still refreshes a legacy token with no jti - it just cannot revoke it', async () => {
-    const { service, revocations } = refreshing();
+  it('still refreshes a legacy token with no jti - nothing to claim', async () => {
+    // A token from before jti/ver existed: no jti, and absent ver reads as
+    // version 0. It refreshes while the account is still at version 0
+    // (nobody has revoked-all since) - old is not the same as revoked.
+    const db = makeDb();
+    db.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      username: 'ada',
+      tokenVersion: 0,
+    });
+    const revocations = makeRevocations();
+    const service = serviceWith(db, revocations);
     const out = await service.refreshSession({ sub: 'u1', sess: nowS() - 60 });
     expect(typeof out.token).toBe('string');
-    expect((revocations.revokeToken as jest.Mock).mock.calls).toHaveLength(0);
+    expect((revocations.claimRevocation as jest.Mock).mock.calls).toHaveLength(
+      0,
+    );
   });
 });
 
@@ -853,5 +871,91 @@ describe('which re-auth gate an account needs', () => {
     await expect(
       withUser({ password: null }).verifyPassword('u1', 'anything'),
     ).resolves.toBe(false);
+  });
+});
+
+describe('refresh must not launder a revoked token back to life', () => {
+  const nowS = () => Math.floor(Date.now() / 1000);
+  const setup = (dbVersion: number) => {
+    const db = makeDb();
+    db.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      username: 'ada',
+      tokenVersion: dbVersion,
+    });
+    const revocations = makeRevocations();
+    return { db, revocations, service: serviceWith(db, revocations) };
+  };
+
+  it('refuses a token issued before the current version - the logout-all laundering', async () => {
+    // The critical bug the review found: the guard's snapshot can lag a
+    // logout-all, but the DB cannot. A token at ver 1 must not mint a fresh
+    // token when the account is already at ver 2, however stale the snapshot.
+    const { service, revocations } = setup(2);
+    await expect(
+      service.refreshSession({ sub: 'u1', jti: 'j1', ver: 1, sess: nowS() }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect((revocations.claimRevocation as jest.Mock).mock.calls).toHaveLength(
+      0,
+    );
+  });
+
+  it('refuses a token whose jti is already revoked in Postgres', async () => {
+    // the single-logout laundering: guard snapshot lags, DB does not
+    const { service } = setup(0);
+    (
+      service as unknown as {
+        revocations: { isJtiRevokedDurable: jest.Mock };
+      }
+    ).revocations.isJtiRevokedDurable.mockResolvedValue(true);
+    await expect(
+      service.refreshSession({
+        sub: 'u1',
+        jti: 'j-revoked',
+        ver: 0,
+        sess: nowS(),
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('treats a lost rotation race as compromise - revokes the whole family', async () => {
+    // two copies of one token refresh at once; the loser must not merely
+    // fail, it must burn every session including the winner's fresh token
+    const { service, revocations } = setup(0);
+    (revocations.claimRevocation as jest.Mock).mockResolvedValue(false);
+    await expect(
+      service.refreshSession({ sub: 'u1', jti: 'j1', ver: 0, sess: nowS() }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect((revocations.revokeAllForUser as jest.Mock).mock.calls).toEqual([
+      ['u1'],
+    ]);
+  });
+
+  it('the happy path: claims the old jti, mints at the current version', async () => {
+    const { service, revocations } = setup(3);
+    const out = await service.refreshSession({
+      sub: 'u1',
+      jti: 'j1',
+      ver: 3,
+      sess: nowS() - 60,
+    });
+    expect(
+      (revocations.claimRevocation as jest.Mock).mock.calls.length,
+    ).toBeGreaterThan(0);
+    const claims = jwtService.decode<{ ver: number; jti: string }>(out.token);
+    expect(claims.ver).toBe(3);
+    expect(claims.jti).not.toBe('j1');
+  });
+
+  it('refuses a malformed version claim rather than reading it as 0', async () => {
+    const { service } = setup(0);
+    await expect(
+      service.refreshSession({
+        sub: 'u1',
+        jti: 'j1',
+        ver: 'nope' as unknown as number,
+        sess: nowS(),
+      }),
+    ).rejects.toMatchObject({ status: 401 });
   });
 });

@@ -284,6 +284,7 @@ describe('starting a link, which is a different thing from signing in', () => {
     const controller = new AuthController(
       {
         // a guest: no password, no provider - the ungated link path
+        hasGoogleLink: jest.fn().mockResolvedValue(false),
         reauthMethodFor: jest.fn().mockResolvedValue(null),
       } as unknown as AuthService,
       google,
@@ -315,6 +316,7 @@ describe('starting a link, which is a different thing from signing in', () => {
     const res = makeRes();
     await new AuthController(
       {
+        hasGoogleLink: jest.fn().mockResolvedValue(false),
         reauthMethodFor: jest.fn().mockResolvedValue(null),
       } as unknown as AuthService,
       google,
@@ -502,6 +504,7 @@ describe('signing out', () => {
 describe('the re-auth gates in front of the new routes', () => {
   const gated = (over: Record<string, unknown> = {}) => {
     const authService = {
+      hasGoogleLink: jest.fn().mockResolvedValue(false),
       reauthMethodFor: jest.fn().mockResolvedValue('password'),
       verifyPassword: jest.fn().mockResolvedValue(false),
       setPassword: jest.fn().mockResolvedValue({ id: 'u1', token: 't' }),
@@ -616,5 +619,98 @@ describe('the re-auth gates in front of the new routes', () => {
     ];
     expect(arg.jti).toBe('j1');
     expect(arg.sess).toBe(123);
+  });
+});
+
+describe('the reauth callback branch - the gate with no coverage', () => {
+  // Finding 12: the owned !== linkUserId check had ZERO tests. Its failure
+  // mode is silence - a broken check mints an elevation for an account the
+  // caller does not control, and nothing would have caught it.
+  const reauthCallback = (opts: {
+    linkUserId: string;
+    returningSubject: string;
+    owner: string | null;
+  }) => {
+    const google = {
+      enabled: true,
+      assertEnabled: () => undefined,
+      verifyCallback: jest.fn().mockResolvedValue({
+        purpose: 'reauth',
+        linkUserId: opts.linkUserId,
+        identity: { subject: opts.returningSubject, email: 'a@b.co' },
+      }),
+      callbackRedirect: (f: string) =>
+        `https://mustard.watch/auth/callback#${f}`,
+      redirectUri: 'https://api.mustard.watch/api/auth/google/callback',
+    } as unknown as GoogleOAuthService;
+    const authService = {
+      googleSubjectOwner: jest.fn().mockResolvedValue(opts.owner),
+      mintElevatedToken: jest.fn().mockResolvedValue('ELEVATED'),
+    };
+    const controller = new AuthController(
+      authService as unknown as AuthService,
+      google,
+      noRevocations(),
+      jwtService,
+    );
+    return { controller, authService };
+  };
+
+  it('mints elevation only when the returning subject OWNS the account', async () => {
+    const { controller, authService } = reauthCallback({
+      linkUserId: 'u1',
+      returningSubject: 'sub-of-u1',
+      owner: 'u1',
+    });
+    const res = makeRes();
+    await controller.callback(
+      'c',
+      's',
+      undefined,
+      emptyReq,
+      res as unknown as Response,
+    );
+    expect(authService.mintElevatedToken).toHaveBeenCalledWith('u1');
+    expect(res.redirectedTo).toContain('elev=ELEVATED');
+    // never as a session token - the callback page must not adopt it
+    expect(res.redirectedTo).not.toContain('token=');
+  });
+
+  it('refuses when a DIFFERENT Google account completes the flow', async () => {
+    // the takeover this gate stops: signing in as someone else must not
+    // elevate you over the victim's account
+    const { controller, authService } = reauthCallback({
+      linkUserId: 'victim',
+      returningSubject: 'attacker-sub',
+      owner: 'attacker',
+    });
+    const res = makeRes();
+    await controller.callback(
+      'c',
+      's',
+      undefined,
+      emptyReq,
+      res as unknown as Response,
+    );
+    expect(authService.mintElevatedToken).not.toHaveBeenCalled();
+    expect(res.redirectedTo).toContain('error=reauth_mismatch');
+  });
+
+  it('refuses when the returning Google account is linked to NObody', async () => {
+    const { controller, authService } = reauthCallback({
+      linkUserId: 'u1',
+      returningSubject: 'unlinked-sub',
+      owner: null,
+    });
+    const res = makeRes();
+    await controller.callback(
+      'c',
+      's',
+      undefined,
+      emptyReq,
+      res as unknown as Response,
+    );
+    expect(authService.mintElevatedToken).not.toHaveBeenCalled();
+    expect(res.redirectedTo).toContain('error=reauth_mismatch');
   });
 });

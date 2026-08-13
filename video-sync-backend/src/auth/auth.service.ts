@@ -9,12 +9,13 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
-import { Prisma } from '@prisma/client';
 import { DatabaseService } from '../database/database.service';
 import * as bcrypt from 'bcrypt';
 import { GoogleAuthError, GoogleIdentity } from './google/google-oauth.service';
 import { usernameBase, usernameCandidates } from './google/username';
+import { versionOf } from './token-payload';
 import { RevocationService } from './revocation.service';
+import { isUniqueViolation } from './unique-violation';
 
 const GOOGLE = 'google';
 
@@ -37,13 +38,6 @@ export interface SessionUser {
 export const SESSION_MAX_S = 30 * 24 * 3600;
 
 const USERNAME_ATTEMPTS = 8;
-
-const isUniqueViolation = (err: unknown, field: string): boolean =>
-  err instanceof Prisma.PrismaClientKnownRequestError &&
-  err.code === 'P2002' &&
-  ((err.meta?.target as string[] | undefined) ?? []).some((t) =>
-    t.includes(field),
-  );
 
 /**
  * What a name, an address and a password have to be to open an account.
@@ -287,18 +281,56 @@ export class AuthService {
     });
     if (!user) throw new UnauthorizedException('No such session');
 
-    const token = this.issueToken(user, { sessionStart });
+    // AUTHORITATIVE checks against Postgres, not the eventually-consistent
+    // snapshot the guard reads. This is the security core of refresh: it is
+    // about to mint a new long-lived credential, and gating that on a
+    // snapshot that can lag a logout-all by up to REFRESH_MS would let a
+    // revoked token launder itself into a fresh, fully-valid one - defeating
+    // exactly the revocation this feature was built to honour.
+    //
+    // Version: a token issued before the user's current version is stale.
+    // Strictly-less, and a malformed claim (null) is refused rather than
+    // read as 0.
+    const claimed = versionOf({
+      sub: userId,
+      name: user.username,
+      ver: payload.ver,
+    });
+    if (claimed === null || claimed < user.tokenVersion) {
+      throw new UnauthorizedException('This session was signed out');
+    }
+    // The specific jti: a single logout or an earlier rotation of THIS
+    // token recorded it, and neither should be refreshable back to life.
+    if (
+      payload.jti &&
+      (await this.revocations.isJtiRevokedDurable(payload.jti))
+    ) {
+      throw new UnauthorizedException('This session was signed out');
+    }
 
-    // Rotate: the old token dies WITH the refresh, not on its own schedule.
-    // Tokens from before jti existed cannot be individually revoked - they
-    // refresh into revocable ones, which still narrows the fleet.
+    // Rotation with reuse detection. Revoke the old jti with a CREATE before
+    // minting anything: the unique jti constraint makes exactly one caller
+    // the true rotation. If two copies of one token refresh at once - the
+    // shape of a stolen token - the loser finds the row taken, and that is
+    // not a retry to smooth over but a compromise signal: revoke the whole
+    // family so neither the winner's freshly-minted token nor any sibling
+    // survives, and refuse. A token with no jti (pre-revocation) cannot be
+    // individually rotated; it still gets a new token, one narrowing step.
     if (payload.jti) {
-      await this.revocations.revokeToken(
+      const won = await this.revocations.claimRevocation(
         payload.jti,
         userId,
         new Date((payload.exp ?? nowS + 43200) * 1000),
       );
+      if (!won) {
+        await this.revocations.revokeAllForUser(userId);
+        throw new UnauthorizedException(
+          'This session was refreshed from another place - sign in again',
+        );
+      }
     }
+
+    const token = this.issueToken(user, { sessionStart });
 
     return {
       id: user.id,
@@ -363,6 +395,15 @@ export class AuthService {
       });
     } catch (err) {
       if (isUniqueViolation(err, 'providerAccountId')) {
+        // Lost a race - but with WHOM? If the winning row is this same
+        // account (a double-submitted flow), that is success, not a
+        // conflict; only a link to someone else is the 409. The pre-check
+        // above answers this in the common case; this closes the window
+        // between it and the create.
+        const owner = await this.googleSubjectOwner(identity.subject);
+        if (owner === userId) {
+          return { ...user, token: this.issueToken(user) };
+        }
         throw new ConflictException({
           code: 'link_provider_taken',
           message:
@@ -402,6 +443,15 @@ export class AuthService {
     if (user.password) return 'password';
     if (user.oauthAccounts.length > 0) return 'google';
     return null;
+  }
+
+  /** Whether this account already has a Google identity attached. */
+  async hasGoogleLink(userId: string): Promise<boolean> {
+    const link = await this.database.oAuthAccount.findFirst({
+      where: { userId, provider: 'google' },
+      select: { id: true },
+    });
+    return link !== null;
   }
 
   /**

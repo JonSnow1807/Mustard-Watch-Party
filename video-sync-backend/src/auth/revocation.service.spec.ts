@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { RevocationService } from './revocation.service';
 import type { DatabaseService } from '../database/database.service';
 import type { TokenPayload } from './token-payload';
@@ -9,6 +10,8 @@ const makeDb = (
   revokedToken: {
     findMany: jest.fn().mockResolvedValue(tokens),
     upsert: jest.fn().mockResolvedValue(undefined),
+    create: jest.fn().mockResolvedValue(undefined),
+    findUnique: jest.fn().mockResolvedValue(null),
     deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
   user: {
@@ -381,5 +384,61 @@ describe('the Redis mirror, which is how the relay learns', () => {
       s.revokeToken('j1', 'u1', new Date(Date.now() + 1000)),
     ).resolves.toBeUndefined();
     expect(s.isRevoked(token({ jti: 'j1' }))).toBe('token');
+  });
+});
+
+describe('claimRevocation - the rotation arbiter', () => {
+  const p2002 = () =>
+    new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target: ['jti'] },
+    });
+
+  it('returns true when it wins the create - the true rotation', async () => {
+    const db = makeDb();
+    const s = await service(db);
+    await expect(
+      s.claimRevocation('j1', 'u1', new Date(Date.now() + 1000)),
+    ).resolves.toBe(true);
+    expect(db.revokedToken.create).toHaveBeenCalled();
+  });
+
+  it('returns false when the jti was already revoked - a reused token', async () => {
+    // the create loses to the unique constraint; that is the compromise
+    // signal the caller escalates on
+    const db = makeDb();
+    db.revokedToken.create.mockRejectedValue(p2002());
+    const s = await service(db);
+    await expect(
+      s.claimRevocation('j1', 'u1', new Date(Date.now() + 1000)),
+    ).resolves.toBe(false);
+  });
+
+  it('rethrows a non-uniqueness error rather than swallowing it', async () => {
+    const db = makeDb();
+    db.revokedToken.create.mockRejectedValue(new Error('db down'));
+    const s = await service(db);
+    await expect(
+      s.claimRevocation('j1', 'u1', new Date(Date.now() + 1000)),
+    ).rejects.toThrow('db down');
+  });
+});
+
+describe('isJtiRevokedDurable - the authoritative check refresh needs', () => {
+  it('reads Postgres, not the snapshot', async () => {
+    const db = makeDb();
+    db.revokedToken.findUnique.mockResolvedValue({ jti: 'j1' });
+    const s = await service(db);
+    await expect(s.isJtiRevokedDurable('j1')).resolves.toBe(true);
+    expect(db.revokedToken.findUnique).toHaveBeenCalledWith({
+      where: { jti: 'j1' },
+      select: { jti: true },
+    });
+  });
+
+  it('is false for an unrevoked jti', async () => {
+    const s = await service(makeDb());
+    await expect(s.isJtiRevokedDurable('j-unknown')).resolves.toBe(false);
   });
 });

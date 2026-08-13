@@ -4,6 +4,7 @@ import type Redis from 'ioredis';
 import { DatabaseService } from '../database/database.service';
 import { REDIS_KV, REDIS_PUB, REDIS_SUB } from '../redis/redis.module';
 import { subjectOf, versionOf, type TokenPayload } from './token-payload';
+import { isUniqueViolation } from './unique-violation';
 
 /** Where instances tell each other that something was revoked. */
 export const REVOCATION_CHANNEL = 'mustard:revocations';
@@ -156,6 +157,58 @@ export class RevocationService implements OnModuleInit {
     this.rememberToken(jti);
     await this.mirrorToken(jti);
     await this.announce({ kind: 'token', jti });
+  }
+
+  /**
+   * Revoke a jti and report whether it was ALREADY revoked.
+   *
+   * The difference from revokeToken matters for rotation: a CREATE, not an
+   * upsert, so the unique jti constraint arbitrates a race. The caller who
+   * creates the row is the one true rotation of that token; anyone else who
+   * arrives finds it taken, which is the signal that this token is being
+   * refreshed twice - a copy in someone else's hands. Returns true if this
+   * call was the first to revoke it, false if it was already gone.
+   */
+  async claimRevocation(
+    jti: string,
+    userId: string,
+    expiresAt: Date,
+  ): Promise<boolean> {
+    try {
+      await this.database.revokedToken.create({
+        data: { jti, userId, expiresAt },
+      });
+      this.rememberToken(jti);
+      await this.mirrorToken(jti);
+      await this.announce({ kind: 'token', jti });
+      return true;
+    } catch (err) {
+      if (isUniqueViolation(err, 'jti')) {
+        // already revoked - by an earlier rotation of this same token, or
+        // a logout. Either way this jti is not ours to rotate.
+        this.rememberToken(jti);
+        return false;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Is this jti recorded as revoked in POSTGRES - the durable truth, not the
+   * eventually-consistent snapshot isRevoked() reads?
+   *
+   * refreshSession needs this: it is about to mint a new long-lived
+   * credential, and gating that on a snapshot that can lag a logout by up to
+   * REFRESH_MS would let a revoked token launder itself into a fresh one.
+   * The request path stays snapshot-only; this authoritative check is paid
+   * for exactly where a stale answer would be a security hole.
+   */
+  async isJtiRevokedDurable(jti: string): Promise<boolean> {
+    const row = await this.database.revokedToken.findUnique({
+      where: { jti },
+      select: { jti: true },
+    });
+    return row !== null;
   }
 
   /** Stop trusting everything this user holds - sign out everywhere. */

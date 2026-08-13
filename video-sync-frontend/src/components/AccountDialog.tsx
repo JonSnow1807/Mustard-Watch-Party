@@ -125,7 +125,7 @@ interface Profile {
 export const AccountDialog: React.FC<{ onClose: () => void }> = ({
   onClose,
 }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, adoptToken } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [elevated, setElevated] = useState<string | null>(null);
@@ -133,15 +133,14 @@ export const AccountDialog: React.FC<{ onClose: () => void }> = ({
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   // The elevated token from a completed Google re-auth arrives via
-  // sessionStorage (AuthCallbackPage parks it there; it is five-minute,
-  // single-purpose, and deliberately kept out of localStorage and out of
-  // the session).
+  // sessionStorage (AuthCallbackPage parks it there; five-minute,
+  // single-purpose, kept out of localStorage and out of the session). READ
+  // but do not remove it here: consuming on mount meant closing and
+  // reopening the dialog silently burned the token. It is removed only when
+  // spent (submitPassword) or when its five minutes are plainly up.
   useEffect(() => {
     const parked = sessionStorage.getItem('mw_elevated');
-    if (parked) {
-      sessionStorage.removeItem('mw_elevated');
-      setElevated(parked);
-    }
+    if (parked) setElevated(parked);
   }, []);
 
   useEffect(() => {
@@ -226,20 +225,22 @@ export const AccountDialog: React.FC<{ onClose: () => void }> = ({
     async (newPassword: string, currentPassword?: string) => {
       setBusy('password');
       try {
-        if (elevated) {
-          // the elevated token rides the Authorization header for THIS
-          // call only - it proves the fresh Google round trip
-          await apiService.setPasswordElevated(newPassword, elevated);
-        } else {
-          await apiService.setPassword(newPassword, currentPassword);
-        }
-        // every other session just ended (the version bump); the response
-        // carried the surviving token, but the simplest honest client
-        // behavior is a clean re-entry with the new password
-        toast.success('Password saved - every other session was signed out');
+        const res = elevated
+          ? // the elevated token rides Authorization for THIS call only
+            await apiService.setPasswordElevated(newPassword, elevated)
+          : await apiService.setPassword(newPassword, currentPassword);
+        // set-password revoked the token we just used and handed back the
+        // ONE survivor. Adopt it before touching the API again - the old
+        // token is dead now, and a getMe with it would 401 the success into
+        // a "wrong password" error and (before the interceptor fix) wipe the
+        // session. The stored/elevated token is spent; clear it.
+        const survivor = (res.data as { id: string; token: string }) ?? null;
+        if (survivor?.token) adoptToken(survivor.token, survivor.id);
+        sessionStorage.removeItem('mw_elevated');
         setElevated(null);
-        const { data } = await apiService.getMe(user?.token ?? '');
-        setProfile(data as unknown as Profile);
+        toast.success('Password saved - every other session was signed out');
+        // reflect the change with the LIVE token
+        setProfile((p) => (p ? { ...p, hasPassword: true } : p));
       } catch (err: unknown) {
         const status = (err as { response?: { status?: number } })?.response
           ?.status;
@@ -256,7 +257,7 @@ export const AccountDialog: React.FC<{ onClose: () => void }> = ({
         setBusy(null);
       }
     },
-    [elevated, user?.token],
+    [elevated, adoptToken],
   );
 
   if (!user) return null;

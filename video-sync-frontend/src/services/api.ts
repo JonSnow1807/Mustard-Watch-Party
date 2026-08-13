@@ -95,11 +95,26 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   response => response,
   error => {
-    // Only a request that actually carried a token can have had it rejected.
-    // A 401 from /auth/login is bad credentials, and clearing on that would
-    // wipe a perfectly good session because someone fat-fingered a password.
-    const sentToken = Boolean(error?.config?.headers?.Authorization);
-    if (error?.response?.status === 401 && sentToken) {
+    // Clear the session ONLY when the request that was rejected actually
+    // carried the STORED session token. The earlier version cleared on any
+    // 401 that carried any token, which was three bugs in one:
+    //  - a wrong current-password on set-password (a 401 behind a perfectly
+    //    good session) wiped the session;
+    //  - set-password SUCCEEDS by revoking the stored token, so the very
+    //    next request with it 401s - a successful password change signed
+    //    the user out;
+    //  - the five-minute elevated token failing a set-password wiped the
+    //    real session it was standing in for.
+    // The rejected request carried a credential that is NOT the stored one
+    // in every one of those cases; comparing to the stored token tells the
+    // "my session died" case apart from "the thing I was proving failed".
+    const sent = error?.config?.headers?.Authorization;
+    const stored = readStoredToken();
+    if (
+      error?.response?.status === 401 &&
+      stored &&
+      sent === `Bearer ${stored}`
+    ) {
       clearStoredUser();
     }
     return Promise.reject(error);

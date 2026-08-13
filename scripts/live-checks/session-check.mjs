@@ -44,12 +44,17 @@ const second = (
 ok('SETUP: a second session', Boolean(second?.token));
 
 // ---- refresh: rotation ----
+// a full second between mint and refresh, so a token that WRONGLY restamped
+// its birth to 'now' would be caught by the equality below
+await new Promise((r) => setTimeout(r, 1100));
 const refreshed = await call('/auth/refresh', { token: first.token });
 ok('refresh returns a new token', refreshed.status === 201 && Boolean(refreshed.body?.token));
 const oldClaims = decode(first.token);
 const newClaims = decode(refreshed.body.token);
 ok('the new token carries a NEW jti', newClaims.jti && newClaims.jti !== oldClaims.jti);
-ok('and preserves the session birth verbatim', newClaims.sess === oldClaims.sess,
+ok('and preserves the session birth verbatim',
+  Number.isFinite(oldClaims.sess) && Number.isFinite(newClaims.sess) &&
+    newClaims.sess === oldClaims.sess,
   `${oldClaims.sess} -> ${newClaims.sess}`);
 
 // the wait that makes the rotation check honest: the refresh revokes the
@@ -67,10 +72,12 @@ const wrongPw = await call('/auth/google/link-start', {
   body: { password: 'not-the-password' },
   token: refreshed.body.token,
 });
-// 404 when the provider is off entirely (local dev), 401 when on but the
-// password is wrong: both mean "a bearer token alone opened nothing"
-ok('linking with the wrong password is refused',
-  wrongPw.status === 401 || wrongPw.status === 404, `status ${wrongPw.status}`);
+// exactly 401: link-start verifies the password before google.start() can
+// 404, so a wrong password is refused regardless of whether the provider is
+// configured. Accepting 404 would let this pass in the default dev env
+// without the gate ever running.
+ok('linking with the wrong password is refused with 401',
+  wrongPw.status === 401, `status ${wrongPw.status}`);
 
 // ---- set-password: current-password gate, then the version bump ----
 const wrongCurrent = await call('/auth/set-password', {
@@ -94,6 +101,36 @@ ok('the caller continues on the returned token',
 ok('the new password signs in; the old one does not',
   (await call('/auth/login', { body: { username: name, password: 'another-password-1' } })).status === 201 &&
   (await call('/auth/login', { body: { username: name, password: 'a-real-password' } })).status === 401);
+
+// ---- the laundering the review found: a revoked token must not refresh ----
+// sign out everywhere on the surviving token, then try to refresh a token
+// that was valid a moment ago. The authoritative DB check must catch it even
+// though (single instance) the snapshot is current - the point is that
+// refresh does NOT trust the token's own claim to a fresh version.
+const l1 = (await call('/auth/register', {
+  body: { username: 'launder' + rnd(), email: `l${rnd()}@e.com`, password: 'a-real-password' },
+})).body;
+const l2 = (await call('/auth/login', {
+  body: { username: decode(l1.token).name ?? '', password: 'a-real-password' },
+})).body || l1;
+// use l1 to sign out everywhere, then try to REFRESH l2 (older version)
+await call('/auth/logout-all', { token: l1.token });
+const laundered = await call('/auth/refresh', { token: l2.token });
+ok('a token from before logout-all cannot refresh itself back to life',
+  laundered.status === 401, `status ${laundered.status}`);
+
+// double-refresh of ONE token: the second is a reuse signal, must 401 AND
+// the first token's family should be burned
+const dr = (await call('/auth/register', {
+  body: { username: 'dr' + rnd(), email: `d${rnd()}@e.com`, password: 'a-real-password' },
+})).body;
+const [a, b] = await Promise.all([
+  call('/auth/refresh', { token: dr.token }),
+  call('/auth/refresh', { token: dr.token }),
+]);
+const wins = [a, b].filter((r) => r.status === 201).length;
+ok('concurrent double-refresh does not mint two live sessions',
+  wins <= 1, `${wins} of 2 refreshes succeeded`);
 
 // ---- refresh refuses what it must ----
 const guest = (await call('/auth/guest')).body;

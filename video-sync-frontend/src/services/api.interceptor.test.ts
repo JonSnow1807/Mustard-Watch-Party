@@ -98,3 +98,41 @@ describe('an explicitly-set Authorization header', () => {
     );
   });
 });
+
+
+describe('the response interceptor clears the session narrowly', () => {
+  const reject = (status: number, authHeader?: string) => {
+    const handler = (
+      api.interceptors.response as unknown as {
+        handlers: { rejected: (e: unknown) => Promise<never> }[];
+      }
+    ).handlers[0].rejected;
+    return handler({
+      response: { status },
+      config: { headers: authHeader ? { Authorization: authHeader } : {} },
+    }).catch(() => undefined);
+  };
+
+  beforeEach(() =>
+    localStorage.setItem('user', JSON.stringify({ id: 'u1', token: 'stored-tok' })),
+  );
+  afterEach(() => localStorage.clear());
+
+  it('clears when the STORED token is the one rejected', async () => {
+    await reject(401, 'Bearer stored-tok');
+    expect(localStorage.getItem('user')).toBeNull();
+  });
+
+  it('does NOT clear when a DIFFERENT token is rejected', async () => {
+    // the elevated set-password token failing, or a wrong-password re-auth
+    // behind a good session: the stored session must survive
+    await reject(401, 'Bearer elevated-tok');
+    expect(localStorage.getItem('user')).not.toBeNull();
+  });
+
+  it('does NOT clear on a 401 that carried no token at all', async () => {
+    // a bad login: clearing would wipe a good session over a typo
+    await reject(401, undefined);
+    expect(localStorage.getItem('user')).not.toBeNull();
+  });
+});
