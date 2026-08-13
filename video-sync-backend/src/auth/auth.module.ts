@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { GoogleOAuthService } from './google/google-oauth.service';
 import { GuestSweeperService } from './guest-sweeper.service';
+import { RevocationService } from './revocation.service';
 
 @Module({
   imports: [
@@ -31,7 +32,15 @@ import { GuestSweeperService } from './guest-sweeper.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, GoogleOAuthService, GuestSweeperService],
-  exports: [AuthService, JwtModule],
+  providers: [
+    AuthService,
+    GoogleOAuthService,
+    GuestSweeperService,
+    RevocationService,
+  ],
+  // RevocationService is exported because JwtAuthGuard depends on it, and
+  // that guard is instantiated in whichever module uses it - rooms, sync -
+  // not here. An unexported provider would fail those modules at boot.
+  exports: [AuthService, JwtModule, RevocationService],
 })
 export class AuthModule {}

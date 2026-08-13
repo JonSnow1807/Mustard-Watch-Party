@@ -86,6 +86,18 @@ export const apiService = {
   register: (username: string, email: string, password: string) =>
     api.post('/auth/register', { username, email, password }),
 
+  /**
+   * Tell the server to stop trusting this token.
+   *
+   * Signing out used to be a client-side event only - the browser dropped
+   * the token and the server never heard, so any copy of it kept working
+   * for the rest of its life.
+   */
+  logout: () => api.post('/auth/logout'),
+
+  /** Stop trusting every session this account has, anywhere. */
+  logoutEverywhere: () => api.post<{ version: number }>('/auth/logout-all'),
+
   /** A way in for someone who followed an invite link and wants no account. */
   guest: () => api.post('/auth/guest'),
 

@@ -41,7 +41,11 @@ interface AuthContextType {
   continueAsGuest: () => Promise<void>;
   /** True when this session has no password and no provider behind it. */
   isGuest: boolean;
-  logout: () => void;
+  /**
+   * Sign out. `everywhere` revokes every session this account has rather
+   * than just this one - the answer to a token that may have leaked.
+   */
+  logout: (options?: { everywhere?: boolean }) => void;
   isAuthenticated: boolean;
 }
 
@@ -191,13 +195,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [],
   );
 
-  const logout = useCallback(() => {
+  /**
+   * Drop the local session, and tell the server to stop trusting the token.
+   *
+   * The local half happens FIRST and unconditionally. Signing out is not
+   * allowed to fail: if the network is down, the person in front of the
+   * screen still wants to be signed out of this machine, and leaving them
+   * signed in because a request failed would be the worst possible reading
+   * of "sign out".
+   *
+   * The server half is what makes it real - without it a copy of the token
+   * keeps working for the rest of its life - but it is best-effort, and the
+   * token expires on its own regardless.
+   */
+  const logout = useCallback((options?: { everywhere?: boolean }) => {
+    const revoke = options?.everywhere
+      ? apiService.logoutEverywhere()
+      : apiService.logout();
+    revoke.catch(() => undefined);
+
     setUser(null);
     localStorage.removeItem('user');
     // where you have been is as personal as who you are, and this machine
     // may not be yours
     clearRecentRooms();
-    toast.success('Signed out');
+    toast.success(
+      options?.everywhere ? 'Signed out everywhere' : 'Signed out',
+    );
   }, []);
 
   const value: AuthContextType = {

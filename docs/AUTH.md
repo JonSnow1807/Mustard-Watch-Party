@@ -193,11 +193,61 @@ joining a film.
 whole behaviour depends on infrastructure that only exists in production.
 Both wrong versions passed their unit tests.
 
+## Revocation
+
+A token can be taken out of circulation before it expires. Two levers, because
+they answer different questions:
+
+| | `POST /auth/logout` | `POST /auth/logout-all` |
+|---|---|---|
+| Scope | this one session | every session this account has |
+| Mechanism | the token's `jti` is recorded as revoked | the user's `tokenVersion` is bumped past what existing tokens claim |
+| For | signing out | a token that may have leaked |
+
+**The snapshot, and why the guard still does no IO.** Both planes check
+revocation on every request and every handshake, and both were built to do no
+database lookup at all. So `RevocationService` holds an in-memory snapshot —
+the jtis revoked in the last twelve hours, and the users who have ever revoked
+everything. Both sets are small by construction; for most deployments the
+second is empty. The check is a `Set.has` and a `Map.get`.
+
+**Postgres is the truth, Redis is only the news.** Revocation that forgets on
+restart is not revocation, and this deployment treats Redis as a cache that
+may be absent. So records go to Postgres; Redis pub/sub, when present, tells
+the other instances within a round trip. Without it they converge on the next
+refresh.
+
+**The honest staleness bound is 30 seconds.** If the pub/sub message never
+arrives — Redis down, a dropped subscription, an instance that booted while it
+was unreachable — another instance keeps honouring a revoked token until its
+next refresh. Thirty seconds, not twelve hours.
+
+**Sockets are closed, not just refused.** A connection authenticates once and
+is then trusted while it stays open, which used to mean signing out stopped
+the REST calls and left the person watching along. Revoking now closes the
+matching connections on both namespaces, and a periodic sweep closes any whose
+token has simply expired. The client is told `session-ended` with a reason
+first — a silent disconnect is indistinguishable from a blip, and the retry
+loop would reconnect forever with a dead token.
+
+**What is deliberately not covered**
+
+- **`relay-go` does not check revocation.** It verifies the signature and
+  nothing else, so a revoked token still satisfies the relay until it expires.
+  The relay carries timing traffic for a room the holder was already in;
+  closing that hole means giving the relay a view of the snapshot, which it
+  has no database or Redis connection for today.
+- **A token with no `jti`** — issued before this existed — cannot be revoked
+  individually. `logout` reports `{revoked: false}` rather than claiming a
+  success that did nothing. `logout-all` still reaches it.
+- **Signing out is best-effort on the client.** The local session is dropped
+  first and unconditionally; if the revoke call fails, the person is still
+  signed out of that machine and the token dies on its own schedule.
+
 ## Known gaps
 
-- No token refresh or revocation. A token is good for its configured lifetime
-  (12 hours by default), and a socket accepted at connect outlives its token
-  (`docs/SCALING.md`).
+- No token **refresh**. A session ends when its token expires; there is no
+  way to extend one without signing in again.
 - ~~`JWT_EXPIRES_IN` is dead config~~ — fixed. Tokens **default** to `12h` and
   a deployment can change that by setting the variable; it is no longer a
   fixed lifetime. `12h` is what was hardcoded while the config file

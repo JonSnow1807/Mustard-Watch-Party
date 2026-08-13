@@ -81,8 +81,30 @@ export class AuthService {
     private jwt: JwtService,
   ) {}
 
-  private issueToken(user: { id: string; username: string }): string {
-    return this.jwt.sign({ sub: user.id, name: user.username });
+  /**
+   * Mint a session token.
+   *
+   * `tokenVersion` is REQUIRED rather than optional, and that is the whole
+   * defence against the worst bug this feature can have: a token issued
+   * carrying version 0 for a user whose version has moved on is refused the
+   * instant it is used. Someone signs in, gets a token, and is immediately
+   * signed out again, with the logs saying only "revoked". Making the type
+   * demand it means the compiler finds every issuance site instead of me.
+   *
+   * The jti is what lets ONE session be revoked later; without it the only
+   * lever is the version, which takes out every session the user has.
+   */
+  private issueToken(user: {
+    id: string;
+    username: string;
+    tokenVersion: number;
+  }): string {
+    return this.jwt.sign({
+      sub: user.id,
+      name: user.username,
+      jti: randomUUID(),
+      ver: user.tokenVersion,
+    });
   }
 
   async register(username: string, email: string, password: string) {
@@ -118,6 +140,7 @@ export class AuthService {
         username: true,
         email: true,
         createdAt: true,
+        tokenVersion: true,
       },
     });
 
@@ -188,7 +211,7 @@ export class AuthService {
             password: null,
             isGuest: true,
           },
-          select: { id: true, username: true, email: true },
+          select: { id: true, username: true, email: true, tokenVersion: true },
         });
         return { ...user, token: this.issueToken(user) };
       } catch (err) {
@@ -206,7 +229,7 @@ export class AuthService {
   async me(userId: string) {
     const user = await this.database.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, email: true },
+      select: { id: true, username: true, email: true, tokenVersion: true },
     });
     if (!user) {
       // A valid signature over a user that no longer exists - a deleted
@@ -288,7 +311,7 @@ export class AuthService {
           password: hashedPassword,
           isGuest: false,
         },
-        select: { id: true, username: true, email: true },
+        select: { id: true, username: true, email: true, tokenVersion: true },
       });
       // A fresh token: the old one carries the guest name, which is about to
       // be wrong everywhere it is displayed.
@@ -395,7 +418,7 @@ export class AuthService {
               },
             },
           },
-          select: { id: true, username: true, email: true },
+          select: { id: true, username: true, email: true, tokenVersion: true },
         });
         return { ...user, token: this.issueToken(user) };
       } catch (err) {
@@ -448,7 +471,16 @@ export class AuthService {
           providerAccountId: subject,
         },
       },
-      select: { user: { select: { id: true, username: true, email: true } } },
+      select: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            tokenVersion: true,
+          },
+        },
+      },
     });
     return linked
       ? { ...linked.user, token: this.issueToken(linked.user) }
@@ -481,7 +513,7 @@ export class AuthService {
               },
             },
           },
-          select: { id: true, username: true, email: true },
+          select: { id: true, username: true, email: true, tokenVersion: true },
         });
         return { ...user, token: this.issueToken(user) };
       } catch (err) {

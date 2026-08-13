@@ -1,7 +1,14 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
 import { useAuth } from './AuthContext';
+import { AUTH_EXPIRED_EVENT } from '../services/api';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -34,8 +41,18 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const token = user?.token;
+  /**
+   * Did the SERVER end this session on purpose?
+   *
+   * A ref rather than state: it is read inside the socket handlers, which
+   * close over the value at the time the effect ran, and a stale `false`
+   * there would put the UI back into "reconnecting" for a session that can
+   * never come back.
+   */
+  const endedRef = useRef(false);
 
   useEffect(() => {
+    endedRef.current = false;
     // the gateway rejects unauthenticated sockets; without a token there is
     // nothing to connect (login/register issue one)
     if (!token) {
@@ -79,6 +96,27 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       hasConnected = true;
     });
 
+    // The server closed this connection on purpose - the token behind it was
+    // signed out or expired. Without this, socket.io would reconnect forever
+    // with the same dead token and the person would see an unexplained
+    // "reconnecting" chip that never resolves.
+    socketInstance.on(
+      'session-ended',
+      ({ reason }: { reason?: string } = {}) => {
+        endedRef.current = true;
+        // Stop the retry loop before it starts; the token cannot come back.
+        socketInstance.disconnect();
+        toast.error(
+          reason === 'token expired'
+            ? 'Your session expired - sign in again'
+            : reason === 'signed out everywhere'
+              ? 'You were signed out everywhere'
+              : 'This session was signed out',
+        );
+        window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+      },
+    );
+
     socketInstance.on('disconnect', () => {
       console.log('Disconnected from server');
       setConnected(false);
@@ -86,7 +124,9 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       // TO. No toast: socket.io retries by itself, the status chip carries
       // it, and a red toast on every brief blip trains people to ignore
       // toasts entirely.
-      setReconnecting(hasConnected);
+      // A session that ENDED is not a session that is reconnecting. Saying
+      // "reconnecting" here would promise something that cannot happen.
+      setReconnecting(hasConnected && !endedRef.current);
     });
 
     socketInstance.on('connect_error', (error: Error) => {

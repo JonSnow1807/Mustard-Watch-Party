@@ -1,0 +1,184 @@
+import { RevocationService } from './revocation.service';
+import type { DatabaseService } from '../database/database.service';
+import type { TokenPayload } from './token-payload';
+
+const makeDb = (
+  tokens: { jti: string }[] = [],
+  users: { id: string; tokenVersion: number }[] = [],
+) => ({
+  revokedToken: {
+    findMany: jest.fn().mockResolvedValue(tokens),
+    upsert: jest.fn().mockResolvedValue(undefined),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+  },
+  user: {
+    findMany: jest.fn().mockResolvedValue(users),
+    update: jest.fn().mockResolvedValue({ tokenVersion: 1 }),
+  },
+});
+
+const service = async (db: ReturnType<typeof makeDb>) => {
+  const s = new RevocationService(db as unknown as DatabaseService, null, null);
+  await s.refresh();
+  return s;
+};
+
+const token = (over: Partial<TokenPayload> = {}): TokenPayload => ({
+  sub: 'u1',
+  name: 'ada',
+  jti: 'j1',
+  ver: 0,
+  ...over,
+});
+
+describe('what the snapshot refuses', () => {
+  it('lets an untouched token through', async () => {
+    const s = await service(makeDb());
+    expect(s.isRevoked(token())).toBeNull();
+  });
+
+  it('refuses a token whose jti was revoked', async () => {
+    const s = await service(makeDb([{ jti: 'j1' }]));
+    expect(s.isRevoked(token())).toBe('token');
+    // and only that one - revoking a session must not sign out the others
+    expect(s.isRevoked(token({ jti: 'j2' }))).toBeNull();
+  });
+
+  it('refuses a token issued under an older version', async () => {
+    const s = await service(makeDb([], [{ id: 'u1', tokenVersion: 3 }]));
+    expect(s.isRevoked(token({ ver: 2 }))).toBe('user');
+    expect(s.isRevoked(token({ ver: 3 }))).toBeNull();
+    // a token issued AFTER the bump is newer, not staler
+    expect(s.isRevoked(token({ ver: 4 }))).toBeNull();
+  });
+
+  it('treats a missing version as 0, so old tokens keep working', async () => {
+    // Tokens minted before this feature existed carry no ver. They are not
+    // suspicious, they are just old, and refusing them would sign out
+    // everyone the moment this deployed.
+    const s = await service(makeDb());
+    const noVer: TokenPayload = { sub: 'u1', name: 'ada', jti: 'j1' };
+    expect(s.isRevoked(noVer)).toBeNull();
+  });
+
+  it('refuses a malformed version rather than reading it as 0', async () => {
+    // 0 is the version everyone starts at, so treating a nonsense claim as 0
+    // would let a token argue its way back past a revocation.
+    const s = await service(makeDb([], [{ id: 'u1', tokenVersion: 2 }]));
+    expect(s.isRevoked(token({ ver: 'nope' } as unknown as TokenPayload))).toBe(
+      'user',
+    );
+    expect(s.isRevoked(token({ ver: -1 }))).toBe('user');
+    expect(s.isRevoked(token({ ver: 1.5 }))).toBe('user');
+  });
+
+  it('refuses everything until the first load has finished', () => {
+    // An empty snapshot and a loaded-empty snapshot look identical, and
+    // answering "not revoked" from the first is a confident lie. This window
+    // is one instance booting; refusing is the safe side and the caller
+    // retries.
+    const s = new RevocationService(
+      makeDb() as unknown as DatabaseService,
+      null,
+      null,
+    );
+    expect(s.isRevoked(token())).toBe('user');
+  });
+});
+
+describe('when the database is unreachable', () => {
+  it('keeps the previous snapshot rather than emptying it', async () => {
+    // An empty snapshot trusts every revoked token. A stale one only misses
+    // revocations made since it was taken - strictly the better failure.
+    const db = makeDb([{ jti: 'j1' }]);
+    const s = await service(db);
+    expect(s.isRevoked(token())).toBe('token');
+
+    db.revokedToken.findMany.mockRejectedValue(new Error('down'));
+    await s.refresh();
+    expect(s.isRevoked(token())).toBe('token');
+  });
+});
+
+describe('revoking', () => {
+  it('writes the record before trusting its own memory', async () => {
+    // Revocation that forgets on restart is not revocation. Postgres is the
+    // truth; the in-memory set is a cache of it.
+    const db = makeDb();
+    const s = await service(db);
+    const expires = new Date(Date.now() + 3600_000);
+
+    await s.revokeToken('j1', 'u1', expires);
+
+    expect(db.revokedToken.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { jti: 'j1' },
+        create: { jti: 'j1', userId: 'u1', expiresAt: expires },
+      }),
+    );
+    expect(s.isRevoked(token())).toBe('token');
+  });
+
+  it('takes effect on this instance immediately, with no Redis at all', async () => {
+    // Redis carries the news to OTHER instances. A deployment without it is
+    // a single instance, where the news has nowhere to go and the local set
+    // is the whole story.
+    const s = await service(makeDb());
+    await s.revokeAllForUser('u1');
+    expect(s.isRevoked(token({ ver: 0 }))).toBe('user');
+  });
+
+  it('bumps the version rather than setting it, so two revocations both count', async () => {
+    const db = makeDb();
+    const s = await service(db);
+    await s.revokeAllForUser('u1');
+    const args = (
+      db.user.update.mock.calls as [{ data: { tokenVersion: unknown } }][]
+    )[0][0];
+    expect(args.data.tokenVersion).toEqual({ increment: 1 });
+  });
+
+  it('tells listeners, so live sockets can be closed', async () => {
+    const s = await service(makeDb());
+    const seen: unknown[] = [];
+    s.onEvent((e) => seen.push(e));
+    await s.revokeToken('j9', 'u1', new Date(Date.now() + 1000));
+    expect(seen).toEqual([{ kind: 'token', jti: 'j9' }]);
+  });
+
+  it('survives a listener that throws', async () => {
+    // One badly behaved handler must not stop the revocation from being
+    // announced to the others, or from having happened at all.
+    const s = await service(makeDb());
+    s.onEvent(() => {
+      throw new Error('boom');
+    });
+    const seen: unknown[] = [];
+    s.onEvent((e) => seen.push(e));
+    await expect(
+      s.revokeToken('j9', 'u1', new Date(Date.now() + 1000)),
+    ).resolves.toBeUndefined();
+    expect(seen).toHaveLength(1);
+  });
+});
+
+describe('the sweep', () => {
+  it('deletes only records past the expiry of the token they refuse', async () => {
+    // A token past its own expiry is refused by the signature check before
+    // this is consulted, so the record can never match again.
+    const db = makeDb();
+    const s = await service(db);
+    const now = new Date('2026-08-13T00:00:00Z');
+    await s.sweep(now);
+    expect(db.revokedToken.deleteMany).toHaveBeenCalledWith({
+      where: { expiresAt: { lt: now } },
+    });
+  });
+
+  it('does not take the process down when it fails', async () => {
+    const db = makeDb();
+    const s = await service(db);
+    db.revokedToken.deleteMany.mockRejectedValue(new Error('down'));
+    await expect(s.sweep()).resolves.toBe(0);
+  });
+});

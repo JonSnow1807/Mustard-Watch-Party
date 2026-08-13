@@ -2,6 +2,10 @@ import { ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { JwtService } from '@nestjs/jwt';
+import type { RevocationService } from './revocation.service';
+
+const jwtService = new JwtService({ secret: 'test-secret' });
 import { GoogleOAuthService } from './google/google-oauth.service';
 
 /** Just enough Response to see what the handler decided. */
@@ -49,10 +53,20 @@ const makeGoogle = (enabled: boolean) => {
   } as unknown as GoogleOAuthService;
 };
 
+/** Revoked nothing, which is what every test here but the logout ones assume. */
+const noRevocations = () =>
+  ({
+    isRevoked: () => null,
+    revokeToken: jest.fn().mockResolvedValue(undefined),
+    revokeAllForUser: jest.fn().mockResolvedValue(2),
+  }) as unknown as RevocationService;
+
 const controllerWith = (enabled: boolean) =>
   new AuthController(
     { signInWithGoogle: jest.fn() } as unknown as AuthService,
     makeGoogle(enabled),
+    noRevocations(),
+    jwtService,
   );
 
 const emptyReq = { headers: {} } as Request;
@@ -148,6 +162,8 @@ describe('the guest route under two limits at once', () => {
     const controller = new AuthController(
       { createGuest } as unknown as AuthService,
       makeGoogle(false),
+      noRevocations(),
+      jwtService,
     );
     return { controller, createGuest };
   };
@@ -265,7 +281,12 @@ describe('starting a link, which is a different thing from signing in', () => {
     // the account would be able to attach their Google identity to someone
     // else's.
     const { google, start } = makeLinkGoogle();
-    const controller = new AuthController({} as unknown as AuthService, google);
+    const controller = new AuthController(
+      {} as unknown as AuthService,
+      google,
+      noRevocations(),
+      jwtService,
+    );
     const res = makeRes();
 
     const out = controller.linkStart(
@@ -289,11 +310,12 @@ describe('starting a link, which is a different thing from signing in', () => {
     // address bar, and the flow would silently go nowhere.
     const { google } = makeLinkGoogle();
     const res = makeRes();
-    new AuthController({} as unknown as AuthService, google).linkStart(
-      'u1',
-      {},
-      res as unknown as Response,
-    );
+    new AuthController(
+      {} as unknown as AuthService,
+      google,
+      noRevocations(),
+      jwtService,
+    ).linkStart('u1', {}, res as unknown as Response);
     expect(res.redirectedTo).toBeUndefined();
   });
 });
@@ -317,6 +339,8 @@ describe('what the callback tells someone when it fails', () => {
     const controller = new AuthController(
       { signInWithGoogle } as unknown as AuthService,
       google,
+      noRevocations(),
+      jwtService,
     );
     return { controller, logger };
   };

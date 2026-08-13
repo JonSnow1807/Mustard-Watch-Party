@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { subjectOf, type AuthedUser, TokenPayload } from './token-payload';
+import { RevocationService } from './revocation.service';
 
 /**
  * The request as this guard sees it: an Authorization header on the way in,
@@ -29,7 +30,10 @@ export interface AuthedRequest {
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly revocations: RevocationService,
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<AuthedRequest>();
@@ -68,6 +72,22 @@ export class JwtAuthGuard implements CanActivate {
     // shared with the WS middleware so the two planes cannot drift
     if (subjectOf(payload) === null) {
       throw new UnauthorizedException('Token is missing a subject');
+    }
+
+    // A valid signature is not permission: the token may have been taken out
+    // of circulation since it was signed. This reads an in-memory snapshot -
+    // no database call, which is what lets this guard stay synchronous and
+    // free of IO the way it was built to be.
+    const revoked = this.revocations.isRevoked(payload);
+    if (revoked !== null) {
+      // The two are worth telling apart. "Signed out" is something the
+      // person did; "signed out everywhere" may mean somebody else did it
+      // because the account was compromised.
+      throw new UnauthorizedException(
+        revoked === 'token'
+          ? 'This session was signed out - sign in again'
+          : 'All sessions were signed out - sign in again',
+      );
     }
 
     request.user = {

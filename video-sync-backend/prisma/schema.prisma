@@ -8,15 +8,15 @@ generator client {
 
 // The datasource block tells Prisma how to connect to your database
 datasource db {
-  provider = "postgresql"  // We're using PostgreSQL
-  url      = env("DATABASE_URL")  // Connection string from environment variable
+  provider = "postgresql" // We're using PostgreSQL
+  url      = env("DATABASE_URL") // Connection string from environment variable
 }
 
 // User model - represents people using your application
 model User {
-  id            String         @id @default(uuid())  // Unique identifier
-  username      String         @unique               // Must be unique across all users
-  email         String         @unique               // Email must also be unique
+  id            String         @id @default(uuid()) // Unique identifier
+  username      String         @unique // Must be unique across all users
+  email         String         @unique // Email must also be unique
   // Nullable since Google sign-in: an account that has only ever arrived
   // through a provider has no password, and a NOT NULL column would have
   // forced us to invent one (an unusable hash is still a login surface).
@@ -25,79 +25,88 @@ model User {
   password      String?
   /**
    * Someone who came in on an invite link without registering.
-   *
    * A real row rather than a rowless token, because three things already
    * depend on one existing: the socket handshake refuses a connection whose
    * token has no subject, and both Participant.userId and ChatMessage.userId
    * are foreign keys. A guest that is a User satisfies all three with no
    * branch anywhere downstream - see docs/GUEST_ACCESS.md.
-   *
    * The flag exists so these can be swept up later and so the UI can say
    * what someone is. Nothing else reads it: a guest is not less trusted
    * inside a room, they are just unregistered.
    */
   isGuest       Boolean        @default(false)
-  createdAt     DateTime       @default(now())      // Automatically set when created
-  updatedAt     DateTime       @updatedAt           // Automatically updated on changes
+  /**
+   * Bumped to invalidate every token this user currently holds.
+   * A token carries the version it was issued under; a mismatch is a
+   * refusal. This is the "sign out everywhere" lever and the answer to a
+   * leaked token - one integer, and every session that user has anywhere
+   * stops working at once.
+   * It is coarse on purpose. Revoking ONE session is RevokedToken below;
+   * this is for when you do not know which session to distrust.
+   */
+  tokenVersion  Int            @default(0)
+  createdAt     DateTime       @default(now()) // Automatically set when created
+  updatedAt     DateTime       @updatedAt // Automatically updated on changes
   chatMessages  ChatMessage[]
+  revokedTokens RevokedToken[]
 
   // Relations - these define how Users connect to other data
-  roomsCreated  Room[]         @relation("RoomCreator")    // Rooms this user created
-  participants  Participant[]                              // Room participations
-  oauthAccounts OAuthAccount[]                             // Linked provider identities
+  roomsCreated  Room[]         @relation("RoomCreator") // Rooms this user created
+  participants  Participant[] // Room participations
+  oauthAccounts OAuthAccount[] // Linked provider identities
 
   // Indexes improve query performance
-  @@index([email])      // Fast lookups by email
-  @@index([username])   // Fast lookups by username
+  @@index([email]) // Fast lookups by email
+  @@index([username]) // Fast lookups by username
   // the sweeper reads guests by age; without this it scans every user
   @@index([isGuest, createdAt])
 }
 
 // Room model - represents a video watching session
 model Room {
-  id            String         @id @default(uuid())
-  name          String                              // Human-readable room name
-  code          String         @unique @default(cuid())  // Unique code for joining
-  videoUrl      String?                            // Optional video URL
-  isActive      Boolean        @default(true)       // Is room currently active?
-  maxUsers      Int?                               // Optional maximum concurrent users (null = unlimited)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  chatMessages  ChatMessage[]
-  isPublic      Boolean        @default(false)
-  description   String?
-  tags          String[]       @default([])
-  allowGuestControl Boolean    @default(false)      // Allow non-hosts to control video
-  
+  id                String        @id @default(uuid())
+  name              String // Human-readable room name
+  code              String        @unique @default(cuid()) // Unique code for joining
+  videoUrl          String? // Optional video URL
+  isActive          Boolean       @default(true) // Is room currently active?
+  maxUsers          Int? // Optional maximum concurrent users (null = unlimited)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  chatMessages      ChatMessage[]
+  isPublic          Boolean       @default(false)
+  description       String?
+  tags              String[]      @default([])
+  allowGuestControl Boolean       @default(false) // Allow non-hosts to control video
+
   // Video synchronization state
-  currentTime   Float          @default(0)          // Current video position in seconds
-  isPlaying     Boolean        @default(false)      // Is video playing or paused?
-  lastSyncAt    DateTime       @default(now())      // Last time sync occurred
-  
+  currentTime Float    @default(0) // Current video position in seconds
+  isPlaying   Boolean  @default(false) // Is video playing or paused?
+  lastSyncAt  DateTime @default(now()) // Last time sync occurred
+
   // Relations
-  creatorId     String                              // Who created this room
-  creator       User           @relation("RoomCreator", fields: [creatorId], references: [id])
-  participants  Participant[]                       // Who's in this room
-  syncEvents    SyncEvent[]                         // History of sync events
-  
-  @@index([code])        // Fast room lookups by code
-  @@index([isActive])    // Fast queries for active rooms
+  creatorId    String // Who created this room
+  creator      User          @relation("RoomCreator", fields: [creatorId], references: [id])
+  participants Participant[] // Who's in this room
+  syncEvents   SyncEvent[] // History of sync events
+
+  @@index([code]) // Fast room lookups by code
+  @@index([isActive]) // Fast queries for active rooms
 }
 
 // Participant model - represents a user in a room
 model Participant {
-  id            String         @id @default(uuid())
-  joinedAt      DateTime       @default(now())      // When they joined
-  leftAt        DateTime?                           // When they left (null if still in)
-  isActive      Boolean        @default(true)       // Currently in room?
-  lastPingAt    DateTime       @default(now())      // For connection monitoring
-  
+  id         String    @id @default(uuid())
+  joinedAt   DateTime  @default(now()) // When they joined
+  leftAt     DateTime? // When they left (null if still in)
+  isActive   Boolean   @default(true) // Currently in room?
+  lastPingAt DateTime  @default(now()) // For connection monitoring
+
   // Relations
-  userId        String
-  user          User           @relation(fields: [userId], references: [id])
-  roomId        String
-  room          Room           @relation(fields: [roomId], references: [id])
-  
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
+
   // Ensure a user can only be in a room once
   @@unique([userId, roomId])
   // Fast queries for active participants in a room
@@ -106,30 +115,30 @@ model Participant {
 
 // SyncEvent model - tracks synchronization history
 model SyncEvent {
-  id            String         @id @default(uuid())
-  type          EventType                           // What kind of event
-  timestamp     DateTime       @default(now())      // When it happened
-  videoTime     Float                              // Video position at event time
-  
+  id        String    @id @default(uuid())
+  type      EventType // What kind of event
+  timestamp DateTime  @default(now()) // When it happened
+  videoTime Float // Video position at event time
+
   // Relations
-  roomId        String
-  room          Room           @relation(fields: [roomId], references: [id])
-  
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
+
   // Fast queries for room event history
   @@index([roomId, timestamp])
 }
 
 model ChatMessage {
-  id            String         @id @default(uuid())
-  content       String
-  createdAt     DateTime       @default(now())
-  
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
+
   // Relations
-  userId        String
-  user          User           @relation(fields: [userId], references: [id])
-  roomId        String
-  room          Room           @relation(fields: [roomId], references: [id])
-  
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
+
   @@index([roomId, createdAt])
 }
 
@@ -143,8 +152,8 @@ model ChatMessage {
 // to at most one local user.
 model OAuthAccount {
   id                String   @id @default(uuid())
-  provider          String                            // 'google'
-  providerAccountId String                            // the provider's stable subject ('sub')
+  provider          String // 'google'
+  providerAccountId String // the provider's stable subject ('sub')
   // Kept for support/debugging only. NEVER used to find a user: matching an
   // incoming provider email against local accounts is how OAuth becomes
   // account takeover when local emails are unverified.
@@ -152,8 +161,8 @@ model OAuthAccount {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  userId            String
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@index([userId])
@@ -161,9 +170,41 @@ model OAuthAccount {
 
 // EventType enum - possible synchronization events
 enum EventType {
-  PLAY      // User pressed play
-  PAUSE     // User pressed pause
-  SEEK      // User jumped to different time
-  JOIN      // User joined room
-  LEAVE     // User left room
+  PLAY // User pressed play
+  PAUSE // User pressed pause
+  SEEK // User jumped to different time
+  JOIN // User joined room
+  LEAVE // User left room
+}
+
+/**
+ * A single token taken out of circulation before it expired - what an
+ * ordinary sign-out writes.
+ * Postgres rather than Redis is deliberate: revocation that forgets on
+ * restart is not revocation, and this deployment treats Redis as a cache
+ * that may be absent (docs/SCALING.md). Redis still carries the
+ * NOTIFICATION so other instances drop the token from memory promptly; the
+ * truth is here.
+ * Rows are useless once the token would have expired anyway, so expiresAt
+ * is kept and swept nightly. Without that this table grows forever with
+ * entries no check can ever match.
+ */
+model RevokedToken {
+  /**
+   * the token's jti claim
+   */
+  jti       String   @id
+  userId    String
+  /**
+   * when the token would have expired on its own - the sweep boundary
+   */
+  expiresAt DateTime
+  revokedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // the sweeper deletes by expiry; the guard never queries this table at
+  // all (it reads an in-memory snapshot), so this index serves the sweep
+  @@index([expiresAt])
+  @@index([userId])
 }
