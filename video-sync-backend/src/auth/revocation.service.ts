@@ -2,11 +2,28 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression, Interval } from '@nestjs/schedule';
 import type Redis from 'ioredis';
 import { DatabaseService } from '../database/database.service';
-import { REDIS_PUB, REDIS_SUB } from '../redis/redis.module';
+import { REDIS_KV, REDIS_PUB, REDIS_SUB } from '../redis/redis.module';
 import { subjectOf, versionOf, type TokenPayload } from './token-payload';
 
 /** Where instances tell each other that something was revoked. */
 export const REVOCATION_CHANNEL = 'mustard:revocations';
+
+/**
+ * Where the snapshot is MIRRORED for consumers that have Redis but no
+ * Postgres - today that is relay-go, which verifies the same tokens against
+ * the same secret but had no way to learn a token was taken out of
+ * circulation (docs/AUTH.md used to call this out as unclosable because
+ * "the relay has no Redis connection" - which was simply false; it executes
+ * the shared Lua against the same instance).
+ *
+ * The mirror is a CACHE of the Postgres truth, rebuilt on every refresh. If
+ * Redis flushes (the deployment uses a no-persistence tier), the mirror is
+ * empty until the next refresh - the relay fails open to signature-only for
+ * at most REFRESH_MS, the same staleness bound an instance that missed a
+ * pub/sub message already has. Postgres remains the only durable record.
+ */
+export const REVOKED_JTI_KEY = 'revoked:jti';
+export const REVOKED_USERVER_KEY = 'revoked:userver';
 
 /**
  * How stale an instance's picture of revocations can get if the pub/sub
@@ -71,6 +88,7 @@ export class RevocationService implements OnModuleInit {
     private readonly database: DatabaseService,
     @Inject(REDIS_PUB) private readonly pub: Redis | null,
     @Inject(REDIS_SUB) private readonly sub: Redis | null,
+    @Inject(REDIS_KV) private readonly kv: Redis | null,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -136,6 +154,7 @@ export class RevocationService implements OnModuleInit {
       update: {},
     });
     this.rememberToken(jti);
+    await this.mirrorToken(jti);
     await this.announce({ kind: 'token', jti });
   }
 
@@ -147,6 +166,7 @@ export class RevocationService implements OnModuleInit {
       select: { tokenVersion: true },
     });
     this.rememberVersion(userId, user.tokenVersion);
+    await this.mirrorVersion(userId, user.tokenVersion);
     await this.announce({
       kind: 'user',
       userId,
@@ -214,6 +234,8 @@ export class RevocationService implements OnModuleInit {
       this.revokedTokens = nextTokens;
       this.userVersions = nextVersions;
       this.loaded = true;
+
+      await this.mirrorSnapshot(nextTokens, nextVersions);
     } catch (err) {
       // Keep the previous snapshot rather than emptying it. An empty
       // snapshot trusts every revoked token; a stale one only misses
@@ -227,6 +249,77 @@ export class RevocationService implements OnModuleInit {
       this.refreshing = false;
       this.pendingTokens.clear();
       this.pendingVersions.clear();
+    }
+  }
+
+  /**
+   * Rebuild the Redis mirror to match the snapshot, atomically.
+   *
+   * Built under temp keys and swapped in with RENAME so a reader never sees
+   * a half-written set - a relay that read mid-rebuild would briefly trust
+   * revoked tokens. RENAME of a nonexistent key throws, so the empty case
+   * (nothing revoked anywhere) is an explicit DEL of the live keys.
+   */
+  private async mirrorSnapshot(
+    jtis: Set<string>,
+    versions: Map<string, number>,
+  ): Promise<void> {
+    if (!this.kv) return;
+    try {
+      const multi = this.kv.multi();
+      const jtiTmp = `${REVOKED_JTI_KEY}:tmp`;
+      const verTmp = `${REVOKED_USERVER_KEY}:tmp`;
+      multi.del(jtiTmp, verTmp);
+      if (jtis.size > 0) {
+        multi.sadd(jtiTmp, ...jtis);
+        multi.rename(jtiTmp, REVOKED_JTI_KEY);
+      } else {
+        multi.del(REVOKED_JTI_KEY);
+      }
+      if (versions.size > 0) {
+        const flat: string[] = [];
+        for (const [id, v] of versions) flat.push(id, String(v));
+        multi.hset(verTmp, ...flat);
+        multi.rename(verTmp, REVOKED_USERVER_KEY);
+      } else {
+        multi.del(REVOKED_USERVER_KEY);
+      }
+      await multi.exec();
+    } catch (err) {
+      // The mirror is a cache; a failed rebuild leaves the previous one,
+      // which is stale rather than wrong - the same trade as the snapshot.
+      this.logger.warn(
+        `revocation mirror rebuild failed: ${
+          err instanceof Error ? err.message : 'unknown'
+        }`,
+      );
+    }
+  }
+
+  /** Incremental mirror writes, so the relay hears within a round trip. */
+  private async mirrorToken(jti: string): Promise<void> {
+    if (!this.kv) return;
+    try {
+      await this.kv.sadd(REVOKED_JTI_KEY, jti);
+    } catch (err) {
+      this.logger.warn(
+        `revocation mirror sadd failed: ${
+          err instanceof Error ? err.message : 'unknown'
+        }`,
+      );
+    }
+  }
+
+  private async mirrorVersion(userId: string, version: number): Promise<void> {
+    if (!this.kv) return;
+    try {
+      await this.kv.hset(REVOKED_USERVER_KEY, userId, String(version));
+    } catch (err) {
+      this.logger.warn(
+        `revocation mirror hset failed: ${
+          err instanceof Error ? err.message : 'unknown'
+        }`,
+      );
     }
   }
 

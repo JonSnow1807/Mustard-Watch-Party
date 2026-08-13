@@ -11,14 +11,15 @@
 // transport and runtime). Single instance; fanout is in-process.
 //
 // Binary frames (little-endian):
-//   C→S 0x01 ClockPing   [t0 f64]
-//   S→C 0x02 ClockPong   [t0 f64][t1 f64][t2 f64]
-//   C→S 0x03 Control     [intent u8][mediaTime f64][roomLen u8][room...][cmdLen u8][cmdId...]
-//                          (cmdLen+cmdId optional - old frames end at room)
-//   S→C 0x04 Timeline    [seq u32][epoch f64][isPlaying u8][mediaTime f64][stampedAt f64][reason u8]
-//   C→S 0x05 Join        [roomLen u8][room...]
-//   S→C 0x06 JoinAck     (Timeline payload)
-//   S→C 0x07 Rejected    [reason u8]
+//
+//	C→S 0x01 ClockPing   [t0 f64]
+//	S→C 0x02 ClockPong   [t0 f64][t1 f64][t2 f64]
+//	C→S 0x03 Control     [intent u8][mediaTime f64][roomLen u8][room...][cmdLen u8][cmdId...]
+//	                       (cmdLen+cmdId optional - old frames end at room)
+//	S→C 0x04 Timeline    [seq u32][epoch f64][isPlaying u8][mediaTime f64][stampedAt f64][reason u8]
+//	C→S 0x05 Join        [roomLen u8][room...]
+//	S→C 0x06 JoinAck     (Timeline payload)
+//	S→C 0x07 Rejected    [reason u8]
 package main
 
 import (
@@ -31,8 +32,8 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"regexp"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -63,6 +64,51 @@ const cmdDedupTTLMS = 15 * 60 * 1000
 // mirror of the Node gateway's cmdId validation: bounded, separator-free,
 // so the derived room:<room>:cmd:<cmdId> key cannot alias another keyspace
 var cmdIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// Room names get the same treatment, and this was a gap: cmdId was
+// validated precisely so the derived Redis key could not alias another
+// keyspace, while room - spliced into THREE key shapes (:tl, :cmd:, :log) -
+// was accepted raw, so a room containing ':' addressed someone else's keys.
+var roomPattern = cmdIDPattern
+
+// The revocation mirror the Node backend maintains (RevocationService):
+// a SET of revoked jtis and a HASH of userId -> tokenVersion, rebuilt from
+// Postgres on every refresh and updated on every revocation. The relay
+// TRUSTS this mirror the way it already trusts the same Redis for every
+// byte of timeline state. If Redis flushes, the mirror is empty until the
+// backend's next refresh - the relay fails open to signature-only for at
+// most that window (30s), which is the same staleness bound a backend
+// instance that missed a pub/sub message already lives with.
+const (
+	revokedJtiKey     = "revoked:jti"
+	revokedUserverKey = "revoked:userver"
+	revocationChannel = "mustard:revocations"
+	// how often the sweep re-checks live connections against the mirror
+	// and closes ones whose token expired - matches the backend's bound
+	revocationSweepInterval = 30 * time.Second
+)
+
+// identity is what the token asserted at accept, kept for the lifetime of
+// the connection so revocation and expiry can find it later. Before this
+// existed the claims were verified once and thrown away - a connection
+// outlived its token indefinitely, which made relay revocation impossible
+// by construction.
+type identity struct {
+	sub string
+	jti string // "" for tokens minted before jti existed: not individually revocable
+	ver int    // 0 for tokens minted before ver existed
+	exp time.Time
+}
+
+// revocationEvent mirrors the JSON the backend publishes. Malformed events
+// are ignored, and a user event with no version is NOT version 0 - zero is
+// the version every account starts at, so defaulting to it would un-revoke.
+type revocationEvent struct {
+	Kind    string `json:"kind"`
+	Jti     string `json:"jti"`
+	UserId  string `json:"userId"`
+	Version int    `json:"version"`
+}
 
 // parseControl decodes an 0x03 frame:
 //
@@ -135,6 +181,11 @@ type server struct {
 
 	mu    sync.RWMutex
 	rooms map[string]map[*conn]struct{}
+	// EVERY authenticated connection, not just joined ones. The rooms map
+	// only sees a conn after Join, so a sweep built on it would miss a
+	// connection that authenticated with a since-revoked token and never
+	// joined - exactly the connection a revocation most wants to find.
+	conns map[*conn]struct{}
 }
 
 type conn struct {
@@ -142,6 +193,16 @@ type conn struct {
 	send   chan []byte
 	room   string
 	closed chan struct{}
+	id     identity
+}
+
+// evict closes the underlying websocket and ONLY the websocket. c.send is
+// owned by the handler's defer: closing it from outside races trySend and
+// panics the process - and this relay is a single process holding every
+// room. Closing the ws makes the read loop return, which runs the defer,
+// which tears down the rest in its owner's hands.
+func (c *conn) evict(reason string) {
+	_ = c.ws.Close(websocket.StatusPolicyViolation, reason)
 }
 
 // trySend never blocks the read loop: a dead writer or a full buffer means
@@ -212,18 +273,78 @@ func encodeTimeline(msgType byte, tl timeline) []byte {
 	return buf
 }
 
-func (s *server) authenticate(r *http.Request) bool {
+func (s *server) authenticate(r *http.Request) (identity, bool) {
 	tokenStr := r.URL.Query().Get("token")
 	if tokenStr == "" {
-		return false
+		return identity{}, false
 	}
-	_, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+	// WithExpirationRequired: golang-jwt validates exp when PRESENT but does
+	// not demand it, so a token minted without one never expired here. The
+	// Node backend always sets exp; a token without it is not one of ours.
+	claims := jwt.MapClaims{}
+	_, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
 		return s.jwtSecret, nil
-	})
-	return err == nil
+	}, jwt.WithExpirationRequired())
+	if err != nil {
+		return identity{}, false
+	}
+	return identityFromClaims(claims)
+}
+
+// identityFromClaims extracts what revocation needs, with the same
+// tolerances as the Node planes: no jti means not individually revocable,
+// no ver means version 0 - but a subject is REQUIRED, matching the socket
+// plane's refusal of subject-less tokens (a valid signature is not an
+// identity). Split from authenticate so the claim handling is testable
+// without minting HTTP requests.
+func identityFromClaims(claims jwt.MapClaims) (identity, bool) {
+	sub, _ := claims["sub"].(string)
+	if sub == "" {
+		return identity{}, false
+	}
+	id := identity{sub: sub}
+	if jti, ok := claims["jti"].(string); ok {
+		id.jti = jti
+	}
+	// JSON numbers arrive as float64; a fractional or negative ver is
+	// malformed, and malformed is a refusal, not a zero - zero is the
+	// version every account starts at, and a token must not be able to
+	// argue its way back to it.
+	if raw, present := claims["ver"]; present {
+		f, ok := raw.(float64)
+		if !ok || f != math.Trunc(f) || f < 0 {
+			return identity{}, false
+		}
+		id.ver = int(f)
+	}
+	exp, err := claims.GetExpirationTime()
+	if err != nil || exp == nil {
+		return identity{}, false
+	}
+	id.exp = exp.Time
+	return id, true
+}
+
+// revoked answers whether this identity is refused by the mirror. Fails
+// OPEN on Redis errors: the relay cannot serve traffic at all without
+// Redis, so a read failure here means the connection is about to die on
+// its own - refusing sign-ins for it would add nothing but flakiness.
+func (s *server) revoked(ctx context.Context, id identity) bool {
+	if id.jti != "" {
+		if hit, err := s.rdb.SIsMember(ctx, revokedJtiKey, id.jti).Result(); err == nil && hit {
+			return true
+		}
+	}
+	current, err := s.rdb.HGet(ctx, revokedUserverKey, id.sub).Result()
+	if err == nil {
+		if v, convErr := strconv.Atoi(current); convErr == nil && id.ver < v {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *server) joinRoom(c *conn, room string) {
@@ -262,17 +383,100 @@ func (s *server) broadcast(room string, frame []byte) {
 	s.mu.RUnlock()
 }
 
+// evictRevoked closes every live connection a revocation event names.
+// Strictly-less on version: the bump mints a NEW token at the new version,
+// and the session that did the signing-out must not evict itself.
+func (s *server) evictRevoked(ev revocationEvent) int {
+	s.mu.RLock()
+	var victims []*conn
+	for c := range s.conns {
+		switch {
+		case ev.Kind == "token" && ev.Jti != "" && c.id.jti == ev.Jti:
+			victims = append(victims, c)
+		case ev.Kind == "user" && ev.UserId != "" && ev.Version > 0 &&
+			c.id.sub == ev.UserId && c.id.ver < ev.Version:
+			victims = append(victims, c)
+		}
+	}
+	s.mu.RUnlock()
+	// outside the lock: Close can block on the peer, and the read loop's
+	// deferred cleanup needs the write lock this function would be holding
+	for _, c := range victims {
+		c.evict("session revoked")
+	}
+	return len(victims)
+}
+
+// revocationLoop is the relay's ear: pub/sub for the fast path, a periodic
+// sweep as the floor under it. The sweep also closes connections whose
+// token has simply expired - a connection is authenticated once at accept,
+// and without this it outlives its token for as long as it stays open,
+// which is the exact gap the Node plane closed first.
+func (s *server) revocationLoop(ctx context.Context) {
+	sub := s.rdb.Subscribe(ctx, revocationChannel)
+	go func() {
+		for msg := range sub.Channel() {
+			var ev revocationEvent
+			if json.Unmarshal([]byte(msg.Payload), &ev) != nil {
+				continue
+			}
+			if n := s.evictRevoked(ev); n > 0 {
+				log.Printf("revocation: closed %d connection(s)", n)
+			}
+		}
+	}()
+
+	for range time.Tick(revocationSweepInterval) {
+		now := time.Now()
+		s.mu.RLock()
+		snapshot := make([]*conn, 0, len(s.conns))
+		for c := range s.conns {
+			snapshot = append(snapshot, c)
+		}
+		s.mu.RUnlock()
+		closed := 0
+		for _, c := range snapshot {
+			if !c.id.exp.After(now) {
+				c.evict("token expired")
+				closed++
+				continue
+			}
+			if s.revoked(ctx, c.id) {
+				c.evict("session revoked")
+				closed++
+			}
+		}
+		if closed > 0 {
+			log.Printf("revocation sweep: closed %d connection(s)", closed)
+		}
+	}
+}
+
 func (s *server) handle(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	id, ok := s.authenticate(r)
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// A token revoked a moment ago must not open a NEW connection just
+	// because the signature is still good - same rule as the Node planes.
+	if s.revoked(r.Context(), id) {
+		http.Error(w, "unauthorized: token revoked", http.StatusUnauthorized)
 		return
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
 		return
 	}
-	c := &conn{ws: ws, send: make(chan []byte, 256), closed: make(chan struct{})}
+	c := &conn{ws: ws, send: make(chan []byte, 256), closed: make(chan struct{}), id: id}
 	ctx := r.Context()
+
+	// Registered BEFORE the read loop, in the global registry rather than
+	// the rooms map: a connection that never joins a room is exactly the
+	// one a revocation sweep would otherwise never find.
+	s.mu.Lock()
+	s.conns[c] = struct{}{}
+	s.mu.Unlock()
 
 	go func() { // writer goroutine
 		defer close(c.closed) // unblocks trySend once writing is impossible
@@ -285,6 +489,9 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		s.leave(c)
+		s.mu.Lock()
+		delete(s.conns, c)
+		s.mu.Unlock()
 		close(c.send)
 		ws.Close(websocket.StatusNormalClosure, "")
 	}()
@@ -321,6 +528,9 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			room := string(data[2 : 2+n])
+			if !roomPattern.MatchString(room) {
+				continue // malformed frame, same treatment as parseControl
+			}
 			s.joinRoom(c, room)
 			raw, ok := luaString(s.initRoom.Run(ctx, s.rdb,
 				[]string{"room:" + room + ":tl", "room:" + room + ":log"},
@@ -338,7 +548,7 @@ func (s *server) handle(w http.ResponseWriter, r *http.Request) {
 
 		case 0x03: // Control
 			intent, mediaTime, room, cmdId, okc := parseControl(data)
-			if !okc {
+			if !okc || !roomPattern.MatchString(room) {
 				continue
 			}
 			raw, ok := luaString(s.applyControl.Run(ctx, s.rdb,
@@ -389,6 +599,7 @@ func main() {
 		rdb:       redis.NewClient(opts),
 		jwtSecret: []byte(*secret),
 		rooms:     map[string]map[*conn]struct{}{},
+		conns:     map[*conn]struct{}{},
 	}
 	s.applyControl, s.initRoom, err = loadLua(*luaDir)
 	if err != nil {
@@ -430,6 +641,8 @@ func main() {
 			}
 		}
 	}()
+
+	go s.revocationLoop(context.Background())
 
 	http.HandleFunc("/sync", s.handle)
 	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
