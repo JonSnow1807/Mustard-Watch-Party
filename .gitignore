@@ -26,3 +26,4 @@ formal/tools/
 .env.local
 .env*.local
 .vercel
+relay-rs/target/

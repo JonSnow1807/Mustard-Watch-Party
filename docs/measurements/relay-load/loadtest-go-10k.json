@@ -1,0 +1,28 @@
+{
+  "label": "go-10k",
+  "plane": "relay",
+  "ws": "http://localhost:3410",
+  "requested": 10000,
+  "opened": 10000,
+  "closedAfterOpen": 0,
+  "activeConnections": 10000,
+  "connectErrors": 0,
+  "unansweredPings": 0,
+  "acceptMs": 2310,
+  "acceptPerSec": 4329,
+  "pings": 290000,
+  "rttP50": 64,
+  "rttP95": 193,
+  "rttP99": 209,
+  "rttP999": 252,
+  "rttMax": 287,
+  "server": {
+    "baselineRssKb": 7312,
+    "loadedRssKb": 407728,
+    "rssPerConnKb": 40,
+    "cpuPctUnderLoad": 5.2
+  },
+  "gitSha": "bf9c5bfdffb892db4a529282fbadf923a29d490e",
+  "hardware": "10 cores, 17GB",
+  "at": "2026-08-13T23:12:14.952Z"
+}

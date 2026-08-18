@@ -29,7 +29,8 @@ const jwt = requireBackend('jsonwebtoken');
 const Redis = requireHarness('ioredis');
 
 const SECRET = 'relay-live-check-secret';
-const PORT = 3401;
+const PORT = Number(process.env.RELAY_PORT ?? 3401);
+const PREBUILT = process.env.RELAY_BIN; // set to run a non-Go relay binary
 const REDIS_URL = 'redis://localhost:6380';
 
 let failed = 0;
@@ -79,15 +80,19 @@ const redis = new Redis(REDIS_URL);
 // a previous aborted run must not leak revocations into this one
 await redis.del('revoked:jti', 'revoked:userver');
 
-console.log('building relay...');
-const build = spawn('go', ['build', '-o', '/tmp/relay-live-check', '.'], {
-  cwd: join(repo, 'relay-go'),
-  stdio: 'inherit',
-});
-await new Promise((r, j) => build.on('exit', (c) => (c === 0 ? r() : j(new Error('go build failed')))));
+let binary = PREBUILT;
+if (!binary) {
+  console.log('building relay-go...');
+  const build = spawn('go', ['build', '-o', '/tmp/relay-live-check', '.'], {
+    cwd: join(repo, 'relay-go'),
+    stdio: 'inherit',
+  });
+  await new Promise((r, j) => build.on('exit', (c) => (c === 0 ? r() : j(new Error('go build failed')))));
+  binary = '/tmp/relay-live-check';
+}
 
 const relay = spawn(
-  '/tmp/relay-live-check',
+  binary,
   ['-addr', `:${PORT}`, '-redis', REDIS_URL, '-lua-dir', join(repo, 'video-sync-backend', 'src', 'sync', 'lua'), '-jwt-secret', SECRET],
   { stdio: ['ignore', 'pipe', 'pipe'] },
 );
