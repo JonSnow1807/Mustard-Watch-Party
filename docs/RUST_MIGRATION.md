@@ -49,13 +49,15 @@ voice, presence, `set-video`, the video fence, and structured rejections until
 each is given a binary representation (they have none today), and it rewrites a
 working, tested frontend transport for no user-facing gain.
 
-**Recommendation: Route A.** The frontend is mature and correct; the wire
+**Decided: Route A** (2026-08-18). The frontend is mature and correct; the wire
 contract is the stable interface everything (frontend, bots, relays) already
 depends on. Preserving it lets the *existing* bot fleet and live checks prove
 the Rust backend as a fourth conforming target with zero client risk, and lets
 the migration run **piece by piece behind the same URLs** rather than as a
-flag day. Route B only makes sense if a future protocol redesign is already
-wanted for its own reasons.
+flag day. Route B was considered and set aside — it only makes sense if a
+future protocol redesign is already wanted for its own reasons, and it would
+forfeit chat/voice/presence/`set-video` until each gained a binary form. The
+phased plan below assumes Route A throughout (`socketioxide` for the wire).
 
 ## What already exists that de-risks this
 
