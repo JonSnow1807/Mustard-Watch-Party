@@ -146,7 +146,7 @@ flowchart LR
   committed must-fail configs pin why the dedup must be atomic, why the TTL
   is a correctness parameter, and why sweep commits must be logged. Proven
   live by injection: duplicates sent with the same key produce **zero extra
-  commits** on both the Socket.IO and binary-relay planes
+  commits** across all three conforming implementations (below)
   ([artifacts](docs/measurements/exactly-once/)).
 - **Append-only command log + replay reconciliation**: every commit also
   appends to a per-room stream in the same atomic step; a reconciler checks
@@ -171,7 +171,73 @@ flowchart LR
 Full design: [docs/SYNC_DESIGN.md](docs/SYNC_DESIGN.md) ·
 [scaling & coordination](docs/SCALING.md) · [two coordination planes, measured](docs/COORDINATION.md) ·
 [formal verification](docs/FORMAL.md) · [audio ground truth](docs/AUDIO_TRUTH.md) ·
-[Go relay](docs/RELAY.md)
+[Go relay](docs/RELAY.md) · [Rust relay + load study](relay-rs/README.md)
+
+## Identity & sessions
+
+The same JWT (`{sub, name, jti, ver, sess, exp}`, HS256) authenticates every
+REST call and the socket handshake — one contract in
+[`token-payload.ts`](video-sync-backend/src/auth/token-payload.ts) that the
+REST guard, the WS middleware, and the Go/Rust relays all read the same way.
+The design goal was that neither the request path nor the handshake does a
+database lookup, and the security features below are built to keep that true.
+
+- **Revocation that reaches a live connection.** `logout` and `logout-all`
+  don't just drop the client's token — they take it out of circulation and
+  **close the socket it already opened**, with a reason the client shows
+  (`session-ended`). A per-request check reads an in-memory snapshot (no IO);
+  Postgres is the durable truth, Redis carries the news to other instances,
+  and the honest worst-case staleness is 30s, not the token's 12h lifetime.
+- **Sliding sessions that can't be abused.** `refresh` rotates the `jti` and
+  revokes the old token in the same call — so a stolen copy is worth *less*
+  after a refresh, not more — bounded by a 30-day absolute cap anchored to the
+  session's birth (`sess`), which refreshes preserve. Concurrent multi-tab
+  refresh is tolerated; genuine token reuse is caught by the durable jti check.
+- **Google sign-in** is a server-side authorization-code flow with PKCE and an
+  HMAC-sealed state cookie (login-CSRF/PKCE defense); the token comes back in
+  the URL **fragment**, never the query string. Guests get a real row and can
+  **claim it in place** (password or Google) keeping their chat and
+  participant history under the same id. Setting a password re-authenticates
+  first and signs out every other session atomically.
+- **Every one of these is proven by a live check against a real server + Redis**,
+  not just unit tests — the revocation, session, claim, and rate-limit scripts
+  in [`scripts/live-checks/`](scripts/live-checks/) — because this surface has
+  a history of unit-correct code that reached nobody in production.
+
+Full model, and the design decisions behind each: [docs/AUTH.md](docs/AUTH.md)
+· [guest access](docs/GUEST_ACCESS.md).
+
+## Three conforming implementations of the sync plane
+
+The protocol is defined by TLA+ specs and enforced by Redis Lua scripts that
+are **language-agnostic on purpose** — so the same bot fleet can prove any
+implementation byte-for-byte. There are three:
+
+| plane | language / transport | role |
+|---|---|---|
+| **Node** (`video-sync-backend`) | NestJS / Socket.IO+JSON | production — auth, rooms, chat, voice, sync |
+| **relay-go** ([`relay-go/`](relay-go/)) | Go / raw-WS binary | conformance study + systems benchmark |
+| **relay-rs** ([`relay-rs/`](relay-rs/)) | Rust / raw-WS binary | third conformance target + runtime study |
+
+The Go and Rust relays run the *same* Lua against the *same* Redis and speak
+a byte-identical binary protocol; each passes the identical gated bot fleet
+and the plane-agnostic revocation/ingress live checks. Two independent
+implementations that must agree on every byte catch spec-vs-code bugs a single
+one can't — and a third, GC-free, stresses the spec from an angle neither GC'd
+plane does.
+
+The runtime study answered a question the drift numbers structurally can't
+(drift is bounded by protocol + network, not the runtime, which is why Go and
+Rust *tie* Node on sync quality). At **10,000 concurrent connections** the
+clean result is **memory**: Rust held ~15 KB/connection vs Go's ~40 KB (a
+reproducible ~3×), at ~a fifth the CPU. Latency showed a modest, consistent
+Rust edge at median/p95; the *extreme* tail was too noisy on a single
+co-resident machine to attribute cleanly, and the write-up
+[says so rather than citing the best-looking run](relay-rs/README.md#the-evaluation-the-drift-numbers-could-not-do).
+Neither relay is deployed — they are studies and conformance targets, not
+production services. A roadmap for migrating the production backend to Rust,
+built as a conformance-gated strangler-fig on top of this machinery, is in
+[docs/RUST_MIGRATION.md](docs/RUST_MIGRATION.md).
 
 ## Honest limits
 
@@ -204,8 +270,11 @@ in a container), steady-state windows, run validity gates:
 
 Create a room, share the link, watch together: play/pause/seek stay in
 sync, with chat and WebRTC voice. Rooms are public or private with optional
-collaborative control; identity is a JWT verified at the socket handshake
-(forged control is a [tested rejection](sync-harness/src/verify-m3.ts)).
+collaborative control. Sign in with a password or Google, or join as a guest
+and keep the account later — identity is a JWT verified at both the REST guard
+and the socket handshake (forged control is a
+[tested rejection](sync-harness/src/verify-m3.ts)), with revocation, sliding
+sessions, and account management (see [Identity & sessions](#identity--sessions)).
 
 ## Development
 
@@ -214,6 +283,8 @@ Setup, labs, tests and gates: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 ## Stack
 
 NestJS · Socket.IO · Prisma/PostgreSQL · Redis (ioredis + Lua) · React ·
-a shared pure-TS sync core consumed by the browser, the bot fleet, and jest
-· Playwright + Toxiproxy + tc-netem for measurement · GitHub Actions with a
-sync-regression gate on every pull request and every push to `main`.
+JWT auth with Google OAuth (PKCE) and token revocation · a shared pure-TS
+sync core consumed by the browser, the bot fleet, and jest · two additional
+conforming sync implementations in Go and Rust · Playwright + Toxiproxy +
+tc-netem for measurement · TLA+ (TLC) model-checking nightly · GitHub Actions
+with a sync-regression gate on every pull request and every push to `main`.
