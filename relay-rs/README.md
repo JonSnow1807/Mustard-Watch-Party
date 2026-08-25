@@ -16,8 +16,8 @@ deployment. It exists to be measured and to keep the protocol honest.
 | check | result |
 |---|---|
 | Protocol (bot fleet, gated) | **pass** — 0 seq gaps, exact commit counts, drift within SLO, same suite that gates Node and Go |
-| Revocation (`relay-revocation-check.mjs`, 16 checks) | **pass** — revoked-at-accept 401, sibling survives, sign-out-everywhere, expiry sweep, process survives eviction |
-| Frame codec / JWT / charset (unit) | **pass** — 6 tests, strict-length parsing and the malformed-versus-padding boundary |
+| Revocation (`relay-revocation-check.mjs`, 15 checks) | **pass** — revoked-at-accept 401, sibling survives, sign-out-everywhere, expiry sweep, process survives eviction |
+| Frame codec / JWT / charset (unit) | **pass** — 7 tests, strict-length parsing and the malformed-versus-padding boundary |
 
 The revocation check is the **same script** that proves relay-go, pointed at
 the Rust binary via `RELAY_BIN`. A byte the Rust plane got wrong would show up
@@ -54,11 +54,12 @@ All four tables are the committed run `bf9c5bf` (clean tree).
 | | RSS / conn | RTT p50 / p95 / p99.9 / max | CPU% |
 |---|---|---|---|
 | relay-go | 40 KB | 64 / 193 / 252 / 287 ms | 5.2 |
-| relay-rs | 15 KB | 50 / 155 / 270 / 277 ms | 1.6 |
+| relay-rs | 14.5 KB | 50 / 155 / 270 / 277 ms | 1.6 |
 
 The **extreme tail (p99.9) does not cleanly separate the runtimes on this
 hardware** — across three 10k runs Go's p99.9 was 390 / 238 / 252 ms and
-Rust's was 175 / 167 / 270 ms. Rust is consistently better at the **median
+Rust's was 175 / 167 / 270 ms (the first run was never committed; the second
+and third are the committed generations `fc6e0b9` and `bf9c5bf`). Rust is consistently better at the **median
 and p95** (this run 50/155 vs 64/193, and similarly in the others), and its
 memory and CPU wins are steady, but the p99.9 is noisy enough on a single
 co-resident machine that neither its magnitude nor its ordering is reliable
@@ -68,7 +69,7 @@ run to run. See the honesty note.
 
 1. **Memory: ~3× at scale, and rock-steady — the clean result.** Go held
    ~40 KB per connection at 10k, Rust ~15 KB, and this ratio was the most
-   consistent finding across every run. At 10k that is ~400 MB versus ~150 MB;
+   consistent finding across every run. At 10k that is ~400 MB versus ~145 MB;
    extrapolated to 100k it is roughly 4 GB versus 1.5 GB, the difference
    between fitting on one box and not. Go's goroutine-per-connection stack
    plus GC headroom is the cost; Rust's per-task future is smaller and there
@@ -87,10 +88,12 @@ run to run. See the honesty note.
    but **this harness on this machine did not measure it** — isolating it
    needs the client and servers on separate Linux hosts.
 
-3. **CPU: ~a fifth.** The committed 10k run recorded 9.2% for Go and 1.6% for
-   Rust. Treat the exact figure as indicative (`ps %cpu` is a coarse
-   instantaneous snapshot), but the direction agrees with the memory result —
-   the two steady, reproducible wins.
+3. **CPU: roughly a third.** The committed 10k run recorded 5.2% for Go and
+   1.6% for Rust; the superseded committed generation (`fc6e0b9`) had 9.2
+   versus the same 1.6. Treat the exact figure as indicative (`ps %cpu` is a
+   coarse instantaneous snapshot), but Go landing several times higher held in
+   both committed generations — this and memory are the two steady,
+   reproducible wins.
 
 ### Honesty about the measurement
 
@@ -107,17 +110,22 @@ run to run. See the honesty note.
   test needs a Socket.IO load client this study did not build. Node's
   per-connection cost is architecturally the highest of the three (it is why
   the relay exists at all), but that is stated, not measured here.
-- Every number above comes from a committed run with a `gitSha` stamp, per the
-  repo's measurement-honesty convention. A `-dirty` stamp means the artifact
-  predates its commit and should not be cited.
+- Every number above comes from a committed clean-`gitSha` run — either the
+  current artifacts (`bf9c5bf`) or the superseded generation preserved in git
+  history (`fc6e0b9`, committed at `0ced020`) — with **one deliberate
+  exception**: the first 10k run (Go 390/545 ms, Rust 175 ms) was never
+  committed and appears here only as the retracted overclaim, not as evidence.
+  A `-dirty` stamp means the artifact predates its commit and should not be
+  cited.
 
 ### The verdict on "is Rust worth it for this"
 
 The drift study said the runtime does not matter; it measured the one axis
 where the runtime is invisible. This study found the axis where it is not,
-and it is **memory** — a clean, large, reproducible ~3× (15 vs 40–49 KB per
-connection), which at 100k is the difference between ~1.5 GB and ~4.5 GB, and
-CPU roughly a fifth. That is the real, defensible result. The latency picture
+and it is **memory** — a clean, large, reproducible ~3× (14.5 vs 40 KB per
+connection in the current committed run; 14.7 vs 49.4 in the superseded one),
+which at 100k is the difference between ~1.5 GB and ~4 GB, and CPU roughly a
+third. That is the real, defensible result. The latency picture
 is smaller and partly inconclusive: median and p95 are consistently a little
 better on Rust, and the extreme tail — where a GC-free runtime *should* win —
 this single-machine harness cannot measure cleanly.
