@@ -230,7 +230,7 @@ The runtime study answered a question the drift numbers structurally can't
 (drift is bounded by protocol + network, not the runtime, which is why Go and
 Rust *tie* Node on sync quality). At **10,000 concurrent connections** the
 clean result is **memory**: Rust held ~15 KB/connection vs Go's ~40 KB (a
-reproducible ~3×), at ~a fifth the CPU. Latency showed a modest, consistent
+reproducible ~3×), at roughly a third the CPU. Latency showed a modest, consistent
 Rust edge at median/p95; the *extreme* tail was too noisy on a single
 co-resident machine to attribute cleanly, and the write-up
 [says so rather than citing the best-looking run](relay-rs/README.md#the-evaluation-the-drift-numbers-could-not-do).

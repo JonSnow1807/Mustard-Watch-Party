@@ -6,15 +6,17 @@ The production backend is **Node/NestJS** and serves all traffic; `relay-go`
 and `relay-rs` are studies of only the *sync plane*, neither deployed. A load
 study ([relay-rs/README.md](../relay-rs/README.md)) found the runtime win is
 real but narrow: at 10k concurrent connections Rust holds ~3× less memory per
-connection and ~a fifth the CPU, while **sync quality is identical** (drift is
+connection and roughly a third the CPU, while **sync quality is identical** (drift is
 bounded by protocol + network, not the runtime). The decision to migrate has
 been made; this document plans it honestly rather than re-litigating it.
 
 **The honest cost, stated once.** The Node backend is not just the sync plane
 the relays cover. It is OAuth with PKCE, JWT with refresh/revocation/elevation,
-bcrypt, six Prisma models on Postgres, **Socket.IO** (two namespaces, ack
+bcrypt, seven Prisma models on Postgres (one dead — see the scope note),
+**Socket.IO** (two namespaces, ack
 callbacks, a Redis adapter), guest management, rate limiting, the actor plane,
-rooms REST, chat, voice signalling, metrics, and eight scheduled jobs. A
+rooms REST, chat, voice signalling, metrics, and five scheduled jobs (plus
+in-service interval timers). A
 rewrite re-opens the door to every bug already fixed here — this codebase has
 closed roughly forty across auth and sync, several security-critical, and most
 were "unit-correct code that reached nobody in production." A big-bang rewrite
