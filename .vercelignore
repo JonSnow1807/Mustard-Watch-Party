@@ -19,8 +19,12 @@ node_modules
 video-sync-backend
 sync-harness
 relay-go
+relay-rs
 formal
 scripts
+
+# Rust build output (relay-rs/target alone is ~800MB)
+**/target
 
 # Docs and captures
 docs
