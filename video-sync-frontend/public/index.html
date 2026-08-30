@@ -59,6 +59,13 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <title>Mustard Watch Party</title>
+    <!--
+      Levo analytics. In <head> so it starts fetching before the bundle, but
+      async + type="module" means it is deferred either way and cannot block
+      first paint. The workspace/site ids are public by design - they identify
+      which property a pageview belongs to, not who is sending it.
+    -->
+    <script async type="module" src="https://sdk.levo.so/index.js" data-levo-workspace="W5WJQ6U9" data-levo-site="SHBL361H"></script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
