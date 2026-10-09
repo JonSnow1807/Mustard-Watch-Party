@@ -581,9 +581,20 @@ async fn snapshot_sweep(server: Arc<Server>) {
                 .await;
             if let Ok(raw) = res {
                 if let Ok(tl) = serde_json::from_str::<LuaTimeline>(&raw) {
-                    if tl.is_playing {
-                        server.broadcast(&room, encode_timeline(0x04, &tl)).await;
-                    }
+                    // Re-fan PAUSED rooms too (candidate-a, task A-mustard-rust).
+                    // For a paused room apply_snapshot.lua (L24) returns the
+                    // stored timeline with NO commit, NO seq bump and NO log
+                    // entry, so this is a byte-identical resend of the current
+                    // authoritative snapshot; clients dedup it by (storeEpoch,
+                    // seq). It gives a client that lost the last pre-pause
+                    // frame to queue overflow a repair at the next sweep once
+                    // queue capacity and transport progress return (about 10 s
+                    // plus Redis/scheduling delay); it is NOT bounded while the
+                    // connection's writer is still blocked or while repeated
+                    // sweeps still overflow. The playing arm is unchanged: the
+                    // Lua commits the seq bump there. No ordering or
+                    // at-most-once change; replies and revocation untouched.
+                    server.broadcast(&room, encode_timeline(0x04, &tl)).await;
                 }
             }
         }
@@ -1061,5 +1072,33 @@ mod tests {
         assert_eq!(u32::from_le_bytes(f[1..5].try_into().unwrap()), 7);
         assert_eq!(f[13], 1); // playing
         assert_eq!(f[30], 2); // seek reason code
+    }
+
+    #[test]
+    fn paused_sweep_refan_is_a_byte_identical_resend_of_the_stored_tuple() {
+        // candidate-a: for a paused room the sweep re-fans the stored
+        // timeline unchanged. Encoding the same tuple twice must give the
+        // same 31 bytes, carry the input (seq, epoch, mediaTime, stampedAt),
+        // and mark the frame paused; nothing here mints a new seq.
+        let tl = LuaTimeline {
+            seq: 14936,
+            store_epoch: "1791483504993".into(),
+            is_playing: false,
+            media_time: 14951.365,
+            stamped_at: 1791483605000.0,
+            reason: "pause".into(),
+            dup: false,
+        };
+        let a = encode_timeline(0x04, &tl);
+        let b = encode_timeline(0x04, &tl);
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 31);
+        assert_eq!(a[0], 0x04);
+        assert_eq!(u32::from_le_bytes(a[1..5].try_into().unwrap()), 14936);
+        assert_eq!(f64::from_le_bytes(a[5..13].try_into().unwrap()), 1791483504993.0);
+        assert_eq!(a[13], 0, "paused frame must carry isPlaying = 0");
+        assert_eq!(f64::from_le_bytes(a[14..22].try_into().unwrap()), 14951.365);
+        assert_eq!(f64::from_le_bytes(a[22..30].try_into().unwrap()), 1791483605000.0);
+        assert_eq!(a[30], 1, "reason byte is the stored reason (pause), not snapshot");
     }
 }
